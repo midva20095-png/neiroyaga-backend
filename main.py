@@ -30,9 +30,9 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             query = await websocket.receive_text()
             print(f"Получен запрос: {query}")
             
-            # Отправляем запрос в модель Gemini 2.0 Flash
+            # Заменяем модель на актуальную версию
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-3.8-flash",
                 contents=query,
                 config={
                     "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
