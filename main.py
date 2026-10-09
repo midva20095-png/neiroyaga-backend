@@ -57,12 +57,19 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await websocket.send_text(loading_payload)
             
             try:
+                # Базовая конфигурация
+                config_params = {
+                    "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
+                }
+                
+                # Если выбрана модель картинок, явно разрешаем IMAGE модальность
+                if model_key in ['nanobanana', 'nanobanana_pro']:
+                    config_params["response_modalities"] = ["IMAGE", "TEXT"]
+                
                 response = client.models.generate_content(
                     model=resolved_model,
                     contents=prompt,
-                    config={
-                        "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
-                    }
+                    config=config_params
                 )
                 
                 text_output = ""
@@ -80,7 +87,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                             image_data = inline.data
                             mime_type = getattr(inline, 'mime_type', None) or getattr(inline, 'mimeType', None) or "image/jpeg"
                 
-                # Формируем JSON-ответ в зависимости от того, есть ли картинка
                 if image_data:
                     response_payload = {
                         "type": "image",
@@ -100,22 +106,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 err_str = str(e)
                 print(f"Ошибка при запросе к модели {resolved_model}: {err_str}")
                 
-                if "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                    err_text = "🎨 Упс! Модели генерации картинок требуют активированного биллинга (плана Pay-as-you-go) в аккаунте Google AI Studio. Используйте текстовые модели Flash или Pro."
-                else:
-                    try:
-                        fallback_response = client.models.generate_content(
-                            model="gemini-3.8-flash",
-                            contents=prompt,
-                            config={
-                                "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
-                            }
-                        )
-                        err_text = fallback_response.text if fallback_response.text else "Ох, туман помешал ответу..."
-                    except Exception as fb_err:
-                        err_text = "Ох, густой туман застилал каналы связи... Сервера перегружены. Попробуй еще раз!"
-                
-                error_payload = json.dumps({"type": "text", "text": err_text})
+                error_payload = json.dumps({"type": "text", "text": f"Ох, туман помешал ответу: {err_str}"})
                 await websocket.send_text(error_payload)
             
     except WebSocketDisconnect:
