@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
@@ -57,12 +58,10 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await websocket.send_text(loading_payload)
             
             try:
-                # Базовая конфигурация
                 config_params = {
                     "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
                 }
                 
-                # Если выбрана модель картинок, явно разрешаем IMAGE модальность
                 if model_key in ['nanobanana', 'nanobanana_pro']:
                     config_params["response_modalities"] = ["IMAGE", "TEXT"]
                 
@@ -84,7 +83,13 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         
                         inline = getattr(part, 'inline_data', None) or getattr(part, 'inlineData', None)
                         if inline and getattr(inline, 'data', None):
-                            image_data = inline.data
+                            raw_bytes = inline.data
+                            # Преобразуем байты в строку Base64, чтобы JSON не падал с ошибкой
+                            if isinstance(raw_bytes, bytes):
+                                image_data = base64.b64encode(raw_bytes).decode('utf-8')
+                            else:
+                                image_data = str(raw_bytes)
+                                
                             mime_type = getattr(inline, 'mime_type', None) or getattr(inline, 'mimeType', None) or "image/jpeg"
                 
                 if image_data:
