@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения
 load_dotenv()
 
 app = FastAPI()
@@ -18,10 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализация клиента Google Gemini
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Актуальный маппинг моделей
 MODEL_MAPPING = {
     'flash': 'gemini-3.8-flash',
     'flash_25': 'gemini-3.8-flash',
@@ -52,7 +49,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             resolved_model = MODEL_MAPPING.get(model_key, 'gemini-3.8-flash')
             print(f"Запрос: {prompt} | Модель: {resolved_model} ({model_key})")
             
-            answer = "Туман скрывает ответ..."
+            if model_key in ['nanobanana', 'nanobanana_pro']:
+                loading_payload = json.dumps({
+                    "type": "text", 
+                    "text": "🎨 НейроЯга ушла в чащу за волшебными красками... Картинка создается, подождите пару секунд!"
+                })
+                await websocket.send_text(loading_payload)
             
             try:
                 response = client.models.generate_content(
@@ -67,7 +69,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 image_data = None
                 mime_type = "image/jpeg"
                 
-                # Безопасно извлекаем текст и картинку из частей ответа без вызова проксирующих текстовых свойств
                 candidate = response.candidates[0] if response.candidates else None
                 if candidate and candidate.content and candidate.content.parts:
                     for part in candidate.content.parts:
@@ -79,23 +80,29 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                             image_data = inline.data
                             mime_type = getattr(inline, 'mime_type', None) or getattr(inline, 'mimeType', None) or "image/jpeg"
                 
-                # Если модель вернула изображение
+                # Формируем JSON-ответ в зависимости от того, есть ли картинка
                 if image_data:
-                    caption = text_output if text_output else "🎨 Твой сказочный котик готов!"
-                    answer = f"{caption}<br><img src='data:{mime_type};base64,{image_data}' style='max-width:100%; border-radius:8px; margin-top:8px;'>"
-                elif text_output:
-                    answer = text_output
+                    response_payload = {
+                        "type": "image",
+                        "data": image_data,
+                        "mimeType": mime_type,
+                        "text": text_output if text_output else "🎨 Твой сказочный шедевр готов!"
+                    }
                 else:
-                    answer = "Туман скрывает ответ..."
+                    response_payload = {
+                        "type": "text",
+                        "text": text_output if text_output else "Туман скрывает ответ..."
+                    }
+                
+                await websocket.send_text(json.dumps(response_payload))
 
             except Exception as e:
                 err_str = str(e)
                 print(f"Ошибка при запросе к модели {resolved_model}: {err_str}")
                 
                 if "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                    answer = "🎨 Упс! Модели генерации картинок требуют активированного биллинга (плана Pay-as-you-go) в аккаунте Google AI Studio. Используйте текстовые модели Flash или Pro."
+                    err_text = "🎨 Упс! Модели генерации картинок требуют активированного биллинга (плана Pay-as-you-go) в аккаунте Google AI Studio. Используйте текстовые модели Flash или Pro."
                 else:
-                    # Фолбэк на надежный flash при сбое
                     try:
                         fallback_response = client.models.generate_content(
                             model="gemini-3.8-flash",
@@ -104,11 +111,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                                 "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
                             }
                         )
-                        answer = fallback_response.text if fallback_response.text else "Ох, туман помешал ответу..."
+                        err_text = fallback_response.text if fallback_response.text else "Ох, туман помешал ответу..."
                     except Exception as fb_err:
-                        answer = f"Ох, густой туман застилал каналы связи... Сервера перегружены. Попробуй еще раз!"
-            
-            await websocket.send_text(answer)
+                        err_text = "Ох, густой туман застилал каналы связи... Сервера перегружены. Попробуй еще раз!"
+                
+                error_payload = json.dumps({"type": "text", "text": err_text})
+                await websocket.send_text(error_payload)
             
     except WebSocketDisconnect:
         print(f"Клиент {client_id} отключился.")
