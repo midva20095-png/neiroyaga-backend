@@ -58,12 +58,10 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await websocket.send_text(loading_payload)
             
             try:
+                # Чистый конфиг без принудительных модальностей
                 config_params = {
                     "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
                 }
-                
-                if model_key in ['nanobanana', 'nanobanana_pro']:
-                    config_params["response_modalities"] = ["IMAGE", "TEXT"]
                 
                 response = client.models.generate_content(
                     model=resolved_model,
@@ -84,7 +82,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         inline = getattr(part, 'inline_data', None) or getattr(part, 'inlineData', None)
                         if inline and getattr(inline, 'data', None):
                             raw_bytes = inline.data
-                            # Преобразуем байты в строку Base64, чтобы JSON не падал с ошибкой
                             if isinstance(raw_bytes, bytes):
                                 image_data = base64.b64encode(raw_bytes).decode('utf-8')
                             else:
