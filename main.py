@@ -172,7 +172,7 @@ async def yookassa_webhook(request: Request):
                     "email": email,
                     "amount": credits_to_add
                 })
-                print(ф"Начислено {credits_to_add} кредитов пользователю {email}")
+                print(f"Начислено {credits_to_add} кредитов пользователю {email}")
                         
         return {"status": "ok"}
     except Exception as e:
