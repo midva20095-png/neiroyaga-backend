@@ -1,8 +1,7 @@
 import os
 import json
 import base64
-import requests
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from dotenv import load_dotenv
@@ -21,8 +20,6 @@ app.add_middleware(
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
-
 MODEL_MAPPING = {
     'flash': 'gemini-3.8-flash',
     'flash_25': 'gemini-3.8-flash',
@@ -35,7 +32,6 @@ MODEL_MAPPING = {
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     await websocket.accept()
     print(f"Клиент {client_id} успешно подключился!")
-    
     try:
         while True:
             raw_message = await websocket.receive_text()
@@ -62,6 +58,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await websocket.send_text(loading_payload)
             
             try:
+                # Чистый конфиг без принудительных модальностей
                 config_params = {
                     "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
                 }
@@ -110,33 +107,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             except Exception as e:
                 err_str = str(e)
                 print(f"Ошибка при запросе к модели {resolved_model}: {err_str}")
+                
                 error_payload = json.dumps({"type": "text", "text": f"Ох, туман помешал ответу: {err_str}"})
                 await websocket.send_text(error_payload)
             
     except WebSocketDisconnect:
         print(f"Клиент {client_id} отключился.")
-
-
-# Вебхук для приема успешных платежей от ЮKassa
-@app.post("/webhook/yookassa")
-async def yookassa_webhook(request: Request):
-    try:
-        event_json = await request.json()
-        if event_json.get("event") == "payment.succeeded":
-            payment_object = event_json.get("object", {})
-            metadata = payment_object.get("metadata", {})
-            client_id = metadata.get("client_id")
-            
-            if client_id and GOOGLE_SCRIPT_URL:
-                # Отправляем запрос на наш Apps Script, чтобы обновить таблицу
-                requests.post(GOOGLE_SCRIPT_URL, json={"client_id": client_id, "status": "active"})
-                print(f"Подписка для клиента {client_id} успешно отправлена в Google Таблицу!")
-                        
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"Ошибка вебхука ЮKassa: {e}")
-        return {"status": "error", "message": str(e)}, 400
-
 
 if __name__ == "__main__":
     import uvicorn
