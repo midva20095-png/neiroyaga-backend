@@ -24,7 +24,6 @@ app.add_middleware(
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
 
-# Настройки ЮKassa (добавь их в переменные окружения Railway)
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
 
@@ -69,13 +68,14 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await websocket.accept()
     print(f"Клиент {client_email} успешно подключился!")
     
+    # Запрашиваем баланс без списания кредитов (cost: 0)
     init_result = check_and_deduct_credits(client_email, 0)
-    initial_balance = init_result.get("credits", 10)
+    initial_balance = init_result.get("credits", 0)
     
     await websocket.send_text(json.dumps({
         "type": "text",
         "credits": initial_balance,
-        "text": "🧚‍♀️ Приветствую в НейроЯге! Выбирай модель в меню сверху и задавай вопросы."
+        "text": "🧚‍♀️ Приветствую в НейроЯге! Выбирай модель в меню сверху, задавай вопросы или прикрепляй фото и файлы."
     }))
 
     try:
@@ -84,12 +84,14 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             
             prompt = raw_message
             model_key = 'flash'
+            file_obj = None
             
             try:
                 data = json.loads(raw_message)
                 if isinstance(data, dict):
-                    prompt = data.get('prompt', raw_message)
+                    prompt = data.get('prompt', '')
                     model_key = data.get('modelKey', 'flash')
+                    file_obj = data.get('file') # {"mimeType": "...", "data": "base64..."}
             except json.JSONDecodeError:
                 pass 
             
@@ -118,13 +120,29 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 await websocket.send_text(loading_payload)
             
             try:
+                # Формируем контент для модели (текст + файл/картинка при наличии)
+                contents = []
+                if file_obj and file_obj.get('data'):
+                    file_bytes = base64.b64decode(file_obj['data'])
+                    contents.append({
+                        "inline_data": {
+                            "mime_type": file_obj.get('mimeType', 'image/jpeg'),
+                            "data": file_bytes
+                        }
+                    })
+                
+                if prompt:
+                    contents.append(prompt)
+                elif not contents:
+                    contents.append("Что изображено на этом файле?")
+
                 config_params = {
                     "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
                 }
                 
                 response = client.models.generate_content(
                     model=resolved_model,
-                    contents=prompt,
+                    contents=contents,
                     config=config_params
                 )
                 
@@ -174,19 +192,17 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     except WebSocketDisconnect:
         print(f"Клиент {client_email} отключился.")
 
-# Эндпоинт для создания платежа через ЮKassa
 @app.post("/api/create-payment")
 async def create_payment(request: Request):
     try:
         data = await request.json()
         email = data.get("email")
-        amount = data.get("amount") # рубли
-        credits = data.get("credits") # количество кредитов
+        amount = data.get("amount")
+        credits = data.get("credits")
         
         if not email or not amount or not credits:
             return {"success": False, "error": "Неверные параметры"}
             
-        # Если ЮKassa не настроена в тестах, отдаем демо-ссылку
         if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
             return {"success": True, "confirmation_url": "https://yookassa.ru"}
 
@@ -201,7 +217,7 @@ async def create_payment(request: Request):
             "capture": True,
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://babayagaland.ru/aiayaga" # Замени на адрес своего сайта на Тильде
+                "return_url": "https://babayagaland.ru"  # Твой реальный домен на Тильде
             },
             "description": f"Покупка {credits} кредитов НейроЯга для {email}",
             "metadata": {
@@ -235,7 +251,6 @@ async def create_payment(request: Request):
         print(f"Ошибка создания платежа ЮKassa: {e}")
         return {"success": False, "error": str(e)}
 
-# Вебхук от ЮKassa после успешной оплаты
 @app.post("/webhook/yookassa")
 async def yookassa_webhook(request: Request):
     try:
