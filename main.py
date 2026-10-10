@@ -1,9 +1,11 @@
 import os
 import json
 import base64
+import uuid
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
 
@@ -22,6 +24,10 @@ app.add_middleware(
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
 
+# Настройки ЮKassa (добавь их в переменные окружения Railway)
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+
 MODEL_MAPPING = {
     'flash': 'gemini-3.8-flash',
     'flash_25': 'gemini-3.8-flash',
@@ -39,7 +45,6 @@ CREDIT_COSTS = {
 }
 
 def check_and_deduct_credits(email: str, cost: int) -> dict:
-    """Запрос в Google Таблицу: проверка баланса и списание. Возвращает dict с успехом и остатком."""
     if not GOOGLE_SCRIPT_URL:
         return {"success": True, "credits": 999}
 
@@ -64,7 +69,6 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await websocket.accept()
     print(f"Клиент {client_email} успешно подключился!")
     
-    # Запрос актуального баланса при подключении (стоимость 0)
     init_result = check_and_deduct_credits(client_email, 0)
     initial_balance = init_result.get("credits", 10)
     
@@ -92,9 +96,6 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             resolved_model = MODEL_MAPPING.get(model_key, 'gemini-3.8-flash')
             required_credits = CREDIT_COSTS.get(model_key, 1)
             
-            print(f"Запрос от {client_email}: {prompt} | Модель: {resolved_model} (Стоимость: {required_credits} кр.)")
-            
-            # Проверяем и списываем кредиты
             credit_result = check_and_deduct_credits(client_email, required_credits)
             can_proceed = credit_result.get("success", False)
             current_balance = credit_result.get("credits", 0)
@@ -103,7 +104,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 error_payload = json.dumps({
                     "type": "text", 
                     "credits": current_balance,
-                    "text": f"💎 Недостаточно кредитов! Требуется: {required_credits} кр., а на балансе: {current_balance} кр. Пожалуйста, пополни баланс."
+                    "text": f"💎 Недостаточно кредитов! Требуется: {required_credits} кр., а на балансе: {current_balance} кр. Нажми кнопку «Пополнить» выше."
                 })
                 await websocket.send_text(error_payload)
                 continue
@@ -173,6 +174,68 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     except WebSocketDisconnect:
         print(f"Клиент {client_email} отключился.")
 
+# Эндпоинт для создания платежа через ЮKassa
+@app.post("/api/create-payment")
+async def create_payment(request: Request):
+    try:
+        data = await request.json()
+        email = data.get("email")
+        amount = data.get("amount") # рубли
+        credits = data.get("credits") # количество кредитов
+        
+        if not email or not amount or not credits:
+            return {"success": False, "error": "Неверные параметры"}
+            
+        # Если ЮKassa не настроена в тестах, отдаем демо-ссылку
+        if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+            return {"success": True, "confirmation_url": "https://yookassa.ru"}
+
+        url = "https://api.yookassa.ru/v3/payments"
+        idempotence_key = str(uuid.uuid4())
+        
+        payload = {
+            "amount": {
+                "value": f"{float(amount):.2f}",
+                "currency": "RUB"
+            },
+            "capture": True,
+            "confirmation": {
+                "type": "redirect",
+                "return_url": "https://neiro-yaga.ru" # Замени на адрес своего сайта на Тильде
+            },
+            "description": f"Покупка {credits} кредитов НейроЯга для {email}",
+            "metadata": {
+                "email": email,
+                "credits": int(credits)
+            }
+        }
+        
+        headers = {
+            "Idempotence-Key": idempotence_key,
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(
+            url, 
+            json=payload, 
+            auth=HTTPBasicAuth(YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY),
+            headers=headers,
+            timeout=10
+        )
+        
+        res_json = response.json()
+        confirmation_url = res_json.get("confirmation", {}).get("confirmation_url")
+        
+        if confirmation_url:
+            return {"success": True, "confirmation_url": confirmation_url}
+        else:
+            return {"success": False, "error": res_json.get("description", "Ошибка создания платежа")}
+            
+    except Exception as e:
+        print(f"Ошибка создания платежа ЮKassa: {e}")
+        return {"success": False, "error": str(e)}
+
+# Вебхук от ЮKassa после успешной оплаты
 @app.post("/webhook/yookassa")
 async def yookassa_webhook(request: Request):
     try:
@@ -180,22 +243,20 @@ async def yookassa_webhook(request: Request):
         if event_json.get("event") == "payment.succeeded":
             payment_object = event_json.get("object", {})
             metadata = payment_object.get("metadata", {})
-            email = metadata.get("email") or payment_object.get("receipt", {}).get("email")
+            email = metadata.get("email")
+            credits_to_add = int(metadata.get("credits", 0))
             
-            amount_value = float(payment_object.get("amount", {}).get("value", 0))
-            credits_to_add = int(amount_value / 6)
-            
-            if email and GOOGLE_SCRIPT_URL:
+            if email and credits_to_add > 0 and GOOGLE_SCRIPT_URL:
                 requests.post(GOOGLE_SCRIPT_URL, json={
                     "action": "add",
                     "email": email,
                     "amount": credits_to_add
-                })
-                print(f"Начислено {credits_to_add} кредитов пользователю {email}")
+                }, timeout=8)
+                print(f"✅ Успешно начислено {credits_to_add} кредитов пользователю {email}")
                         
         return {"status": "ok"}
     except Exception as e:
-        print(f"Ошибка вебхука ЮKassa: {e}")
+        print(f"❌ Ошибка вебхука ЮKassa: {e}")
         return {"status": "error", "message": str(e)}, 400
 
 if __name__ == "__main__":
