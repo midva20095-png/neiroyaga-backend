@@ -1,7 +1,8 @@
 import os
 import json
 import base64
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import requests
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from dotenv import load_dotenv
@@ -19,6 +20,7 @@ app.add_middleware(
 )
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
 
 MODEL_MAPPING = {
     'flash': 'gemini-3.8-flash',
@@ -28,10 +30,35 @@ MODEL_MAPPING = {
     'nanobanana_pro': 'gemini-3-pro-image'
 }
 
-@app.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: str):
+# Стоимость моделей в кредитах
+CREDIT_COSTS = {
+    'flash': 1,
+    'flash_25': 1,
+    'pro': 3,
+    'nanobanana': 5,
+    'nanobanana_pro': 10
+}
+
+def check_and_deduct_credits(email: str, cost: int) -> bool:
+    """Запрос в Google Таблицу через Apps Script для проверки и списания кредитов"""
+    if not GOOGLE_SCRIPT_URL:
+        return True # Если таблица не настроена, пропускаем для тестов
+    try:
+        response = requests.post(GOOGLE_SCRIPT_URL, json={
+            "action": "deduct",
+            "email": email,
+            "cost": cost
+        }, timeout=5)
+        res_data = response.json()
+        return res_data.get("success", False)
+    except Exception as e:
+        print(f"Ошибка проверки кредитов: {e}")
+        return False
+
+@app.websocket("/ws/{client_email}")
+async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await websocket.accept()
-    print(f"Клиент {client_id} успешно подключился!")
+    print(f"Клиент {client_email} успешно подключился!")
     try:
         while True:
             raw_message = await websocket.receive_text()
@@ -48,7 +75,19 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 pass 
             
             resolved_model = MODEL_MAPPING.get(model_key, 'gemini-3.8-flash')
-            print(f"Запрос: {prompt} | Модель: {resolved_model} ({model_key})")
+            required_credits = CREDIT_COSTS.get(model_key, 1)
+            
+            print(f"Запрос от {client_email}: {prompt} | Модель: {resolved_model} (Стоимость: {required_credits} кр.)")
+            
+            # Проверяем и списываем кредиты перед генерацией
+            can_proceed = check_and_deduct_credits(client_email, required_credits)
+            if not can_proceed:
+                error_payload = json.dumps({
+                    "type": "text", 
+                    "text": f"💎 Недостаточно кредитов для модели '{model_key}'! Требуется: {required_credits} кр. Пожалуйста, пополни баланс."
+                })
+                await websocket.send_text(error_payload)
+                continue
             
             if model_key in ['nanobanana', 'nanobanana_pro']:
                 loading_payload = json.dumps({
@@ -58,7 +97,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await websocket.send_text(loading_payload)
             
             try:
-                # Чистый конфиг без принудительных модальностей
                 config_params = {
                     "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
                 }
@@ -107,12 +145,40 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             except Exception as e:
                 err_str = str(e)
                 print(f"Ошибка при запросе к модели {resolved_model}: {err_str}")
-                
                 error_payload = json.dumps({"type": "text", "text": f"Ох, туман помешал ответу: {err_str}"})
                 await websocket.send_text(error_payload)
             
     except WebSocketDisconnect:
-        print(f"Клиент {client_id} отключился.")
+        print(f"Клиент {client_email} отключился.")
+
+
+# Вебхук для пополнения кредитов после успешной оплаты в ЮKassa
+@app.post("/webhook/yookassa")
+async def yookassa_webhook(request: Request):
+    try:
+        event_json = await request.json()
+        if event_json.get("event") == "payment.succeeded":
+            payment_object = event_json.get("object", {})
+            metadata = payment_object.get("metadata", {})
+            email = metadata.get("email") or payment_object.get("receipt", {}).get("email")
+            
+            # Определяем количество кредитов по сумме платежа (например, 300 руб = 50 кредитов)
+            amount_value = float(payment_object.get("amount", {}).get("value", 0))
+            credits_to_add = int(amount_value / 6) # Пример: 6 рублей за 1 кредит
+            
+            if email and GOOGLE_SCRIPT_URL:
+                requests.post(GOOGLE_SCRIPT_URL, json={
+                    "action": "add",
+                    "email": email,
+                    "amount": credits_to_add
+                })
+                print(ф"Начислено {credits_to_add} кредитов пользователю {email}")
+                        
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"Ошибка вебхука ЮKassa: {e}")
+        return {"status": "error", "message": str(e)}, 400
+
 
 if __name__ == "__main__":
     import uvicorn
