@@ -201,7 +201,7 @@ async def create_payment(request: Request):
             "capture": True,
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://neiro-yaga.ru" # Замени на адрес своего сайта на Тильде
+                "return_url": "https://babayagaland.ru/aiayaga" # Замени на адрес своего сайта на Тильде
             },
             "description": f"Покупка {credits} кредитов НейроЯга для {email}",
             "metadata": {
