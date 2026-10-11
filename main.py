@@ -215,7 +215,8 @@ async def save_user_history(request: Request):
             "action": "save_message",
             "email": data.get("email"),
             "role": data.get("role"),
-            "text": data.get("text")
+            "text": data.get("text"),
+            "image": data.get("image")
         }, timeout=8)
         return {"success": True}
     except Exception as e:
