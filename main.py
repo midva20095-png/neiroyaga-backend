@@ -192,6 +192,24 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     except WebSocketDisconnect:
         print(f"Клиент {client_email} отключился.")
 
+# ==================== Эндпоинт авторизации и регистрации ====================
+
+@app.post("/api/auth")
+async def authenticate_user(request: Request):
+    if not GOOGLE_SCRIPT_URL:
+        return {"success": True}
+    try:
+        data = await request.json()
+        response = requests.post(GOOGLE_SCRIPT_URL, json={
+            "action": "auth",
+            "email": data.get("email"),
+            "password": data.get("password")
+        }, timeout=8)
+        return response.json()
+    except Exception as e:
+        print(f"❌ Ошибка авторизации: {e}")
+        return {"success": False, "error": str(e)}
+
 # ==================== Эндпоинты для работы с облачной историей ====================
 
 @app.get("/api/history/{email}")
