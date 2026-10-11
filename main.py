@@ -192,6 +192,38 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     except WebSocketDisconnect:
         print(f"Клиент {client_email} отключился.")
 
+# ==================== Эндпоинты для работы с облачной историей ====================
+
+@app.get("/api/history/{email}")
+async def get_user_history(email: str):
+    if not GOOGLE_SCRIPT_URL:
+        return {"success": True, "messages": []}
+    try:
+        response = requests.post(GOOGLE_SCRIPT_URL, json={"action": "get_history", "email": email}, timeout=8)
+        return response.json()
+    except Exception as e:
+        print(f"❌ Ошибка получения истории: {e}")
+        return {"success": False, "messages": []}
+
+@app.post("/api/history")
+async def save_user_history(request: Request):
+    if not GOOGLE_SCRIPT_URL:
+        return {"success": True}
+    try:
+        data = await request.json()
+        requests.post(GOOGLE_SCRIPT_URL, json={
+            "action": "save_message",
+            "email": data.get("email"),
+            "role": data.get("role"),
+            "text": data.get("text")
+        }, timeout=8)
+        return {"success": True}
+    except Exception as e:
+        print(f"❌ Ошибка сохранения истории: {e}")
+        return {"success": False, "error": str(e)}
+
+# ==================== Платежные эндпоинты ЮKassa ====================
+
 @app.post("/api/create-payment")
 async def create_payment(request: Request):
     try:
@@ -217,7 +249,7 @@ async def create_payment(request: Request):
             "capture": True,
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://babayagaland.ru/aiayaga"  # Твой реальный домен на Тильде
+                "return_url": "https://babayagaland.ru/aiayaga"
             },
             "description": f"Покупка {credits} кредитов НейроЯга для {email}",
             "metadata": {
