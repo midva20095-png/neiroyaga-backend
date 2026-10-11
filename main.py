@@ -53,7 +53,10 @@ def check_and_deduct_credits(email: str, cost: int) -> dict:
             "email": email,
             "cost": cost
         }
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=8)
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
+        if response.status_code != 200:
+            return {"success": False, "credits": 0}
+        
         res_data = response.json()
         return {
             "success": res_data.get("success", False),
@@ -192,7 +195,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     except WebSocketDisconnect:
         print(f"Клиент {client_email} отключился.")
 
-# ==================== Эндпоинт авторизации и регистрации ====================
+# ==================== Эндпоинты авторизации и истории ====================
 
 @app.post("/api/auth")
 async def authenticate_user(request: Request):
@@ -204,24 +207,27 @@ async def authenticate_user(request: Request):
             "action": "auth",
             "email": data.get("email"),
             "password": data.get("password")
-        }, timeout=8)
+        }, timeout=25)
+        if response.status_code != 200:
+            return {"success": False, "error": "Ошибка сервера авторизации"}
         return response.json()
     except Exception as e:
         print(f"❌ Ошибка авторизации: {e}")
         return {"success": False, "error": str(e)}
-
-# ==================== Эндпоинты для работы с облачной историей ====================
 
 @app.get("/api/history/{email}")
 async def get_user_history(email: str):
     if not GOOGLE_SCRIPT_URL:
         return {"success": True, "messages": []}
     try:
-        response = requests.post(GOOGLE_SCRIPT_URL, json={"action": "get_history", "email": email}, timeout=8)
-        return response.json()
+        response = requests.post(GOOGLE_SCRIPT_URL, json={"action": "get_history", "email": email}, timeout=25)
+        if response.status_code != 200:
+            return {"success": True, "messages": []}
+        data = response.json()
+        return data if isinstance(data, dict) else {"success": True, "messages": []}
     except Exception as e:
         print(f"❌ Ошибка получения истории: {e}")
-        return {"success": False, "messages": []}
+        return {"success": True, "messages": []}
 
 @app.post("/api/history")
 async def save_user_history(request: Request):
@@ -235,7 +241,7 @@ async def save_user_history(request: Request):
             "role": data.get("role"),
             "text": data.get("text"),
             "image": data.get("image")
-        }, timeout=8)
+        }, timeout=25)
         return {"success": True}
     except Exception as e:
         print(f"❌ Ошибка сохранения истории: {e}")
@@ -317,7 +323,7 @@ async def yookassa_webhook(request: Request):
                     "action": "add",
                     "email": email,
                     "amount": credits_to_add
-                }, timeout=8)
+                }, timeout=25)
                 print(f"✅ Успешно начислено {credits_to_add} кредитов пользователю {email}")
                         
         return {"status": "ok"}
