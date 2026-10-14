@@ -71,7 +71,6 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await websocket.accept()
     print(f"Клиент {client_email} успешно подключился!")
     
-    # Запрашиваем баланс без списания кредитов (cost: 0)
     init_result = check_and_deduct_credits(client_email, 0)
     initial_balance = init_result.get("credits", 0)
     
@@ -88,6 +87,8 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             prompt = raw_message
             model_key = 'flash'
             file_obj = None
+            history_list = []
+            biz_tool_id = None
             
             try:
                 data = json.loads(raw_message)
@@ -95,11 +96,19 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                     prompt = data.get('prompt', '')
                     model_key = data.get('modelKey', 'flash')
                     file_obj = data.get('file') # {"mimeType": "...", "data": "base64..."}
+                    history_list = data.get('history', []) # Последние сообщения для контекста
+                    biz_tool_id = data.get('biz_tool_id') # ID бизнес-инструмента
             except json.JSONDecodeError:
                 pass 
             
+            # Если это бизнес-инструмент — списываем ровно 6 кредитов и используем выгодную flash модель
+            if biz_tool_id:
+                required_credits = 6
+                model_key = 'flash'
+            else:
+                required_credits = CREDIT_COSTS.get(model_key, 1)
+            
             resolved_model = MODEL_MAPPING.get(model_key, 'gemini-3.8-flash')
-            required_credits = CREDIT_COSTS.get(model_key, 1)
             
             credit_result = check_and_deduct_credits(client_email, required_credits)
             can_proceed = credit_result.get("success", False)
@@ -123,11 +132,26 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 await websocket.send_text(loading_payload)
             
             try:
-                # Формируем контент для модели (текст + файл/картинка при наличии)
+                # Формируем историю и контекст для модели (включая память на последние сообщения)
                 contents = []
+                
+                # 1. Добавляем историю диалога (последние сообщения)
+                if history_list and isinstance(history_list, list):
+                    for item in history_list:
+                        role = item.get('role') # 'user' или 'model'
+                        text = item.get('text', '')
+                        if role and text:
+                            gemini_role = 'user' if role == 'user' else 'model'
+                            contents.append({
+                                "role": gemini_role,
+                                "parts": [{"text": text}]
+                            })
+                
+                # 2. Формируем текущее сообщение пользователя (текст + возможный файл)
+                current_parts = []
                 if file_obj and file_obj.get('data'):
                     file_bytes = base64.b64decode(file_obj['data'])
-                    contents.append({
+                    current_parts.append({
                         "inline_data": {
                             "mime_type": file_obj.get('mimeType', 'image/jpeg'),
                             "data": file_bytes
@@ -135,12 +159,18 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                     })
                 
                 if prompt:
-                    contents.append(prompt)
-                elif not contents:
-                    contents.append("Что изображено на этом файле?")
+                    current_parts.append({"text": prompt})
+                elif not current_parts:
+                    current_parts.append({"text": "Что изображено на этом файле?"})
+                
+                # Добавляем текущий шаг в общую историю контента
+                contents.append({
+                    "role": "user",
+                    "parts": current_parts
+                })
 
                 config_params = {
-                    "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
+                    "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект и бизнес-консультант. Отвечай структурно, грамотно, с легким сказочным вайбом, но четко и по делу."
                 }
                 
                 response = client.models.generate_content(
