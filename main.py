@@ -23,7 +23,6 @@ app.add_middleware(
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL")
-TEMPLATES_SCRIPT_URL = os.getenv("TEMPLATES_SCRIPT_URL")
 
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
@@ -44,110 +43,42 @@ CREDIT_COSTS = {
     'nanobanana_pro': 10
 }
 
-def get_user_balance(email: str) -> int:
-    if not GOOGLE_SCRIPT_URL:
-        return 999
-    try:
-        response = requests.post(GOOGLE_SCRIPT_URL, json={"action": "balance", "email": email}, timeout=25)
-        if response.status_code != 200:
-            return 0
-        return response.json().get("credits", 0)
-    except Exception as e:
-        print(f"❌ Ошибка получения баланса: {e}")
-        return 0
-
 def check_and_deduct_credits(email: str, cost: int) -> dict:
     if not GOOGLE_SCRIPT_URL:
         return {"success": True, "credits": 999}
+
     try:
-        payload = {"action": "deduct", "email": email, "cost": cost}
+        payload = {
+            "action": "deduct",
+            "email": email,
+            "cost": cost
+        }
         response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
         if response.status_code != 200:
             return {"success": False, "credits": 0}
+        
         res_data = response.json()
         return {
             "success": res_data.get("success", False),
             "credits": res_data.get("credits", 0)
         }
     except Exception as e:
-        print(f"❌ Ошибка списания кредитов: {e}")
+        print(f"❌ Ошибка при обращении к Google Apps Script: {e}")
         return {"success": False, "credits": 0}
-
-def save_message_to_sheet(email: str, role: str, text: str, image: str = None):
-    if not GOOGLE_SCRIPT_URL:
-        return
-    try:
-        requests.post(GOOGLE_SCRIPT_URL, json={
-            "action": "save_message",
-            "email": email,
-            "role": role,
-            "text": text,
-            "image": image
-        }, timeout=15)
-    except Exception as e:
-        print(f"❌ Ошибка сохранения сообщения: {e}")
-
-def get_chat_history_for_gemini(email: str):
-    if not GOOGLE_SCRIPT_URL:
-        return []
-    try:
-        response = requests.post(GOOGLE_SCRIPT_URL, json={"action": "get_history", "email": email}, timeout=25)
-        if response.status_code != 200:
-            return []
-        data = response.json()
-        messages = data.get("messages", [])
-        
-        history = []
-        for msg in messages:
-            role = "user" if msg.get("role") == "user" else "model"
-            text = msg.get("text", "")
-            if text:
-                history.append({
-                    "role": role,
-                    "parts": [text]
-                })
-        return history
-    except Exception as e:
-        print(f"❌ Ошибка загрузки контекста истории: {e}")
-        return []
-
-def get_template_formula(template_id: str) -> str:
-    if not TEMPLATES_SCRIPT_URL or not template_id:
-        return ""
-    try:
-        response = requests.post(TEMPLATES_SCRIPT_URL, json={"action": "get_templates"}, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            for tpl in data.get("templates", []):
-                if tpl.get("id") == template_id:
-                    return tpl.get("template", "")
-    except Exception as e:
-        print(f"❌ Ошибка получения шаблона {template_id}: {e}")
-    return ""
-
-@app.get("/api/templates")
-async def get_templates():
-    if not TEMPLATES_SCRIPT_URL:
-        return {"success": True, "templates": []}
-    try:
-        response = requests.post(TEMPLATES_SCRIPT_URL, json={"action": "get_templates"}, timeout=15)
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"❌ Ошибка загрузки шаблонов из таблицы: {e}")
-    return {"success": True, "templates": []}
 
 @app.websocket("/ws/{client_email}")
 async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await websocket.accept()
     print(f"Клиент {client_email} успешно подключился!")
     
-    initial_balance = get_user_balance(client_email)
+    # Запрашиваем баланс без списания кредитов (cost: 0)
+    init_result = check_and_deduct_credits(client_email, 0)
+    initial_balance = init_result.get("credits", 0)
     
     await websocket.send_text(json.dumps({
         "type": "text",
         "credits": initial_balance,
-        "text": "🧚‍♀️ Приветствую в НейроЯге! Выбирай модель или шаблон в меню сверху, задавай вопросы или прикрепляй фото."
+        "text": "🧚‍♀️ Приветствую в НейроЯге! Выбирай модель в меню сверху, задавай вопросы или прикрепляй фото и файлы."
     }))
 
     try:
@@ -156,8 +87,6 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             
             prompt = raw_message
             model_key = 'flash'
-            template_id = None
-            params = {}
             file_obj = None
             
             try:
@@ -165,25 +94,10 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 if isinstance(data, dict):
                     prompt = data.get('prompt', '')
                     model_key = data.get('modelKey', 'flash')
-                    template_id = data.get('template_id')
-                    params = data.get('params', {})
-                    file_obj = data.get('file')
+                    file_obj = data.get('file') # {"mimeType": "...", "data": "base64..."}
             except json.JSONDecodeError:
                 pass 
             
-            # Если выбран шаблон, подгружаем формулу и подставляем параметры
-            final_prompt = prompt
-            if template_id:
-                model_key = 'nanobanana' # По умолчанию для шаблонов используется генерация картинок
-                template_formula = get_template_formula(template_id)
-                if template_formula:
-                    final_prompt = template_formula
-                    # Заменяем плейсхолдеры вроде {{name}}, {{gender}}, {{zodiac}} на реальные значения
-                    for key, val in params.items():
-                        final_prompt = final_prompt.replace(f"{{{{{key}}}}}", str(val))
-                    if prompt:
-                        final_prompt += f", additional notes: {prompt}"
-
             resolved_model = MODEL_MAPPING.get(model_key, 'gemini-3.8-flash')
             required_credits = CREDIT_COSTS.get(model_key, 1)
             
@@ -195,7 +109,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 error_payload = json.dumps({
                     "type": "text", 
                     "credits": current_balance,
-                    "text": f"💎 Недостаточно кредитов! Требуется: {required_credits} кр., а на балансе: {current_balance} кр. Пополните баланс."
+                    "text": f"💎 Недостаточно кредитов! Требуется: {required_credits} кр., а на балансе: {current_balance} кр. Нажми кнопку «Пополнить» выше."
                 })
                 await websocket.send_text(error_payload)
                 continue
@@ -204,40 +118,36 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 loading_payload = json.dumps({
                     "type": "text", 
                     "credits": current_balance,
-                    "text": "🎨 НейроЯга колдует над вашим изображением по шаблону, подождите пару секунд..."
+                    "text": "🎨 НейроЯга ушла в чащу за волшебными красками... Картинка создается, подождите пару секунд!"
                 })
                 await websocket.send_text(loading_payload)
             
             try:
-                save_message_to_sheet(client_email, "user", final_prompt, None)
-                previous_history = get_chat_history_for_gemini(client_email)
-
-                config_params = {
-                    "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу. Помни контекст беседы."
-                }
-
-                chat = client.chats.create(
-                    model=resolved_model,
-                    history=previous_history,
-                    config=config_params
-                )
-                
-                message_content = []
+                # Формируем контент для модели (текст + файл/картинка при наличии)
+                contents = []
                 if file_obj and file_obj.get('data'):
                     file_bytes = base64.b64decode(file_obj['data'])
-                    message_content.append({
+                    contents.append({
                         "inline_data": {
                             "mime_type": file_obj.get('mimeType', 'image/jpeg'),
                             "data": file_bytes
                         }
                     })
                 
-                if final_prompt:
-                    message_content.append(final_prompt)
-                elif not message_content:
-                    message_content.append("Сгенерируй изображение по заданным параметрам.")
+                if prompt:
+                    contents.append(prompt)
+                elif not contents:
+                    contents.append("Что изображено на этом файле?")
 
-                response = chat.send_message(message_content)
+                config_params = {
+                    "system_instruction": "Ты — НейроЯга, премиальный искусственный интеллект. Отвечай с легким сказочным вайбом, но четко и по делу."
+                }
+                
+                response = client.models.generate_content(
+                    model=resolved_model,
+                    contents=contents,
+                    config=config_params
+                )
                 
                 text_output = ""
                 image_data = None
@@ -259,22 +169,19 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                                 
                             mime_type = getattr(inline, 'mime_type', None) or getattr(inline, 'mimeType', None) or "image/jpeg"
                 
-                bot_saved_text = text_output if text_output else (f"🎨 Твой шедевр готов! (-{required_credits} кр.)" if image_data else "Туман скрывает ответ...")
-                save_message_to_sheet(client_email, "bot", bot_saved_text, image_data)
-
                 if image_data:
                     response_payload = {
                         "type": "image",
                         "data": image_data,
                         "mimeType": mime_type,
                         "credits": current_balance,
-                        "text": bot_saved_text
+                        "text": text_output if text_output else f"🎨 Твой шедевр готов! (-{required_credits} кр.)"
                     }
                 else:
                     response_payload = {
                         "type": "text",
                         "credits": current_balance,
-                        "text": bot_saved_text
+                        "text": text_output if text_output else "Туман скрывает ответ..."
                     }
                 
                 await websocket.send_text(json.dumps(response_payload))
@@ -288,7 +195,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     except WebSocketDisconnect:
         print(f"Клиент {client_email} отключился.")
 
-# ==================== Авторизация и история ====================
+# ==================== Эндпоинты авторизации и истории ====================
 
 @app.post("/api/auth")
 async def authenticate_user(request: Request):
@@ -328,7 +235,13 @@ async def save_user_history(request: Request):
         return {"success": True}
     try:
         data = await request.json()
-        save_message_to_sheet(data.get("email"), data.get("role"), data.get("text"), data.get("image"))
+        requests.post(GOOGLE_SCRIPT_URL, json={
+            "action": "save_message",
+            "email": data.get("email"),
+            "role": data.get("role"),
+            "text": data.get("text"),
+            "image": data.get("image")
+        }, timeout=25)
         return {"success": True}
     except Exception as e:
         print(f"❌ Ошибка сохранения истории: {e}")
