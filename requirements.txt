@@ -3,3 +3,4 @@ uvicorn
 websockets
 google-genai
 python-dotenv
+requests
