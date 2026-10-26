@@ -7,6 +7,7 @@ import uuid
 import asyncio
 import hashlib
 import binascii
+import re as _re
 
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -698,6 +699,7 @@ def normalize_template(row: dict):
         "image": str(row.get("image") or "").strip(), "price": price,
         "fields": parse_fields(row.get("fields")), "trend": _truthy(row.get("trend")),
         "cats": cats, "runs": _to_int(row.get("runs"), 0),
+        "formats": [a for a in (x.strip() for x in str(row.get("formats") or "").replace(",", ";").split(";")) if a in ASPECTS],
         "_prompt": str(row.get("prompt")).strip(), "_model": model_key,
     }
 
@@ -739,8 +741,33 @@ async def load_templates(force: bool = False) -> list:
         return items
 
 
+ZODIAC = [((1, 20), "Козерог"), ((2, 19), "Водолей"), ((3, 21), "Рыбы"), ((4, 20), "Овен"), ((5, 21), "Телец"),
+          ((6, 21), "Близнецы"), ((7, 23), "Рак"), ((8, 23), "Лев"), ((9, 23), "Дева"), ((10, 23), "Весы"),
+          ((11, 22), "Скорпион"), ((12, 22), "Стрелец"), ((12, 32), "Козерог")]
+
+
+def zodiac_sign(date_str: str) -> str:
+    """'2000-05-14' или '14.05.2000' → 'Телец'. Пустая строка, если дату не понять."""
+    m = _re.match(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})", date_str or "") or _re.match(r"^\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})", date_str or "")
+    if not m:
+        return ""
+    if "-" in m.group(0):
+        month, day = int(m.group(2)), int(m.group(3))
+    else:
+        day, month = int(m.group(1)), int(m.group(2))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return ""
+    for (mm, dd), name in ZODIAC:
+        if (month, day) < (mm, dd):
+            return name
+    return "Козерог"
+
+
 def build_template_prompt(template: dict, answers: dict) -> str:
     prompt = template["_prompt"]
+    if "{знак}" in prompt:
+        date_val = next((answers.get(f["key"], "") for f in template["fields"] if f["type"] == "дата"), "")
+        prompt = prompt.replace("{знак}", zodiac_sign(date_val) or "знак зодиака по дате рождения")
     used = set()
     for f in template["fields"]:
         if f["type"] == "фото":
@@ -829,6 +856,8 @@ async def run_template(request: Request):
             return {"ok": False, "credits": balance, "need": price,
                     "error": f"Недостаточно кредитов: нужно {price}, на балансе {balance}"}
 
+        if template.get("formats") and aspect not in template["formats"]:
+            aspect = template["formats"][0]
         try:
             prompt_text = with_aspect_hint(build_template_prompt(template, answers), aspect)
             contents = [{"role": "user", "parts": photo_parts + [{"text": prompt_text}]}]
