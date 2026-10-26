@@ -820,6 +820,90 @@ async def run_template(request: Request):
         _running.discard(email)
 
 
+
+# ==================== Несколько чатов (хранятся в таблице «Шаблоны НейроЯги») ====================
+import re as _re
+
+CHAT_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{6,40}$")
+MAX_CHAT_TEXT = 45000  # в ячейку Google-таблицы помещается до 50 000 символов
+
+
+def _tscript_sync(payload: dict):
+    try:
+        body = dict(payload, key=TEMPLATES_KEY)
+        r = requests.post(TEMPLATES_SCRIPT_URL, json=body, timeout=SCRIPT_TIMEOUT)
+        data = r.json()
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        print(f"❌ Скрипт чатов ({payload.get('action')}): {e}")
+        return None
+
+
+async def tscript(payload: dict):
+    if not TEMPLATES_SCRIPT_URL:
+        return None
+    return await asyncio.to_thread(_tscript_sync, payload)
+
+
+@app.get("/api/chats/{email}")
+async def chats_list(email: str, request: Request):
+    email = email.strip()
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    d = await tscript({"action": "chats_list", "email": email})
+    if not d or not d.get("ok"):
+        return {"ok": False, "error": "Не удалось загрузить чаты", "chats": []}
+    return {"ok": True, "chats": d.get("chats", [])}
+
+
+@app.get("/api/chats/{email}/{chat_id}")
+async def chat_get(email: str, chat_id: str, request: Request):
+    email = email.strip()
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not CHAT_ID_RE.match(chat_id):
+        return {"ok": False, "error": "Чат не найден"}
+    d = await tscript({"action": "chat_get", "email": email, "chat_id": chat_id})
+    if not d or not d.get("ok"):
+        return {"ok": False, "error": "Не удалось открыть чат"}
+    return {"ok": True, "messages": d.get("messages", [])}
+
+
+@app.post("/api/chats/message")
+async def chat_message(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = str(data.get("email") or "").strip()
+    chat_id = str(data.get("chat_id") or "")
+    role = "user" if data.get("role") == "user" else "bot"
+    text = str(data.get("text") or "")[:MAX_CHAT_TEXT]
+    title = str(data.get("title") or "").strip()[:80]
+    if not email or not CHAT_ID_RE.match(chat_id) or not text:
+        return {"ok": False, "error": "Неверные параметры"}
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    d = await tscript({"action": "chat_add", "email": email, "chat_id": chat_id, "title": title,
+                       "role": role, "text": text})
+    return {"ok": bool(d and d.get("ok"))}
+
+
+@app.post("/api/chats/delete")
+async def chat_delete(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = str(data.get("email") or "").strip()
+    chat_id = str(data.get("chat_id") or "")
+    if not email or not CHAT_ID_RE.match(chat_id):
+        return {"ok": False, "error": "Неверные параметры"}
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    d = await tscript({"action": "chat_delete", "email": email, "chat_id": chat_id})
+    return {"ok": bool(d and d.get("ok"))}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
