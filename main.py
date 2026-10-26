@@ -239,6 +239,37 @@ def parse_response(response):
     return text_output, image_data, mime_type
 
 
+# ==================== Размер картинки ====================
+ASPECTS = {
+    "1:1": "квадрат", "4:5": "вертикальный пост", "3:4": "вертикальный", "2:3": "вертикальный",
+    "9:16": "вертикальный для сторис", "4:3": "горизонтальный", "3:2": "горизонтальный", "16:9": "широкий горизонтальный",
+}
+
+
+def clean_aspect(value):
+    value = str(value or "").strip()
+    return value if value in ASPECTS else None
+
+
+def with_aspect_hint(text: str, aspect) -> str:
+    if not aspect:
+        return text
+    return f"{text}\n\nФормат изображения: соотношение сторон {aspect} ({ASPECTS[aspect]}). Композицию строй под этот формат."
+
+
+async def generate(model: str, contents, aspect=None, system=None):
+    """Генерация с выбранным размером. Если модель не понимает настройку размера,
+    повторяем без неё — размер тогда задаёт подсказка в тексте запроса."""
+    base = {"system_instruction": system} if system else {}
+    if aspect:
+        try:
+            cfg = dict(base, response_modalities=["TEXT", "IMAGE"], image_config={"aspect_ratio": aspect})
+            return await asyncio.to_thread(client.models.generate_content, model=model, contents=contents, config=cfg)
+        except Exception as e:
+            print(f"⚠️ Размер {aspect} не принят моделью {model}, пробую без него: {e}")
+    return await asyncio.to_thread(client.models.generate_content, model=model, contents=contents, config=base or None)
+
+
 @app.websocket("/ws/{client_email}")
 async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await websocket.accept()
@@ -263,7 +294,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
         while True:
             raw_message = await websocket.receive_text()
 
-            prompt, model_key, file_obj, history_list, biz_tool_id = raw_message, 'flash', None, [], None
+            prompt, model_key, file_obj, history_list, biz_tool_id, aspect = raw_message, 'flash', None, [], None, None
             try:
                 data = json.loads(raw_message)
                 if isinstance(data, dict):
@@ -272,6 +303,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                     file_obj = data.get('file')
                     history_list = data.get('history', [])
                     biz_tool_id = data.get('biz_tool_id')
+                    aspect = clean_aspect(data.get('aspect'))
             except json.JSONDecodeError:
                 pass
 
@@ -325,15 +357,12 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 current_parts = []
                 if file_part:
                     current_parts.append(file_part)
-                current_parts.append({"text": prompt or "Что изображено на этом файле?"})
+                is_image = model_key in IMAGE_MODELS
+                use_aspect = aspect if is_image else None
+                current_parts.append({"text": with_aspect_hint(prompt or "Что изображено на этом файле?", use_aspect)})
                 contents.append({"role": "user", "parts": current_parts})
 
-                response = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model=resolved_model,
-                    contents=contents,
-                    config={"system_instruction": SYSTEM_INSTRUCTION},
-                )
+                response = await generate(resolved_model, contents, use_aspect, SYSTEM_INSTRUCTION)
                 text_output, image_data, mime_type = parse_response(response)
 
                 if image_data:
@@ -766,6 +795,7 @@ async def run_template(request: Request):
     if not template:
         return {"ok": False, "error": "Шаблон не найден, обновите страницу"}
 
+    aspect = clean_aspect(data.get("aspect"))
     answers_raw = data.get("answers") if isinstance(data.get("answers"), dict) else {}
     answers = {str(k): str(v).strip()[:600] for k, v in answers_raw.items()}
     photos_raw = data.get("photos") if isinstance(data.get("photos"), list) else []
@@ -800,9 +830,9 @@ async def run_template(request: Request):
                     "error": f"Недостаточно кредитов: нужно {price}, на балансе {balance}"}
 
         try:
-            contents = [{"role": "user", "parts": photo_parts + [{"text": build_template_prompt(template, answers)}]}]
-            response = await asyncio.to_thread(
-                client.models.generate_content, model=MODEL_MAPPING[template["_model"]], contents=contents)
+            prompt_text = with_aspect_hint(build_template_prompt(template, answers), aspect)
+            contents = [{"role": "user", "parts": photo_parts + [{"text": prompt_text}]}]
+            response = await generate(MODEL_MAPPING[template["_model"]], contents, aspect)
             text_output, image_data, mime_type = parse_response(response)
         except Exception as e:
             print(f"Ошибка шаблона {template['id']}: {e}")
