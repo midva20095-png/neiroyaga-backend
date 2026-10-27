@@ -977,15 +977,15 @@ import math as _math
 BRATUKHA_API_URL = os.getenv("BRATUKHA_API_URL", "https://bratuha.ru/api/v1").rstrip("/")
 BRATUKHA_API_KEY = (os.getenv("BRATUKHA_API_KEY") or os.getenv("BRATUKHA_TOKEN") or "").strip()
 
-# Цена в кредитах НейроЯги. per_sec — цена за секунду видео.
+# Цена в кредитах НейроЯги (1 кр. = 1 ₽) = цена Братухи × 2. per_sec — цена за секунду видео.
 VIDEO_MODELS = {
     # photo: "required" — только с фото, "forbidden" — только по тексту, None — как угодно
-    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Только по описанию текстом, без фото", "credits": 5,
+    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Только по описанию текстом, без фото", "credits": 18,
                                "per_sec": True, "photo": "forbidden"},
-    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Короткие ролики по описанию", "credits": 10, "photo": None},
-    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Оживляет фото — прикрепите фото 📎", "credits": 2,
+    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Короткие ролики по описанию", "credits": 60, "photo": None},
+    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Оживляет фото — прикрепите фото 📎", "credits": 28,
                                "per_sec": True, "photo": "required"},
-    "sora-2":                 {"name": "Sora 2", "desc": "Оживляет фото со звуком — прикрепите фото 📎", "credits": 25,
+    "sora-2":                 {"name": "Sora 2", "desc": "Оживляет фото со звуком — прикрепите фото 📎", "credits": 120,
                                "photo": "required"},
 }
 VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
@@ -1008,11 +1008,42 @@ def _bh_upload(data: bytes, mime: str) -> str:
     return url
 
 
+VIDEO_ORIENT = {"16:9": "Horizontal 16:9 framing.", "9:16": "Vertical 9:16 framing.", "1:1": "Square 1:1 framing."}
+
+
+VIDEO_TEXT_WORDS = _re.compile(r"надпис|текст|написа|подпис|титр|слоган|логотип|поздравлени[ея] на", _re.I)
+VIDEO_QUOTES = _re.compile(r"[«\"“„']([^«»\"“”„']{1,120})[»\"”']")
+
+
+def _video_text_rule(prompt: str) -> str:
+    """Текст в кадре — только если пользователь сам его попросил."""
+    quoted = [q.strip() for q in VIDEO_QUOTES.findall(prompt or "") if q.strip()]
+    if quoted:
+        shown = "; ".join(f"«{q}»" for q in quoted[:3])
+        return (f"Show on-screen text exactly as quoted, spelled letter by letter in Russian: {shown}. "
+                "Make it large, clean and readable. No other text, captions, subtitles or watermarks.")
+    if VIDEO_TEXT_WORDS.search(prompt or ""):
+        return ("The user asks for on-screen text: include it exactly as described in the request, in Russian, "
+                "large and readable. No other extra text, subtitles or watermarks.")
+    return "Do not add any text, letters, captions, subtitles, titles, logos or watermarks to the video."
+
+
+def _video_prompt(prompt: str, has_image: bool, aspect: str) -> str:
+    """Оборачиваем описание пользователя в чёткую инструкцию, чтобы модель не вставляла его текстом в кадр."""
+    if has_image:
+        text = ("Animate the attached image into a smooth, natural, cinematic video. Keep exactly the same people, faces, "
+                "objects, composition, colours and art style as in the image. "
+                f"What should happen in the video (user request, in Russian): {prompt}")
+    else:
+        text = f"Create a smooth, cinematic video. Scene description (user request, in Russian): {prompt}"
+    return f"{text}\n{VIDEO_ORIENT.get(aspect, '')} {_video_text_rule(prompt)}".strip()
+
+
 def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
-    inp = {"prompt": prompt, "text": prompt}
+    full = _video_prompt(prompt, bool(image_url), aspect)
+    inp = {"prompt": full, "text": full}
     if aspect:
         inp.update(aspect_ratio=aspect, ratio=aspect, ar=aspect, size=aspect)
-        inp["prompt"] = inp["text"] = f"{prompt}, aspect ratio {aspect}"
     if duration:
         inp.update(duration=duration, seconds=duration)
     if image_url:
@@ -1175,7 +1206,7 @@ async def video_start(request: Request):
     if not prompt and not image:
         return {"ok": False, "error": "Опишите, что должно происходить в видео"}
     if not prompt:
-        prompt = "Оживи это изображение: естественное плавное движение, кинематографичная камера"
+        prompt = "мягкое естественное движение, лёгкое движение камеры"
 
     now = time.time()
     for jid in [j for j, v in _video_jobs.items() if now - v["created"] > 3 * 3600]:
