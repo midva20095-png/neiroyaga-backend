@@ -963,6 +963,209 @@ async def chat_delete(request: Request):
     d = await tscript({"action": "chat_delete", "email": email, "chat_id": chat_id})
     return {"ok": bool(d and d.get("ok"))}
 
+
+# ==================== Видео (через Братуху) ====================
+# Генерация идёт в фоне: сайт запускает задачу и раз в несколько секунд спрашивает статус.
+
+import math as _math
+
+BRATUKHA_API_URL = os.getenv("BRATUKHA_API_URL", "https://bratuha.ru/api/v1").rstrip("/")
+BRATUKHA_API_KEY = (os.getenv("BRATUKHA_API_KEY") or os.getenv("BRATUKHA_TOKEN") or "").strip()
+
+# Цена в кредитах НейроЯги. per_sec — цена за секунду видео.
+VIDEO_MODELS = {
+    "seedance-1-5-pro":       {"name": "Seedance 1.5 Pro", "desc": "Быстро и недорого, хорошее качество", "credits": 8},
+    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Простые короткие ролики", "credits": 10},
+    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Новое поколение, плавное движение", "credits": 5, "per_sec": True},
+    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Самое дешёвое за секунду", "credits": 2, "per_sec": True},
+    "sora-2":                 {"name": "Sora 2", "desc": "Реалистичные сцены со звуком", "credits": 25},
+    "veo":                    {"name": "Veo 3.1", "desc": "Максимальное кино-качество", "credits": 180},
+}
+VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
+VIDEO_DURATIONS = (5, 10)
+VIDEO_TIMEOUT_SEC = 15 * 60
+
+_video_jobs = {}  # job_id -> данные задачи (живут в памяти до перезапуска сервера)
+
+
+def _bh_headers():
+    return {"Authorization": f"Bearer {BRATUKHA_API_KEY}", "Content-Type": "application/json"}
+
+
+def _bh_upload(data: bytes, mime: str) -> str:
+    r = requests.post(f"{BRATUKHA_API_URL}/uploads", headers=_bh_headers(), timeout=60, json={
+        "filename": "input_1.jpg", "content_type": mime or "image/jpeg", "data": base64.b64encode(data).decode()})
+    url = (r.json() or {}).get("url")
+    if not url:
+        raise RuntimeError(f"Братуха не вернула ссылку на фото: {r.status_code} {r.text[:200]}")
+    return url
+
+
+def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
+    inp = {"prompt": prompt, "text": prompt}
+    if aspect:
+        inp.update(aspect_ratio=aspect, ratio=aspect, ar=aspect, size=aspect)
+        inp["prompt"] = inp["text"] = f"{prompt}, aspect ratio {aspect}"
+    if duration:
+        inp.update(duration=duration, seconds=duration)
+    if image_url:
+        inp.update(image=image_url, image_url=image_url, images=[image_url], file_url=image_url, files=[image_url])
+    r = requests.post(f"{BRATUKHA_API_URL}/operations", headers=_bh_headers(), timeout=30, json={"tool": slug, "input": inp})
+    try:
+        d = r.json()
+    except Exception:
+        d = {}
+    if r.status_code >= 400:
+        err = d.get("error") if isinstance(d.get("error"), dict) else {}
+        raise RuntimeError(err.get("message") or d.get("message") or f"Ошибка API: статус {r.status_code}")
+    op_id = d.get("id") or d.get("operation_id")
+    if not op_id:
+        raise RuntimeError("Братуха не вернула номер операции")
+    return op_id
+
+
+def _bh_status(op_id: str) -> dict:
+    r = requests.get(f"{BRATUKHA_API_URL}/operations/{op_id}", headers=_bh_headers(), timeout=20)
+    if r.status_code in (429, 503):
+        return {"status": "busy"}
+    return r.json()
+
+
+def _bh_video_url(d: dict):
+    res = d.get("result") or d
+    if isinstance(res, str):
+        return res if res.startswith("http") else None
+    urls = res.get("urls") or res.get("videos") or res.get("files") or res.get("images") or []
+    first = urls[0] if isinstance(urls, list) and urls else None
+    if isinstance(first, dict):
+        first = first.get("url")
+    return first or res.get("video_url") or res.get("url")
+
+
+def _video_cost(slug: str, duration) -> int:
+    m = VIDEO_MODELS[slug]
+    return m["credits"] * (duration or 5) if m.get("per_sec") else m["credits"]
+
+
+async def _video_worker(job_id: str):
+    job = _video_jobs[job_id]
+    try:
+        image_url = None
+        if job.get("image"):
+            image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"))
+        op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job["aspect"], job.get("duration"))
+        print(f"🎬 Видео {job['model']} для {job['email']}: операция {op_id}")
+        deadline = time.time() + VIDEO_TIMEOUT_SEC
+        while time.time() < deadline:
+            await asyncio.sleep(5)
+            try:
+                d = await asyncio.to_thread(_bh_status, op_id)
+            except Exception:
+                continue
+            st = d.get("status")
+            if st == "completed":
+                url = _bh_video_url(d)
+                if not url:
+                    raise RuntimeError("видео готово, но ссылки на него нет")
+                job.update(status="done", url=url)
+                print(f"✅ Видео готово для {job['email']}")
+                return
+            if st == "failed":
+                err = d.get("error") if isinstance(d.get("error"), dict) else {}
+                raise RuntimeError(d.get("error_message") or err.get("message") or "нейросеть не смогла сделать видео")
+        raise RuntimeError("слишком долгое ожидание")
+    except Exception as e:
+        print(f"❌ Видео для {job['email']} не получилось: {e}")
+        balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0))
+        job.update(status="error", credits=balance,
+                   error=f"Видео не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
+    finally:
+        job.pop("image", None)
+
+
+@app.get("/api/video/models")
+async def video_models():
+    return {"ok": True, "enabled": bool(BRATUKHA_API_KEY), "aspects": list(VIDEO_ASPECTS), "durations": list(VIDEO_DURATIONS),
+            "models": [dict(id=k, **v) for k, v in VIDEO_MODELS.items()] if BRATUKHA_API_KEY else []}
+
+
+@app.post("/api/video/start")
+async def video_start(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = str(data.get("email") or "").strip()
+    if not email:
+        return JSONResponse({"ok": False, "error": "Войдите в аккаунт"}, status_code=401)
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not BRATUKHA_API_KEY:
+        return {"ok": False, "error": "Видео пока не подключено"}
+
+    slug = str(data.get("model") or "")
+    if slug not in VIDEO_MODELS:
+        return {"ok": False, "error": "Неизвестная видеомодель"}
+    prompt = str(data.get("prompt") or "").strip()[:2000]
+    aspect = data.get("aspect") if data.get("aspect") in VIDEO_ASPECTS else "16:9"
+    duration = None
+    if VIDEO_MODELS[slug].get("per_sec"):
+        duration = int(data.get("duration") or 5)
+        if duration not in VIDEO_DURATIONS:
+            duration = 5
+
+    image, mime = None, None
+    if data.get("image"):
+        try:
+            image, mime = decode_file({"data": data.get("image")})
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        if not str(mime).startswith("image/"):
+            return {"ok": False, "error": "Для видео можно прикрепить только фото"}
+        if len(image) > 10 * 1024 * 1024:
+            return {"ok": False, "error": "Фото больше 10 МБ"}
+    if not prompt and not image:
+        return {"ok": False, "error": "Опишите, что должно происходить в видео"}
+    if not prompt:
+        prompt = "Оживи это изображение: естественное плавное движение, кинематографичная камера"
+
+    now = time.time()
+    for jid in [j for j, v in _video_jobs.items() if now - v["created"] > 3 * 3600]:
+        _video_jobs.pop(jid, None)
+    if any(v["email"] == email and v["status"] == "running" for v in _video_jobs.values()):
+        return {"ok": False, "error": "Предыдущее видео ещё создаётся, дождитесь его"}
+
+    cost = _video_cost(slug, duration)
+    credit = await check_and_deduct_credits(email, cost)
+    if not credit.get("success"):
+        if credit.get("error"):
+            return {"ok": False, "error": "Сервер кредитов не отвечает. Кредиты не списаны"}
+        return {"ok": False, "need": cost, "credits": credit.get("credits", 0),
+                "error": f"Недостаточно кредитов: нужно {cost}, на балансе {credit.get('credits', 0)}"}
+
+    job_id = uuid.uuid4().hex
+    _video_jobs[job_id] = {"email": email, "model": slug, "prompt": prompt, "aspect": aspect, "duration": duration,
+                           "image": image, "mime": mime, "cost": cost, "balance": credit.get("credits", 0),
+                           "status": "running", "created": now}
+    asyncio.create_task(_video_worker(job_id))
+    return {"ok": True, "job_id": job_id, "credits": credit.get("credits", 0), "cost": cost}
+
+
+@app.get("/api/video/status/{job_id}")
+async def video_status(job_id: str, request: Request):
+    job = _video_jobs.get(job_id)
+    email = str(request.query_params.get("email") or "").strip()
+    if not job or job["email"] != email:
+        return {"ok": False, "status": "lost", "error": "Задача не найдена. Возможно, сервер перезапускался — если кредиты списались, напишите в поддержку"}
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    out = {"ok": True, "status": job["status"]}
+    if job["status"] == "done":
+        out["url"] = job["url"]
+    elif job["status"] == "error":
+        out.update(error=job["error"], credits=job.get("credits"))
+    return out
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
