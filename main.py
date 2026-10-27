@@ -988,12 +988,14 @@ VIDEO_MODELS = {
     "sora-2":                 {"name": "Sora 2", "desc": "Видео со звуком по тексту или из фото, до 20 сек", "credits": 30,
                                "per_sec": True, "photo": None, "durations": [4, 8, 12, 16, 20], "aspects": ["9:16", "16:9"]},
     # ---- картинки через Братуху (цена Братухи в обычном режиме × 3) ----
-    "gpt-image-2":    {"kind": "image", "tool": "gpt-image-2", "name": "GPT Image 2", "credits": 30,
-                       "desc": "Точный текст на картинке, правка фото по описанию", "quality": "medium", "resolution": "1k",
-                       "cheap_first": True, "photo": None, "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"]},
-    "gpt-image-2-hd": {"kind": "image", "tool": "gpt-image-2", "name": "GPT Image 2 HD", "credits": 180,
-                       "desc": "Максимальная детализация, 2K", "quality": "high", "resolution": "2k",
-                       "cheap_first": True, "photo": None, "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"]},
+    "gpt-image-2": {"kind": "image", "tool": "gpt-image-2", "name": "GPT Image 2", "credits": 30,
+                    "desc": "Точный текст на картинке, правка фото по описанию", "resolution": "1k", "cheap_first": True,
+                    "photo": None, "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"],
+                    "qualities": [
+                        {"id": "low", "name": "Быстро", "desc": "Черновик, простые картинки", "credits": 6},
+                        {"id": "medium", "name": "Стандарт", "desc": "Хорошее качество и точный текст", "credits": 30},
+                        {"id": "high", "name": "Максимум", "desc": "Самая высокая детализация", "credits": 90},
+                    ], "quality": "medium"},
 }
 VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
 VIDEO_DURATIONS = (5, 10)
@@ -1055,7 +1057,7 @@ def _video_prompt(prompt: str, has_image: bool, aspect: str) -> str:
     return " ".join(x for x in parts if x)
 
 
-def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str):
+def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, quality: str):
     m = VIDEO_MODELS[slug]
     text = (prompt or "").strip().rstrip(".") + "."
     quoted = [q.strip() for q in VIDEO_QUOTES.findall(prompt or "") if q.strip()]
@@ -1065,7 +1067,8 @@ def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str):
         text += " Без лишних надписей и водяных знаков."
     if image_url:
         text = "Используй приложенное изображение: " + text + " Сохрани лица и узнаваемые детали с исходного фото."
-    inp = {"prompt": text[:20000], "quality": m["quality"], "size": aspect or "auto", "resolution": m["resolution"], "mode": mode}
+    inp = {"prompt": text[:20000], "quality": quality or m.get("quality", "medium"), "size": aspect or "auto",
+           "resolution": m["resolution"], "mode": mode}
     if image_url:
         inp["image_urls"] = [image_url]
     return _bh_post_operation(m.get("tool", slug), inp)
@@ -1132,8 +1135,15 @@ def _video_aspects(slug: str):
     return VIDEO_MODELS[slug].get("aspects") or list(VIDEO_ASPECTS)
 
 
-def _video_cost(slug: str, duration) -> int:
+def _video_quality(slug: str, q):
+    qs = VIDEO_MODELS[slug].get("qualities") or []
+    return next((x for x in qs if x["id"] == q), None) or next((x for x in qs if x["id"] == VIDEO_MODELS[slug].get("quality")), None)
+
+
+def _video_cost(slug: str, duration, quality=None) -> int:
     m = VIDEO_MODELS[slug]
+    if m.get("qualities"):
+        return _video_quality(slug, quality)["credits"]
     return m["credits"] * (duration or _video_durations(slug)[0]) if m.get("per_sec") else m["credits"]
 
 
@@ -1165,12 +1175,14 @@ async def _video_worker(job_id: str):
             image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"))
         m = VIDEO_MODELS[job["model"]]
         is_image = m.get("kind") == "image"
-        modes = (["cheap", "normal"] if m.get("cheap_first") else ["normal"]) if is_image else [None]
+        cheap = m.get("cheap_first") and job.get("quality") != "low"  # у low цена одинаковая — сразу обычный режим
+        modes = (["cheap", "normal"] if cheap else ["normal"]) if is_image else [None]
         last_err = None
         for mode in modes:
             try:
                 if is_image:
-                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], image_url, job["aspect"], mode)
+                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], image_url, job["aspect"], mode,
+                                                    job.get("quality"))
                 else:
                     op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job["aspect"], job.get("duration"))
                 print(f"🎬 {job['model']}{' (' + mode + ')' if mode else ''} для {job['email']}: операция {op_id}")
@@ -1297,7 +1309,10 @@ async def video_start(request: Request):
            for v in _video_jobs.values()):
         return {"ok": False, "error": "Предыдущая задача ещё выполняется, дождитесь её"}
 
-    cost = _video_cost(slug, duration)
+    quality = None
+    if VIDEO_MODELS[slug].get("qualities"):
+        quality = _video_quality(slug, data.get("quality"))["id"]
+    cost = _video_cost(slug, duration, quality)
     credit = await check_and_deduct_credits(email, cost)
     if not credit.get("success"):
         if credit.get("error"):
@@ -1307,7 +1322,7 @@ async def video_start(request: Request):
 
     job_id = uuid.uuid4().hex
     _video_jobs[job_id] = {"email": email, "model": slug, "prompt": prompt, "aspect": aspect, "duration": duration,
-                           "image": image, "mime": mime, "cost": cost, "balance": credit.get("credits", 0),
+                           "image": image, "mime": mime, "cost": cost, "quality": quality, "balance": credit.get("credits", 0),
                            "status": "running", "created": now}
     asyncio.create_task(_video_worker(job_id))
     return {"ok": True, "job_id": job_id, "credits": credit.get("credits", 0), "cost": cost}
