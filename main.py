@@ -987,6 +987,13 @@ VIDEO_MODELS = {
                                "per_sec": True, "photo": "required"},
     "sora-2":                 {"name": "Sora 2", "desc": "Видео со звуком по тексту или из фото, до 20 сек", "credits": 30,
                                "per_sec": True, "photo": None, "durations": [4, 8, 12, 16, 20], "aspects": ["9:16", "16:9"]},
+    # ---- картинки через Братуху (цена Братухи в обычном режиме × 3) ----
+    "gpt-image-2":    {"kind": "image", "tool": "gpt-image-2", "name": "GPT Image 2", "credits": 30,
+                       "desc": "Точный текст на картинке, правка фото по описанию", "quality": "medium", "resolution": "1k",
+                       "cheap_first": True, "photo": None, "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"]},
+    "gpt-image-2-hd": {"kind": "image", "tool": "gpt-image-2", "name": "GPT Image 2 HD", "credits": 180,
+                       "desc": "Максимальная детализация, 2K", "quality": "high", "resolution": "2k",
+                       "cheap_first": True, "photo": None, "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"]},
 }
 VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
 VIDEO_DURATIONS = (5, 10)
@@ -1046,6 +1053,22 @@ def _video_prompt(prompt: str, has_image: bool, aspect: str) -> str:
         parts = [f"{p}.", "Плавное кинематографичное видео, детальная картинка."]
     parts += [VIDEO_ORIENT_RU.get(aspect, ""), _video_text_rule(p), _video_sound_rule(p)]
     return " ".join(x for x in parts if x)
+
+
+def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str):
+    m = VIDEO_MODELS[slug]
+    text = (prompt or "").strip().rstrip(".") + "."
+    quoted = [q.strip() for q in VIDEO_QUOTES.findall(prompt or "") if q.strip()]
+    if quoted:
+        text += " Текст на изображении — дословно, без ошибок: " + "; ".join(f"«{q}»" for q in quoted[:3]) + "."
+    elif not VIDEO_TEXT_WORDS.search(prompt or ""):
+        text += " Без лишних надписей и водяных знаков."
+    if image_url:
+        text = "Используй приложенное изображение: " + text + " Сохрани лица и узнаваемые детали с исходного фото."
+    inp = {"prompt": text[:20000], "quality": m["quality"], "size": aspect or "auto", "resolution": m["resolution"], "mode": mode}
+    if image_url:
+        inp["image_urls"] = [image_url]
+    return _bh_post_operation(m.get("tool", slug), inp)
 
 
 def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
@@ -1114,38 +1137,60 @@ def _video_cost(slug: str, duration) -> int:
     return m["credits"] * (duration or _video_durations(slug)[0]) if m.get("per_sec") else m["credits"]
 
 
+async def _bh_wait(op_id: str, timeout: int, every: int) -> str:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        await asyncio.sleep(every)
+        try:
+            d = await asyncio.to_thread(_bh_status, op_id)
+        except Exception:
+            continue
+        st = d.get("status")
+        if st == "completed":
+            url = _bh_video_url(d)
+            if not url:
+                raise RuntimeError("результат готов, но ссылки на него нет")
+            return url
+        if st == "failed":
+            err = d.get("error") if isinstance(d.get("error"), dict) else {}
+            raise RuntimeError(d.get("error_message") or err.get("message") or "нейросеть не смогла выполнить задачу")
+    raise RuntimeError("слишком долгое ожидание")
+
+
 async def _video_worker(job_id: str):
     job = _video_jobs[job_id]
     try:
         image_url = None
         if job.get("image"):
             image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"))
-        op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job["aspect"], job.get("duration"))
-        print(f"🎬 Видео {job['model']} для {job['email']}: операция {op_id}")
-        deadline = time.time() + VIDEO_TIMEOUT_SEC
-        while time.time() < deadline:
-            await asyncio.sleep(5)
+        m = VIDEO_MODELS[job["model"]]
+        is_image = m.get("kind") == "image"
+        modes = (["cheap", "normal"] if m.get("cheap_first") else ["normal"]) if is_image else [None]
+        last_err = None
+        for mode in modes:
             try:
-                d = await asyncio.to_thread(_bh_status, op_id)
-            except Exception:
-                continue
-            st = d.get("status")
-            if st == "completed":
-                url = _bh_video_url(d)
-                if not url:
-                    raise RuntimeError("видео готово, но ссылки на него нет")
+                if is_image:
+                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], image_url, job["aspect"], mode)
+                else:
+                    op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job["aspect"], job.get("duration"))
+                print(f"🎬 {job['model']}{' (' + mode + ')' if mode else ''} для {job['email']}: операция {op_id}")
+                url = await _bh_wait(op_id, 5 * 60 if is_image else VIDEO_TIMEOUT_SEC, 3 if is_image else 5)
                 job.update(status="done", url=url)
-                print(f"✅ Видео готово для {job['email']}")
+                print(f"✅ {job['model']} готово для {job['email']}")
                 return
-            if st == "failed":
-                err = d.get("error") if isinstance(d.get("error"), dict) else {}
-                raise RuntimeError(d.get("error_message") or err.get("message") or "нейросеть не смогла сделать видео")
-        raise RuntimeError("слишком долгое ожидание")
+            except Exception as e:
+                last_err = e
+                if mode == "cheap" and "модерац" not in str(e).lower():
+                    print(f"⚠️ {job['model']} в дешёвом режиме не вышло ({e}), пробую обычный")
+                    continue
+                raise
+        raise last_err or RuntimeError("не получилось")
     except Exception as e:
-        print(f"❌ Видео {job['model']} для {job['email']} не получилось: {e}")
+        print(f"❌ {job['model']} для {job['email']} не получилось: {e}")
         balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0))
+        what = "Картинка" if VIDEO_MODELS[job["model"]].get("kind") == "image" else "Видео"
         job.update(status="error", credits=balance,
-                   error=f"Видео не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
+                   error=f"{what} не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
     finally:
         job.pop("image", None)
 
@@ -1237,6 +1282,9 @@ async def video_start(request: Request):
         return {"ok": False, "error": f"Для {VIDEO_MODELS[slug]['name']} нужно прикрепить фото 📎"}
     if photo_rule == "forbidden" and image:
         return {"ok": False, "error": f"{VIDEO_MODELS[slug]['name']} делает видео только по описанию, без фото"}
+    kind = VIDEO_MODELS[slug].get("kind", "video")
+    if kind == "image" and len(prompt) < 2:
+        return {"ok": False, "error": "Опишите, какую картинку сделать или что изменить на фото"}
     if not prompt and not image:
         return {"ok": False, "error": "Опишите, что должно происходить в видео"}
     if not prompt:
@@ -1245,8 +1293,9 @@ async def video_start(request: Request):
     now = time.time()
     for jid in [j for j, v in _video_jobs.items() if now - v["created"] > 3 * 3600]:
         _video_jobs.pop(jid, None)
-    if any(v["email"] == email and v["status"] == "running" for v in _video_jobs.values()):
-        return {"ok": False, "error": "Предыдущее видео ещё создаётся, дождитесь его"}
+    if any(v["email"] == email and v["status"] == "running" and VIDEO_MODELS[v["model"]].get("kind", "video") == kind
+           for v in _video_jobs.values()):
+        return {"ok": False, "error": "Предыдущая задача ещё выполняется, дождитесь её"}
 
     cost = _video_cost(slug, duration)
     credit = await check_and_deduct_credits(email, cost)
