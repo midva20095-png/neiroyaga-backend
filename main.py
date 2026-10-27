@@ -943,8 +943,13 @@ async def chat_message(request: Request):
         return {"ok": False, "error": "Неверные параметры"}
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-    d = await tscript({"action": "chat_add", "email": email, "chat_id": chat_id, "title": title,
-                       "role": role, "text": text})
+    payload = {"action": "chat_add", "email": email, "chat_id": chat_id, "title": title, "role": role, "text": text}
+    d = None
+    for attempt in range(3):  # таблица могла быть занята другой записью — пробуем ещё раз
+        d = await tscript(payload)
+        if d and d.get("ok"):
+            break
+        await asyncio.sleep(1.5 * (attempt + 1))
     return {"ok": bool(d and d.get("ok"))}
 
 
@@ -974,12 +979,14 @@ BRATUKHA_API_KEY = (os.getenv("BRATUKHA_API_KEY") or os.getenv("BRATUKHA_TOKEN")
 
 # Цена в кредитах НейроЯги. per_sec — цена за секунду видео.
 VIDEO_MODELS = {
-    "seedance-1-5-pro":       {"name": "Seedance 1.5 Pro", "desc": "Быстро и недорого, хорошее качество", "credits": 8},
-    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Простые короткие ролики", "credits": 10},
-    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Новое поколение, плавное движение", "credits": 5, "per_sec": True},
-    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Самое дешёвое за секунду", "credits": 2, "per_sec": True},
-    "sora-2":                 {"name": "Sora 2", "desc": "Реалистичные сцены со звуком", "credits": 25},
-    "veo":                    {"name": "Veo 3.1", "desc": "Максимальное кино-качество", "credits": 180},
+    # photo: "required" — только с фото, "forbidden" — только по тексту, None — как угодно
+    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Только по описанию текстом, без фото", "credits": 5,
+                               "per_sec": True, "photo": "forbidden"},
+    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Короткие ролики по описанию", "credits": 10, "photo": None},
+    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Оживляет фото — прикрепите фото 📎", "credits": 2,
+                               "per_sec": True, "photo": "required"},
+    "sora-2":                 {"name": "Sora 2", "desc": "Оживляет фото со звуком — прикрепите фото 📎", "credits": 25,
+                               "photo": "required"},
 }
 VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
 VIDEO_DURATIONS = (5, 10)
@@ -1075,12 +1082,48 @@ async def _video_worker(job_id: str):
                 raise RuntimeError(d.get("error_message") or err.get("message") or "нейросеть не смогла сделать видео")
         raise RuntimeError("слишком долгое ожидание")
     except Exception as e:
-        print(f"❌ Видео для {job['email']} не получилось: {e}")
+        print(f"❌ Видео {job['model']} для {job['email']} не получилось: {e}")
         balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0))
         job.update(status="error", credits=balance,
                    error=f"Видео не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
     finally:
         job.pop("image", None)
+
+
+def _bh_catalog():
+    """Пробуем найти у Братухи список инструментов по распространённым адресам."""
+    for path in ("/tools", "/models", "/catalog", "/tools/list"):
+        try:
+            r = requests.get(f"{BRATUKHA_API_URL}{path}", headers=_bh_headers(), timeout=20)
+            if r.status_code == 200:
+                d = r.json()
+                items = d.get("data") or d.get("tools") or d.get("models") or d.get("items") if isinstance(d, dict) else d
+                if isinstance(items, list) and items:
+                    out = []
+                    for it in items:
+                        if isinstance(it, dict):
+                            out.append({k: it.get(k) for k in ("slug", "id", "name", "title", "category", "type", "price", "unit") if it.get(k) is not None})
+                        else:
+                            out.append(it)
+                    return {"ok": True, "source": path, "count": len(out), "tools": out}
+        except Exception as e:
+            print(f"Каталог Братухи {path}: {e}")
+    return {"ok": False, "error": "Братуха не отдала список инструментов ни по одному из адресов"}
+
+
+@app.get("/api/video/catalog")
+async def video_catalog(key: str = ""):
+    # служебная страница: открыть с ?key=<TEMPLATES_KEY>
+    if not TEMPLATES_KEY or key != TEMPLATES_KEY:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    if not BRATUKHA_API_KEY:
+        return {"ok": False, "error": "BRATUKHA_API_KEY не задан"}
+    data = await asyncio.to_thread(_bh_catalog)
+    if data.get("ok"):
+        vids = [t for t in data["tools"] if isinstance(t, dict) and "video" in str(t.get("category") or t.get("type") or "").lower()]
+        if vids:
+            data["video_tools"] = vids
+    return data
 
 
 @app.get("/api/video/models")
@@ -1124,6 +1167,11 @@ async def video_start(request: Request):
             return {"ok": False, "error": "Для видео можно прикрепить только фото"}
         if len(image) > 10 * 1024 * 1024:
             return {"ok": False, "error": "Фото больше 10 МБ"}
+    photo_rule = VIDEO_MODELS[slug].get("photo")
+    if photo_rule == "required" and not image:
+        return {"ok": False, "error": f"Для {VIDEO_MODELS[slug]['name']} нужно прикрепить фото 📎"}
+    if photo_rule == "forbidden" and image:
+        return {"ok": False, "error": f"{VIDEO_MODELS[slug]['name']} делает видео только по описанию, без фото"}
     if not prompt and not image:
         return {"ok": False, "error": "Опишите, что должно происходить в видео"}
     if not prompt:
