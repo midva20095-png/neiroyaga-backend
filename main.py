@@ -54,16 +54,17 @@ MODEL_MAPPING = {
     'nanobanana_pro': 'gemini-3-pro-image'
 }
 
+# Цены в кредитах (1 кредит = 1 ₽)
 CREDIT_COSTS = {
-    'flash': 1,
-    'flash_25': 1,
-    'pro': 3,
-    'nanobanana': 5,
-    'nanobanana_pro': 10
+    'flash': 4,
+    'flash_25': 4,
+    'pro': 15,
+    'nanobanana': 20,
+    'nanobanana_pro': 50
 }
 
 IMAGE_MODELS = {'nanobanana', 'nanobanana_pro'}
-BIZ_TOOL_COST = 6
+BIZ_TOOL_COST = 15
 
 SYSTEM_INSTRUCTION = (
     "Ты — НейроЯга, премиальный искусственный интеллект и бизнес-консультант. "
