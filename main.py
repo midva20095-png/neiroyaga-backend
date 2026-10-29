@@ -785,6 +785,27 @@ def build_template_prompt(template: dict, answers: dict) -> str:
     return prompt
 
 
+# «Эконом» для шаблонов: Nano Banana Братухи в обычном режиме (2 ₽) × 5
+ECO_TEMPLATE_PRICE = 10
+
+
+async def _eco_template_image(photos, prompt_text: str, aspect):
+    """Генерация шаблона через Nano Banana Братухи. Возвращает (base64, mime)."""
+    urls = []
+    for i, (b, mime) in enumerate(photos[:10]):
+        ext = "png" if "png" in str(mime) else "webp" if "webp" in str(mime) else "jpg"
+        urls.append(await asyncio.to_thread(_bh_upload, b, mime, f"photo_{i + 1}.{ext}"))
+    inp = {"mode": "normal", "prompt": prompt_text[:20000], "image_size": aspect or "auto"}
+    if urls:
+        inp["image_urls"] = urls
+    op_id = await asyncio.to_thread(_bh_post_operation, "nano-banana", inp)
+    url = await _bh_wait(op_id, 4 * 60, 3)
+    r = await asyncio.to_thread(requests.get, url, timeout=60)
+    if r.status_code != 200 or not r.content:
+        raise RuntimeError(f"не удалось скачать результат: {r.status_code}")
+    return base64.b64encode(r.content).decode(), (r.headers.get("content-type") or "image/jpeg").split(";")[0]
+
+
 @app.get("/api/templates")
 async def get_templates():
     if not TEMPLATES_SCRIPT_URL:
@@ -792,7 +813,8 @@ async def get_templates():
     items = await load_templates()
     if not items:
         return {"ok": False, "error": "Не удалось загрузить шаблоны, попробуйте позже", "templates": []}
-    return {"ok": True, "templates": [public_template(t) for t in items]}
+    return {"ok": True, "templates": [public_template(t) for t in items],
+            "eco": {"on": bool(BRATUKHA_API_KEY), "price": ECO_TEMPLATE_PRICE, "name": "Nano Banana"}}
 
 
 @app.get("/api/balance/{email}")
@@ -836,11 +858,13 @@ async def run_template(request: Request):
     if need_photo and not photos_raw:
         return {"ok": False, "error": "Добавьте фото"}
 
-    photo_parts = []
+    eco = data.get("engine") == "eco" and bool(BRATUKHA_API_KEY)
+    photo_parts, photo_bytes = [], []
     for p in photos_raw[:MAX_TEMPLATE_PHOTOS]:
         try:
             b, mime = decode_file({"data": p})
             photo_parts.append({"inline_data": {"mime_type": mime, "data": b}})
+            photo_bytes.append((b, mime))
         except ValueError as e:
             return {"ok": False, "error": str(e)}
 
@@ -848,7 +872,7 @@ async def run_template(request: Request):
         return {"ok": False, "error": "Предыдущая картинка ещё создаётся, подождите"}
     _running.add(email)
     try:
-        price = template["price"]
+        price = ECO_TEMPLATE_PRICE if eco else template["price"]
         credit = await check_and_deduct_credits(email, price)
         balance = credit.get("credits", 0)
         if not credit.get("success"):
@@ -861,9 +885,14 @@ async def run_template(request: Request):
             aspect = template["formats"][0]
         try:
             prompt_text = with_aspect_hint(build_template_prompt(template, answers), aspect)
-            contents = [{"role": "user", "parts": photo_parts + [{"text": prompt_text}]}]
-            response = await generate(MODEL_MAPPING[template["_model"]], contents, aspect)
-            text_output, image_data, mime_type = parse_response(response)
+            if eco:
+                text_output = ""
+                image_data, mime_type = await _eco_template_image(photo_bytes, prompt_text, aspect)
+                print(f"💸 Шаблон {template['id']} в «Экономе» для {email}")
+            else:
+                contents = [{"role": "user", "parts": photo_parts + [{"text": prompt_text}]}]
+                response = await generate(MODEL_MAPPING[template["_model"]], contents, aspect)
+                text_output, image_data, mime_type = parse_response(response)
         except Exception as e:
             print(f"Ошибка шаблона {template['id']}: {e}")
             image_data, text_output, mime_type = None, "", "image/jpeg"
