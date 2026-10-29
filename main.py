@@ -981,14 +981,15 @@ BRATUKHA_API_KEY = (os.getenv("BRATUKHA_API_KEY") or os.getenv("BRATUKHA_TOKEN")
 # Цена в кредитах НейроЯги (1 кр. = 1 ₽) = цена Братухи × 2. per_sec — цена за секунду видео.
 VIDEO_MODELS = {
     # photo: "required" — только с фото, "forbidden" — только по тексту, None — как угодно
-    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Только по описанию текстом, без фото", "credits": 18,
-                               "per_sec": True, "photo": "forbidden"},
-    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Короткие ролики по описанию", "credits": 60, "photo": None},
-    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Оживляет фото — прикрепите фото 📎", "credits": 28,
-                               "per_sec": True, "photo": "required"},
-    "sora-2":                 {"name": "Sora 2", "desc": "Видео со звуком по тексту или из фото, до 20 сек", "credits": 30,
-                               "per_sec": True, "photo": None, "durations": [4, 8, 12, 16, 20], "aspects": ["9:16", "16:9"]},
-    # ---- картинки через Братуху (цена Братухи в обычном режиме × 3) ----
+    # Порядок = порядок в меню (от дешёвых к дорогим). 1 кр. = 1 ₽.
+    # ---------------- картинки Братухи (цена Братухи × 3) ----------------
+    "nano-banana": {"kind": "image", "tool": "nano-banana", "name": "Nano Banana", "credits": 6,
+                    "desc": "Быстрые картинки и правка фото", "photo": None,
+                    "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"],
+                    "qualities": [
+                        {"id": "cheap", "name": "Эконом", "desc": "Дешевле, но генерирует медленнее", "credits": 3},
+                        {"id": "normal", "name": "Быстро", "desc": "Обычный режим: быстро и стабильно", "credits": 6},
+                    ], "quality": "normal"},
     "gpt-image-2": {"kind": "image", "tool": "gpt-image-2", "name": "GPT Image 2", "credits": 30,
                     "desc": "Точный текст на картинке, правка фото по описанию", "resolution": "1k", "cheap_first": True,
                     "photo": None, "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"],
@@ -997,6 +998,22 @@ VIDEO_MODELS = {
                         {"id": "medium", "name": "Стандарт", "desc": "Хорошее качество и точный текст", "credits": 30},
                         {"id": "high", "name": "Максимум", "desc": "Самая высокая детализация", "credits": 90},
                     ], "quality": "medium"},
+    "grok-image":  {"kind": "image", "tool": "grok-image", "name": "Grok Image", "credits": 12,
+                    "desc": "Яркие сочные картинки и правка фото", "photo": None, "aspects": ["1:1", "9:16", "16:9"]},
+    # ---------------- видео (Seedance/Pruna/Sora — цена × 2, Wan — × 3) ----------------
+    "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Короткие ролики по описанию", "credits": 60, "photo": None},
+    "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Только по описанию текстом, без фото", "credits": 18,
+                               "per_sec": True, "photo": "forbidden"},
+    "wan-2-2-avatar":         {"name": "Wan 2.2 Avatar", "desc": "Говорящее фото: фото 📎 + голосовая запись 🎙", "credits": 18,
+                               "photo": "required", "audio": True, "no_aspect": True, "max_audio_sec": 60,
+                               "qualities": [
+                                   {"id": "480p", "name": "480p", "desc": "Быстрее и дешевле", "credits": 18, "per_sec": True},
+                                   {"id": "720p", "name": "720p", "desc": "Чётче, но в 2–3 раза дольше", "credits": 30, "per_sec": True},
+                               ], "quality": "480p"},
+    "sora-2":                 {"name": "Sora 2", "desc": "Видео со звуком по тексту или из фото, до 20 сек", "credits": 30,
+                               "per_sec": True, "photo": None, "durations": [4, 8, 12, 16, 20], "aspects": ["9:16", "16:9"]},
+    "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Оживляет фото — прикрепите фото 📎", "credits": 28,
+                               "per_sec": True, "photo": "required"},
 }
 VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
 VIDEO_DURATIONS = (5, 10)
@@ -1009,13 +1026,33 @@ def _bh_headers():
     return {"Authorization": f"Bearer {BRATUKHA_API_KEY}", "Content-Type": "application/json"}
 
 
-def _bh_upload(data: bytes, mime: str) -> str:
-    r = requests.post(f"{BRATUKHA_API_URL}/uploads", headers=_bh_headers(), timeout=60, json={
-        "filename": "input_1.jpg", "content_type": mime or "image/jpeg", "data": base64.b64encode(data).decode()})
-    url = (r.json() or {}).get("url")
+def _bh_upload(data: bytes, mime: str, filename: str = "input_1.jpg") -> str:
+    r = requests.post(f"{BRATUKHA_API_URL}/uploads", headers=_bh_headers(), timeout=90, json={
+        "filename": filename, "content_type": mime or "image/jpeg", "data": base64.b64encode(data).decode()})
+    try:
+        url = (r.json() or {}).get("url")
+    except Exception:
+        url = None
     if not url:
-        raise RuntimeError(f"Братуха не вернула ссылку на фото: {r.status_code} {r.text[:200]}")
+        raise RuntimeError(f"Братуха не приняла файл: {r.status_code} {r.text[:200]}")
     return url
+
+
+AUDIO_EXT = {"audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/m4a": "m4a",
+             "audio/aac": "aac", "audio/x-aac": "aac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav",
+             "audio/flac": "flac", "audio/x-flac": "flac", "audio/ogg": "ogg", "audio/opus": "opus"}
+
+
+def audio_seconds(data: bytes):
+    """Длительность записи в секундах (по самому файлу, а не по словам браузера)."""
+    try:
+        import io
+        import mutagen
+        f = mutagen.File(io.BytesIO(data))
+        return float(f.info.length) if f and f.info and f.info.length else None
+    except Exception as e:
+        print(f"Не удалось прочитать аудио: {e}")
+        return None
 
 
 VIDEO_ORIENT = {"16:9": "Horizontal 16:9 framing.", "9:16": "Vertical 9:16 framing.", "1:1": "Square 1:1 framing."}
@@ -1068,11 +1105,26 @@ def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, 
         text += " Без лишних надписей и водяных знаков."
     if image_url:
         text = "Используй приложенное изображение: " + text + " Сохрани лица и узнаваемые детали с исходного фото."
-    inp = {"prompt": text[:20000], "quality": quality or m.get("quality", "medium"), "size": aspect or "auto",
-           "resolution": m["resolution"], "mode": mode}
+    tool = m.get("tool", slug)
+    if tool == "nano-banana":
+        inp = {"mode": quality or "normal", "prompt": text[:20000], "image_size": aspect or "auto"}
+    elif tool == "grok-image":
+        inp = {"prompt": text[:5000]}
+        if not image_url and aspect:
+            inp["aspect_ratio"] = aspect
+    else:  # gpt-image-2
+        inp = {"prompt": text[:20000], "quality": quality or m.get("quality", "medium"), "size": aspect or "auto",
+               "resolution": m["resolution"], "mode": mode}
     if image_url:
         inp["image_urls"] = [image_url]
-    return _bh_post_operation(m.get("tool", slug), inp)
+    return _bh_post_operation(tool, inp)
+
+
+def _bh_create_avatar(image_url: str, audio_url: str, prompt: str, resolution: str):
+    inp = {"image": image_url, "audio": audio_url, "resolution": resolution or "480p"}
+    if prompt:
+        inp["prompt"] = prompt[:2000]
+    return _bh_post_operation("wan-2-2-avatar", inp)
 
 
 def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
@@ -1144,7 +1196,8 @@ def _video_quality(slug: str, q):
 def _video_cost(slug: str, duration, quality=None) -> int:
     m = VIDEO_MODELS[slug]
     if m.get("qualities"):
-        return _video_quality(slug, quality)["credits"]
+        q = _video_quality(slug, quality)
+        return q["credits"] * int(duration or 1) if q.get("per_sec") else q["credits"]
     return m["credits"] * (duration or _video_durations(slug)[0]) if m.get("per_sec") else m["credits"]
 
 
@@ -1175,9 +1228,18 @@ async def _video_worker(job_id: str):
         if job.get("image"):
             image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"))
         m = VIDEO_MODELS[job["model"]]
+        if m.get("audio"):
+            ext = AUDIO_EXT.get(job.get("audio_mime"), "mp3")
+            audio_url = await asyncio.to_thread(_bh_upload, job["audio"], job.get("audio_mime"), f"voice.{ext}")
+            op_id = await asyncio.to_thread(_bh_create_avatar, image_url, audio_url, job.get("prompt"), job.get("quality"))
+            print(f"🎙 {job['model']} ({job.get('quality')}, {job.get('duration')} сек) для {job['email']}: операция {op_id}")
+            url = await _bh_wait(op_id, 25 * 60, 10)
+            job.update(status="done", url=url)
+            print(f"✅ {job['model']} готово для {job['email']}")
+            return
         is_image = m.get("kind") == "image"
         cheap = m.get("cheap_first") and job.get("quality") != "low"  # у low цена одинаковая — сразу обычный режим
-        modes = (["cheap", "normal"] if cheap else ["normal"]) if is_image else [None]
+        modes = (["cheap", "normal"] if cheap else (["normal"] if m.get("cheap_first") else [None])) if is_image else [None]
         last_err = None
         for mode in modes:
             try:
@@ -1206,6 +1268,7 @@ async def _video_worker(job_id: str):
                    error=f"{what} не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
     finally:
         job.pop("image", None)
+        job.pop("audio", None)
 
 
 def _bh_catalog():
@@ -1269,9 +1332,28 @@ async def video_start(request: Request):
         return {"ok": False, "error": "Неизвестная видеомодель"}
     prompt = str(data.get("prompt") or "").strip()[:2000]
     aspects = _video_aspects(slug)
-    aspect = data.get("aspect") if data.get("aspect") in aspects else aspects[0]
+    aspect = None if VIDEO_MODELS[slug].get("no_aspect") else (data.get("aspect") if data.get("aspect") in aspects else aspects[0])
     duration = None
-    if VIDEO_MODELS[slug].get("per_sec"):
+    audio, audio_mime = None, None
+    if VIDEO_MODELS[slug].get("audio"):
+        if not data.get("audio"):
+            return {"ok": False, "error": "Прикрепите голосовую запись 🎙 — человек на фото скажет её"}
+        try:
+            audio, audio_mime = decode_file({"data": data.get("audio")})
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        if audio_mime not in AUDIO_EXT:
+            return {"ok": False, "error": "Этот формат записи не подходит. Подойдут mp3, m4a, wav, aac, ogg, opus, flac"}
+        if len(audio) > 10 * 1024 * 1024:
+            return {"ok": False, "error": "Запись больше 10 МБ"}
+        secs = audio_seconds(audio)
+        if not secs:
+            return {"ok": False, "error": "Не получилось прочитать запись. Попробуйте mp3 или m4a"}
+        limit = VIDEO_MODELS[slug].get("max_audio_sec", 60)
+        if secs > limit:
+            return {"ok": False, "error": f"Запись длиннее {limit} секунд. Обрежьте её"}
+        duration = max(1, _math.ceil(secs))
+    elif VIDEO_MODELS[slug].get("per_sec"):
         durs = _video_durations(slug)
         try:
             duration = int(data.get("duration") or durs[0])
@@ -1296,11 +1378,11 @@ async def video_start(request: Request):
     if photo_rule == "forbidden" and image:
         return {"ok": False, "error": f"{VIDEO_MODELS[slug]['name']} делает видео только по описанию, без фото"}
     kind = VIDEO_MODELS[slug].get("kind", "video")
-    if kind == "image" and len(prompt) < 2:
+    if kind == "image" and len(prompt) < 3:
         return {"ok": False, "error": "Опишите, какую картинку сделать или что изменить на фото"}
     if not prompt and not image:
         return {"ok": False, "error": "Опишите, что должно происходить в видео"}
-    if not prompt:
+    if not prompt and not VIDEO_MODELS[slug].get("audio"):
         prompt = "мягкое естественное движение, лёгкое движение камеры"
 
     now = time.time()
@@ -1323,10 +1405,10 @@ async def video_start(request: Request):
 
     job_id = uuid.uuid4().hex
     _video_jobs[job_id] = {"email": email, "model": slug, "prompt": prompt, "aspect": aspect, "duration": duration,
-                           "image": image, "mime": mime, "cost": cost, "quality": quality, "balance": credit.get("credits", 0),
+                           "image": image, "mime": mime, "audio": audio, "audio_mime": audio_mime, "cost": cost, "quality": quality, "balance": credit.get("credits", 0),
                            "status": "running", "created": now}
     asyncio.create_task(_video_worker(job_id))
-    return {"ok": True, "job_id": job_id, "credits": credit.get("credits", 0), "cost": cost}
+    return {"ok": True, "job_id": job_id, "credits": credit.get("credits", 0), "cost": cost, "seconds": duration}
 
 
 @app.get("/api/video/status/{job_id}")
