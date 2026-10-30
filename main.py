@@ -1029,7 +1029,35 @@ VIDEO_MODELS = {
                     ], "quality": "medium"},
     "grok-image":  {"kind": "image", "tool": "grok-image", "name": "Grok Image", "credits": 12,
                     "desc": "Яркие сочные картинки и правка фото", "photo": None, "aspects": ["1:1", "9:16", "16:9"]},
+    "seedream-4-5": {"kind": "image", "tool": "seedream-4-5", "name": "Seedream 4.5", "credits": 15,
+                     "desc": "Детальные картинки, до 4K для печати", "photo": None, "no_webp": True,
+                     "aspects": ["1:1", "3:4", "9:16", "4:3", "16:9"],
+                     "qualities": [
+                         {"id": "2K", "name": "2K", "desc": "Быстрее, для экрана и соцсетей", "credits": 15},
+                         {"id": "4K", "name": "4K", "desc": "Высокая детализация, для печати", "credits": 15},
+                     ], "quality": "2K"},
+    "wan-2-7-image": {"kind": "image", "tool": "wan-2-7-image", "name": "Wan 2.7 Image", "credits": 15,
+                      "desc": "Точно следует описанию, аккуратная правка фото", "photo": None,
+                      "aspects": ["1:1", "3:4", "9:16", "4:3", "16:9"],
+                      "qualities": [
+                          {"id": "standard", "name": "Обычная", "desc": "Хорошее качество", "credits": 15},
+                          {"id": "pro", "name": "Pro", "desc": "Больше деталей в портретах и фотореализме", "credits": 30},
+                      ], "quality": "standard"},
+    # ---------------- музыка (цена Братухи × 3) ----------------
+    "suno": {"kind": "audio", "tool": "suno", "name": "Suno", "credits": 30,
+             "desc": "Песни с вокалом, музыка и звуки — 2 варианта", "photo": "forbidden", "no_aspect": True,
+             "qualities": [
+                 {"id": "song", "name": "Песня с вокалом", "desc": "Текст и музыку напишет сама", "credits": 30},
+                 {"id": "instrumental", "name": "Инструментал", "desc": "Музыка без слов", "credits": 30},
+                 {"id": "sounds", "name": "Звуки и атмосфера", "desc": "Дождь, город, костёр, кафе…", "credits": 30},
+             ], "quality": "song"},
     # ---------------- видео (Seedance/Pruna/Sora — цена × 2, Wan — × 3) ----------------
+    "grok-video-480":         {"tool": "grok-video", "resolution": "480p", "name": "Grok Video 480p", "credits": 6,
+                               "desc": "Ролики 6–30 сек по тексту или из фото", "per_sec": True, "photo": None,
+                               "durations": [6, 10, 15, 20, 30], "aspects": ["16:9", "9:16", "1:1"]},
+    "grok-video-720":         {"tool": "grok-video", "resolution": "720p", "name": "Grok Video 720p", "credits": 9,
+                               "desc": "То же в 720p — чётче", "per_sec": True, "photo": None,
+                               "durations": [6, 10, 15, 20, 30], "aspects": ["16:9", "9:16", "1:1"]},
     "seedance-1-0":           {"name": "Seedance 1.0", "desc": "Короткие ролики по описанию", "credits": 60, "photo": None},
     "seedance-2-0-apimart":   {"name": "Seedance 2.0", "desc": "Только по описанию текстом, без фото", "credits": 18,
                                "per_sec": True, "photo": "forbidden"},
@@ -1137,6 +1165,13 @@ def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, 
     tool = m.get("tool", slug)
     if tool == "nano-banana":
         inp = {"mode": quality or "normal", "prompt": text[:20000], "image_size": aspect or "auto"}
+    elif tool == "seedream-4-5":
+        inp = {"prompt": text[:3000], "size": aspect or "auto", "resolution": quality or "2K", "n": 1}
+    elif tool == "wan-2-7-image":
+        inp = {"prompt": text[:5000], "tier": quality or "standard", "aspect_ratio": aspect or "auto"}
+        if image_url:
+            inp["input_urls"] = [image_url]
+            image_url = None
     elif tool == "grok-image":
         inp = {"prompt": text[:5000]}
         if not image_url and aspect:
@@ -1156,8 +1191,26 @@ def _bh_create_avatar(image_url: str, audio_url: str, prompt: str, resolution: s
     return _bh_post_operation("wan-2-2-avatar", inp)
 
 
+def _bh_create_music(prompt: str, kind: str):
+    if kind == "sounds":
+        inp = {"suno_generation_type": "sounds", "sounds_model": "V6", "sounds_prompt": prompt[:500]}
+    else:
+        inp = {"suno_generation_type": "create_track", "customMode": "false", "suno_model": "V6",
+               "instrumental": "true" if kind == "instrumental" else "false", "prompt_simple": prompt[:3000]}
+    return _bh_post_operation("suno", inp)
+
+
 def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
     full = _video_prompt(prompt, bool(image_url), aspect)
+    m = VIDEO_MODELS[slug]
+    if m.get("tool") == "grok-video":
+        inp = {"model": "grok-imagine/image-to-video" if image_url else "grok-imagine/text-to-video",
+               "prompt": full[:5000], "duration": int(duration or 6), "resolution": m.get("resolution", "480p")}
+        if image_url:
+            inp["image_urls"] = [image_url]
+        else:
+            inp["aspect_ratio"] = aspect or "16:9"
+        return _bh_post_operation("grok-video", inp)
     if slug == "sora-2":
         inp = {"sora_ws_generation_type": "image" if image_url else "text", "sora_ws_model_tier": "standard",
                "prompt": full[:5000], "duration": str(duration or 4)}
@@ -1230,7 +1283,28 @@ def _video_cost(slug: str, duration, quality=None) -> int:
     return m["credits"] * (duration or _video_durations(slug)[0]) if m.get("per_sec") else m["credits"]
 
 
+def _bh_all_urls(d: dict) -> list:
+    res = d.get("result") or {}
+    if isinstance(res, str):
+        return [res] if res.startswith("http") else []
+    out = []
+    for key in ("urls", "videos", "images", "files"):
+        for x in res.get(key) or []:
+            u = x.get("url") if isinstance(x, dict) else x
+            if isinstance(u, str) and u.startswith("http") and u not in out:
+                out.append(u)
+    for key in ("video_url", "image_url", "audio_url", "url"):
+        u = res.get(key)
+        if isinstance(u, str) and u.startswith("http") and u not in out:
+            out.append(u)
+    return out
+
+
 async def _bh_wait(op_id: str, timeout: int, every: int) -> str:
+    return (await _bh_wait_all(op_id, timeout, every))[0]
+
+
+async def _bh_wait_all(op_id: str, timeout: int, every: int) -> list:
     deadline = time.time() + timeout
     while time.time() < deadline:
         await asyncio.sleep(every)
@@ -1240,10 +1314,10 @@ async def _bh_wait(op_id: str, timeout: int, every: int) -> str:
             continue
         st = d.get("status")
         if st == "completed":
-            url = _bh_video_url(d)
-            if not url:
+            urls = _bh_all_urls(d) or ([_bh_video_url(d)] if _bh_video_url(d) else [])
+            if not urls:
                 raise RuntimeError("результат готов, но ссылки на него нет")
-            return url
+            return urls
         if st == "failed":
             err = d.get("error") if isinstance(d.get("error"), dict) else {}
             raise RuntimeError(d.get("error_message") or err.get("message") or "нейросеть не смогла выполнить задачу")
@@ -1255,8 +1329,16 @@ async def _video_worker(job_id: str):
     try:
         image_url = None
         if job.get("image"):
-            image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"))
+            ext = "png" if "png" in str(job.get("mime")) else "webp" if "webp" in str(job.get("mime")) else "jpg"
+            image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"), f"input_1.{ext}")
         m = VIDEO_MODELS[job["model"]]
+        if m.get("kind") == "audio":
+            op_id = await asyncio.to_thread(_bh_create_music, job["prompt"], job.get("quality") or "song")
+            print(f"🎵 suno ({job.get('quality')}) для {job['email']}: операция {op_id}")
+            urls = await _bh_wait_all(op_id, 8 * 60, 8)
+            job.update(status="done", url=urls[0], urls=urls)
+            print(f"✅ suno готово для {job['email']}")
+            return
         if m.get("audio"):
             ext = AUDIO_EXT.get(job.get("audio_mime"), "mp3")
             audio_url = await asyncio.to_thread(_bh_upload, job["audio"], job.get("audio_mime"), f"voice.{ext}")
@@ -1407,6 +1489,10 @@ async def video_start(request: Request):
     if photo_rule == "forbidden" and image:
         return {"ok": False, "error": f"{VIDEO_MODELS[slug]['name']} делает видео только по описанию, без фото"}
     kind = VIDEO_MODELS[slug].get("kind", "video")
+    if kind == "audio" and len(prompt) < 3:
+        return {"ok": False, "error": "Опишите песню или звук: о чём, жанр, настроение"}
+    if VIDEO_MODELS[slug].get("no_webp") and image and "webp" in str(mime):
+        return {"ok": False, "error": f"Для {VIDEO_MODELS[slug]['name']} подойдёт фото JPG или PNG"}
     if kind == "image" and len(prompt) < 3:
         return {"ok": False, "error": "Опишите, какую картинку сделать или что изменить на фото"}
     if not prompt and not image:
@@ -1451,6 +1537,7 @@ async def video_status(job_id: str, request: Request):
     out = {"ok": True, "status": job["status"]}
     if job["status"] == "done":
         out["url"] = job["url"]
+        out["urls"] = job.get("urls") or [job["url"]]
     elif job["status"] == "error":
         out.update(error=job["error"], credits=job.get("credits"))
     return out
