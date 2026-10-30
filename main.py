@@ -1542,6 +1542,43 @@ async def video_status(job_id: str, request: Request):
         out.update(error=job["error"], credits=job.get("credits"))
     return out
 
+
+# ==================== Скачивание готовых файлов ====================
+# Браузер не даёт скачивать файлы с чужого сайта напрямую, поэтому отдаём их через свой сервер
+# с заголовком «скачать». Разрешены только хранилища Братухи, чтобы сервер не стал открытым прокси.
+from urllib.parse import urlparse as _urlparse
+from fastapi.responses import StreamingResponse
+
+FILE_HOSTS = ("bratuha.ru", "selstorage.ru")
+
+
+@app.get("/api/file")
+async def download_file(url: str, name: str = "neyroyaga"):
+    u = _urlparse(url)
+    host = (u.hostname or "").lower()
+    if u.scheme != "https" or not any(host == h or host.endswith("." + h) for h in FILE_HOSTS):
+        return JSONResponse({"ok": False, "error": "Этот файл нельзя скачать"}, status_code=403)
+    try:
+        r = await asyncio.to_thread(requests.get, url, stream=True, timeout=60)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Файл недоступен"}, status_code=502)
+    if r.status_code != 200:
+        return JSONResponse({"ok": False, "error": "Файл не найден или срок хранения истёк"}, status_code=404)
+    safe = _re.sub(r"[^\w.\-]", "_", name)[:80] or "neyroyaga"
+    headers = {"Content-Disposition": f'attachment; filename="{safe}"'}
+    if r.headers.get("content-length"):
+        headers["Content-Length"] = r.headers["content-length"]
+
+    def chunks():
+        try:
+            for part in r.iter_content(64 * 1024):
+                if part:
+                    yield part
+        finally:
+            r.close()
+
+    return StreamingResponse(chunks(), media_type=r.headers.get("content-type", "application/octet-stream"), headers=headers)
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
