@@ -121,7 +121,8 @@ def check_token(email: str, token: str) -> bool:
         raw = base64.urlsafe_b64decode(token.encode()).decode()
         t_email, exp, sig = raw.rsplit("|", 2)
         expected = hmac.new(APP_SECRET.encode(), f"{t_email}|{exp}".encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(sig, expected) and t_email == email and int(exp) > time.time()
+        return (hmac.compare_digest(sig, expected) and t_email.strip().lower() == str(email or "").strip().lower()
+                and int(exp) > time.time())
     except Exception:
         return False
 
@@ -139,6 +140,260 @@ def token_from_request(request: Request, body: dict = None):
     if body and body.get("token"):
         return body.get("token")
     return request.query_params.get("token")
+
+
+# ==================== База данных PostgreSQL ====================
+# Пока пользователи не перенесены из Google-таблицы (флаг migrated), сервер работает по-старому, с таблицей.
+# После переноса всё — вход, баланс, списания, оплаты — идёт через базу.
+import asyncpg
+import secrets as _secrets
+
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+db_pool = None
+DB_MIGRATED = False
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    email TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    credits INTEGER NOT NULL DEFAULT 0 CHECK (credits >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_login TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS transactions (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    delta INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS transactions_email_idx ON transactions (email, created_at DESC);
+CREATE TABLE IF NOT EXISTS payments (
+    payment_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    amount_rub NUMERIC,
+    credits INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+
+def db_ready() -> bool:
+    return db_pool is not None and DB_MIGRATED
+
+
+def hash_password(password: str) -> str:
+    salt = _secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", str(password).encode(), salt.encode(), 200_000).hex()
+    return f"pbkdf2${200_000}${salt}${dk}"
+
+
+def check_password(password: str, stored: str) -> bool:
+    try:
+        _, it, salt, dk = stored.split("$")
+        test = hashlib.pbkdf2_hmac("sha256", str(password).encode(), salt.encode(), int(it)).hex()
+        return hmac.compare_digest(test, dk)
+    except Exception:
+        return False
+
+
+def norm_email(email) -> str:
+    return str(email or "").strip().lower()
+
+
+async def _get_setting(con, key):
+    return await con.fetchval("SELECT value FROM settings WHERE key=$1", key)
+
+
+async def _set_setting(con, key, value):
+    await con.execute("INSERT INTO settings(key, value) VALUES($1, $2) "
+                      "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", key, str(value))
+
+
+async def _enable_tokens(con):
+    """После переноса включаем проверку пропусков. Секрет хранится в базе и не меняется при перезапуске."""
+    global APP_SECRET, REQUIRE_TOKEN
+    if not APP_SECRET:
+        secret = await _get_setting(con, "app_secret")
+        if not secret:
+            secret = _secrets.token_hex(32)
+            await _set_setting(con, "app_secret", secret)
+        APP_SECRET = secret
+    REQUIRE_TOKEN = True
+
+
+@app.on_event("startup")
+async def db_startup():
+    global db_pool, DB_MIGRATED
+    if not DATABASE_URL:
+        print("ℹ️ DATABASE_URL не задан — пользователи хранятся в Google-таблице")
+        return
+    try:
+        db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5, command_timeout=15)
+        async with db_pool.acquire() as con:
+            await con.execute(SCHEMA_SQL)
+            DB_MIGRATED = (await _get_setting(con, "migrated")) == "1"
+            if DB_MIGRATED:
+                await _enable_tokens(con)
+        print("✅ База данных подключена" + (" — пользователи в базе" if DB_MIGRATED else
+                                              " — ждёт переноса пользователей из таблицы"))
+    except Exception as e:
+        db_pool = None
+        print(f"❌ Не удалось подключиться к базе: {e}. Работаю с Google-таблицей")
+
+
+@app.on_event("shutdown")
+async def db_shutdown():
+    if db_pool:
+        await db_pool.close()
+
+
+async def db_log(con, email, delta, balance, kind, note=""):
+    await con.execute("INSERT INTO transactions(email, delta, balance_after, kind, note) VALUES($1,$2,$3,$4,$5)",
+                      email, delta, balance, kind, (note or "")[:200])
+
+
+async def db_auth(email: str, password: str) -> dict:
+    email = norm_email(email)
+    async with db_pool.acquire() as con:
+        row = await con.fetchrow("SELECT password_hash, credits FROM users WHERE email=$1", email)
+        if row is None:
+            if len(str(password)) < 4:
+                return {"success": False, "error": "Пароль должен быть не короче 4 символов"}
+            await con.execute("INSERT INTO users(email, password_hash, last_login) VALUES($1, $2, now())",
+                              email, hash_password(password))
+            print(f"🆕 Новый пользователь {email}")
+            return {"success": True, "credits": 0, "new": True}
+        if not check_password(password, row["password_hash"]):
+            return {"success": False, "error": "Неверный пароль"}
+        await con.execute("UPDATE users SET last_login=now() WHERE email=$1", email)
+        return {"success": True, "credits": row["credits"]}
+
+
+async def db_deduct(email: str, cost: int, note: str = "") -> dict:
+    email = norm_email(email)
+    async with db_pool.acquire() as con:
+        if cost <= 0:
+            bal = await con.fetchval("SELECT credits FROM users WHERE email=$1", email)
+            return {"success": bal is not None, "credits": bal or 0, "error": False}
+        async with con.transaction():
+            bal = await con.fetchval("UPDATE users SET credits=credits-$2 WHERE email=$1 AND credits>=$2 "
+                                     "RETURNING credits", email, int(cost))
+            if bal is None:
+                cur = await con.fetchval("SELECT credits FROM users WHERE email=$1", email)
+                return {"success": False, "credits": cur or 0, "error": False}
+            await db_log(con, email, -int(cost), bal, "spend", note)
+            return {"success": True, "credits": bal, "error": False}
+
+
+async def db_add(email: str, amount: int, kind: str, note: str = ""):
+    email = norm_email(email)
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits",
+                                     email, int(amount))
+            if bal is None:
+                return None
+            await db_log(con, email, int(amount), bal, kind, note)
+            return bal
+
+
+@app.post("/api/admin/import-users")
+async def import_users(request: Request):
+    """Разовый перенос пользователей из Google-таблицы. Вызывается скриптом таблицы с секретным ключом."""
+    global DB_MIGRATED
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    if not TEMPLATES_KEY or data.get("key") != TEMPLATES_KEY:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    if db_pool is None:
+        return {"ok": False, "error": "База данных не подключена"}
+    added, skipped, bad = 0, 0, []
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            for u in data.get("users") or []:
+                email = norm_email(u.get("email"))
+                password = str(u.get("password") or "").strip()
+                try:
+                    credits = max(0, int(float(u.get("credits") or 0)))
+                except (TypeError, ValueError):
+                    credits = 0
+                if "@" not in email or not password:
+                    bad.append(email or "(пусто)")
+                    continue
+                res = await con.execute(
+                    "INSERT INTO users(email, password_hash, credits) VALUES($1,$2,$3) ON CONFLICT (email) DO NOTHING",
+                    email, hash_password(password), credits)
+                if res.endswith(" 1"):
+                    added += 1
+                    await db_log(con, email, credits, credits, "migration", "Перенос из Google-таблицы")
+                else:
+                    skipped += 1
+            await _set_setting(con, "migrated", "1")
+            await _enable_tokens(con)
+    DB_MIGRATED = True
+    print(f"📦 Перенос пользователей: добавлено {added}, уже были {skipped}, пропущено {len(bad)}")
+    return {"ok": True, "added": added, "skipped": skipped, "bad": bad}
+
+
+KIND_TITLES = {"payment": "Пополнение", "spend": "Списание", "refund": "Возврат", "migration": "Перенос баланса",
+               "admin": "Начисление"}
+
+
+@app.get("/api/account/{email}")
+async def account_info(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        res = await check_and_deduct_credits(email, 0)
+        return {"ok": True, "email": email, "credits": res.get("credits", 0), "history": [], "db": False}
+    async with db_pool.acquire() as con:
+        u = await con.fetchrow("SELECT credits, created_at FROM users WHERE email=$1", email)
+        if u is None:
+            return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+        rows = await con.fetch("SELECT delta, balance_after, kind, note, created_at FROM transactions "
+                               "WHERE email=$1 ORDER BY created_at DESC LIMIT 100", email)
+        stats = await con.fetchrow("SELECT COALESCE(SUM(credits),0) AS bought, COUNT(*) AS n FROM payments WHERE email=$1",
+                                   email)
+        spent = await con.fetchval("SELECT COALESCE(-SUM(delta),0) FROM transactions WHERE email=$1 "
+                                   "AND kind IN ('spend','refund')", email)
+    return {"ok": True, "db": True, "email": email, "credits": u["credits"],
+            "since": u["created_at"].strftime("%d.%m.%Y"),
+            "bought": int(stats["bought"]), "payments": int(stats["n"]), "spent": max(0, int(spent or 0)),
+            "history": [{"delta": r["delta"], "balance": r["balance_after"], "title": KIND_TITLES.get(r["kind"], r["kind"]),
+                         "kind": r["kind"], "note": r["note"] or "", "date": r["created_at"].strftime("%d.%m.%Y %H:%M")}
+                        for r in rows]}
+
+
+@app.post("/api/account/password")
+async def change_password(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "Смена пароля появится после переноса базы"}
+    old, new = str(data.get("old") or ""), str(data.get("new") or "")
+    if len(new) < 6:
+        return {"ok": False, "error": "Новый пароль — не короче 6 символов"}
+    async with db_pool.acquire() as con:
+        h = await con.fetchval("SELECT password_hash FROM users WHERE email=$1", email)
+        if not h or not check_password(old, h):
+            return {"ok": False, "error": "Текущий пароль неверный"}
+        await con.execute("UPDATE users SET password_hash=$2 WHERE email=$1", email, hash_password(new))
+    return {"ok": True}
 
 
 # ==================== Google Apps Script ====================
@@ -162,7 +417,13 @@ async def script_call(payload: dict):
     return await asyncio.to_thread(_script_call_sync, payload)
 
 
-async def check_and_deduct_credits(email: str, cost: int) -> dict:
+async def check_and_deduct_credits(email: str, cost: int, note: str = "") -> dict:
+    if db_ready():
+        try:
+            return await db_deduct(email, cost, note)
+        except Exception as e:
+            print(f"❌ База: списание {email}: {e}")
+            return {"success": False, "credits": 0, "error": True}
     if not GOOGLE_SCRIPT_URL:
         return {"success": True, "credits": 999, "error": False}
     res = await script_call({"action": "deduct", "email": email, "cost": cost})
@@ -173,7 +434,16 @@ async def check_and_deduct_credits(email: str, cost: int) -> dict:
 
 async def refund_credits(email: str, amount: int, balance_before: int) -> int:
     """Возвращает кредиты за неудачный запрос. Отдаёт новый баланс для показа."""
-    if not GOOGLE_SCRIPT_URL or amount <= 0:
+    if amount <= 0:
+        return balance_before
+    if db_ready():
+        try:
+            bal = await db_add(email, amount, "refund", "Возврат за неудачную генерацию")
+            return bal if bal is not None else balance_before
+        except Exception as e:
+            print(f"❌ База: возврат {amount} кр. {email}: {e} — верните вручную")
+            return balance_before
+    if not GOOGLE_SCRIPT_URL:
         return balance_before
     res = await script_call({"action": "add", "email": email, "amount": amount, "reason": "refund"})
     if res is None:
@@ -334,7 +604,8 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 required_credits = CREDIT_COSTS.get(model_key, 1)
             resolved_model = MODEL_MAPPING[model_key]
 
-            credit_result = await check_and_deduct_credits(email, required_credits)
+            credit_result = await check_and_deduct_credits(
+                email, required_credits, ("Бизнес-инструмент" if biz_tool_id else "Чат: " + model_key))
             current_balance = credit_result.get("credits", 0)
             if not credit_result.get("error"):
                 balance = current_balance
@@ -416,7 +687,14 @@ async def authenticate_user(request: Request):
     if not email or not password:
         return {"success": False, "error": "Введите email и пароль"}
 
-    if not GOOGLE_SCRIPT_URL:
+    if db_ready():
+        email = norm_email(email)
+        try:
+            result = await db_auth(email, password)
+        except Exception as e:
+            print(f"❌ База: вход {email}: {e}")
+            return {"success": False, "error": "Ошибка сервера авторизации"}
+    elif not GOOGLE_SCRIPT_URL:
         result = {"success": True}
     else:
         result = await script_call({"action": "auth", "email": email, "password": password})
@@ -425,6 +703,7 @@ async def authenticate_user(request: Request):
 
     if result.get("success") and APP_SECRET:
         result["token"] = make_token(email)
+        result["email"] = email
     return result
 
 
@@ -563,7 +842,33 @@ async def yookassa_webhook(request: Request):
         except (ValueError, TypeError):
             credits_to_add = 0
 
-        if not email or credits_to_add <= 0 or not GOOGLE_SCRIPT_URL:
+        if not email or credits_to_add <= 0:
+            return {"status": "ok"}
+
+        if db_ready():
+            amount = (payment.get("amount") or {}).get("value")
+            try:
+                async with db_pool.acquire() as con:
+                    async with con.transaction():
+                        fresh = await con.fetchval(
+                            "INSERT INTO payments(payment_id, email, amount_rub, credits) VALUES($1,$2,$3,$4) "
+                            "ON CONFLICT (payment_id) DO NOTHING RETURNING payment_id",
+                            payment_id, norm_email(email), amount, credits_to_add)
+                        if not fresh:
+                            return {"status": "ok"}  # этот платёж уже зачислен
+                        bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits",
+                                                 norm_email(email), credits_to_add)
+                        if bal is None:
+                            raise RuntimeError("пользователь не найден")
+                        await db_log(con, norm_email(email), credits_to_add, bal, "payment", f"Оплата {amount} ₽")
+            except Exception as e:
+                print(f"❌ База: зачисление платежа {payment_id} для {email}: {e}")
+                return JSONResponse({"status": "retry"}, status_code=500)
+            processed_payments.add(payment_id)
+            print(f"✅ Успешно начислено {credits_to_add} кредитов пользователю {email} (платёж {payment_id})")
+            return {"status": "ok"}
+
+        if not GOOGLE_SCRIPT_URL:
             return {"status": "ok"}
 
         res = await script_call({"action": "add", "email": email, "amount": credits_to_add,
@@ -873,7 +1178,8 @@ async def run_template(request: Request):
     _running.add(email)
     try:
         price = ECO_TEMPLATE_PRICE if eco else template["price"]
-        credit = await check_and_deduct_credits(email, price)
+        credit = await check_and_deduct_credits(email, price, f"Шаблон «{template.get('title', template['id'])}»"
+                                                + (" (Эконом)" if eco else ""))
         balance = credit.get("credits", 0)
         if not credit.get("success"):
             if credit.get("error"):
@@ -1623,7 +1929,7 @@ async def video_start(request: Request):
     if VIDEO_MODELS[slug].get("qualities"):
         quality = _video_quality(slug, data.get("quality"))["id"]
     cost = _video_cost(slug, duration, quality)
-    credit = await check_and_deduct_credits(email, cost)
+    credit = await check_and_deduct_credits(email, cost, VIDEO_MODELS[slug]["name"] + (f", {duration} сек" if duration else ""))
     if not credit.get("success"):
         if credit.get("error"):
             return {"ok": False, "error": "Сервер кредитов не отвечает. Кредиты не списаны"}
