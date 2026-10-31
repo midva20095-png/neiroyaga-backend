@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category TEXT;
 CREATE INDEX IF NOT EXISTS transactions_email_idx ON transactions (email, created_at DESC);
 CREATE TABLE IF NOT EXISTS payments (
     payment_id TEXT PRIMARY KEY,
@@ -254,9 +255,9 @@ async def db_shutdown():
         await db_pool.close()
 
 
-async def db_log(con, email, delta, balance, kind, note=""):
-    await con.execute("INSERT INTO transactions(email, delta, balance_after, kind, note) VALUES($1,$2,$3,$4,$5)",
-                      email, delta, balance, kind, (note or "")[:200])
+async def db_log(con, email, delta, balance, kind, note="", category=None):
+    await con.execute("INSERT INTO transactions(email, delta, balance_after, kind, note, category) "
+                      "VALUES($1,$2,$3,$4,$5,$6)", email, delta, balance, kind, (note or "")[:200], category)
 
 
 async def db_auth(email: str, password: str) -> dict:
@@ -276,7 +277,7 @@ async def db_auth(email: str, password: str) -> dict:
         return {"success": True, "credits": row["credits"]}
 
 
-async def db_deduct(email: str, cost: int, note: str = "") -> dict:
+async def db_deduct(email: str, cost: int, note: str = "", category: str = None) -> dict:
     email = norm_email(email)
     async with db_pool.acquire() as con:
         if cost <= 0:
@@ -288,11 +289,11 @@ async def db_deduct(email: str, cost: int, note: str = "") -> dict:
             if bal is None:
                 cur = await con.fetchval("SELECT credits FROM users WHERE email=$1", email)
                 return {"success": False, "credits": cur or 0, "error": False}
-            await db_log(con, email, -int(cost), bal, "spend", note)
+            await db_log(con, email, -int(cost), bal, "spend", note, category)
             return {"success": True, "credits": bal, "error": False}
 
 
-async def db_add(email: str, amount: int, kind: str, note: str = ""):
+async def db_add(email: str, amount: int, kind: str, note: str = "", category: str = None):
     email = norm_email(email)
     async with db_pool.acquire() as con:
         async with con.transaction():
@@ -300,7 +301,7 @@ async def db_add(email: str, amount: int, kind: str, note: str = ""):
                                      email, int(amount))
             if bal is None:
                 return None
-            await db_log(con, email, int(amount), bal, kind, note)
+            await db_log(con, email, int(amount), bal, kind, note, category)
             return bal
 
 
@@ -348,6 +349,32 @@ KIND_TITLES = {"payment": "Пополнение", "spend": "Списание", "
                "admin": "Начисление"}
 
 
+CATEGORY_BY_NOTE = (("Шаблон", "template"), ("Чат", "chat"), ("Бизнес", "chat"), ("Картинка", "image"))
+
+
+def _tx_category(kind, note, category):
+    if category:
+        return category
+    if kind == "payment":
+        return "payment"
+    for prefix, cat in CATEGORY_BY_NOTE:
+        if (note or "").startswith(prefix):
+            return cat
+    name = (note or "").split(",")[0].strip()
+    for m in VIDEO_MODELS.values():
+        if m["name"] == name:
+            return {"image": "image", "audio": "audio"}.get(m.get("kind"), "video")
+    return "other"
+
+
+def _level(bought: int):
+    if bought >= 5000:
+        return {"name": "VIP", "next": None, "left": 0}
+    if bought >= 1000:
+        return {"name": "Постоянный клиент", "next": "VIP", "left": 5000 - bought}
+    return {"name": "Новичок", "next": "Постоянный клиент", "left": 1000 - bought}
+
+
 @app.get("/api/account/{email}")
 async def account_info(email: str, request: Request):
     email = norm_email(email)
@@ -360,18 +387,32 @@ async def account_info(email: str, request: Request):
         u = await con.fetchrow("SELECT credits, created_at FROM users WHERE email=$1", email)
         if u is None:
             return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-        rows = await con.fetch("SELECT delta, balance_after, kind, note, created_at FROM transactions "
-                               "WHERE email=$1 ORDER BY created_at DESC LIMIT 100", email)
+        rows = await con.fetch("SELECT delta, balance_after, kind, note, category, created_at FROM transactions "
+                               "WHERE email=$1 AND kind <> 'migration' ORDER BY created_at DESC LIMIT 300", email)
         stats = await con.fetchrow("SELECT COALESCE(SUM(credits),0) AS bought, COUNT(*) AS n FROM payments WHERE email=$1",
                                    email)
-        spent = await con.fetchval("SELECT COALESCE(-SUM(delta),0) FROM transactions WHERE email=$1 "
-                                   "AND kind IN ('spend','refund')", email)
-    return {"ok": True, "db": True, "email": email, "credits": u["credits"],
-            "since": u["created_at"].strftime("%d.%m.%Y"),
-            "bought": int(stats["bought"]), "payments": int(stats["n"]), "spent": max(0, int(spent or 0)),
-            "history": [{"delta": r["delta"], "balance": r["balance_after"], "title": KIND_TITLES.get(r["kind"], r["kind"]),
-                         "kind": r["kind"], "note": r["note"] or "", "date": r["created_at"].strftime("%d.%m.%Y %H:%M")}
-                        for r in rows]}
+    history, cats, refunds, gens, spent = [], {}, {}, 0, 0
+    for r in rows:
+        cat = _tx_category(r["kind"], r["note"], r["category"])
+        if r["kind"] == "spend":
+            gens += 1
+            spent += -r["delta"]
+            cats[cat] = cats.get(cat, 0) - r["delta"]
+        elif r["kind"] == "refund":
+            gens -= 1
+            spent -= r["delta"]
+            refunds[cat] = refunds.get(cat, 0) + r["delta"]
+        history.append({"delta": r["delta"], "balance": r["balance_after"], "kind": r["kind"], "category": cat,
+                        "title": KIND_TITLES.get(r["kind"], r["kind"]), "note": r["note"] or "",
+                        "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M")})
+    for cat, val in refunds.items():
+        if cat in cats:
+            cats[cat] = cats[cat] - val
+    cats = {k: v for k, v in cats.items() if v > 0}
+    bought = int(stats["bought"])
+    return {"ok": True, "db": True, "email": email, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
+            "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
+            "categories": cats, "level": _level(bought), "history": history}
 
 
 @app.post("/api/account/password")
@@ -417,10 +458,10 @@ async def script_call(payload: dict):
     return await asyncio.to_thread(_script_call_sync, payload)
 
 
-async def check_and_deduct_credits(email: str, cost: int, note: str = "") -> dict:
+async def check_and_deduct_credits(email: str, cost: int, note: str = "", category: str = None) -> dict:
     if db_ready():
         try:
-            return await db_deduct(email, cost, note)
+            return await db_deduct(email, cost, note, category)
         except Exception as e:
             print(f"❌ База: списание {email}: {e}")
             return {"success": False, "credits": 0, "error": True}
@@ -432,13 +473,13 @@ async def check_and_deduct_credits(email: str, cost: int, note: str = "") -> dic
     return {"success": bool(res.get("success", False)), "credits": res.get("credits", 0), "error": False}
 
 
-async def refund_credits(email: str, amount: int, balance_before: int) -> int:
+async def refund_credits(email: str, amount: int, balance_before: int, category: str = None) -> int:
     """Возвращает кредиты за неудачный запрос. Отдаёт новый баланс для показа."""
     if amount <= 0:
         return balance_before
     if db_ready():
         try:
-            bal = await db_add(email, amount, "refund", "Возврат за неудачную генерацию")
+            bal = await db_add(email, amount, "refund", "Возврат за неудачную генерацию", category)
             return bal if bal is not None else balance_before
         except Exception as e:
             print(f"❌ База: возврат {amount} кр. {email}: {e} — верните вручную")
@@ -605,7 +646,11 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             resolved_model = MODEL_MAPPING[model_key]
 
             credit_result = await check_and_deduct_credits(
-                email, required_credits, ("Бизнес-инструмент" if biz_tool_id else "Чат: " + model_key))
+                email, required_credits,
+                "Бизнес-инструмент" if biz_tool_id else ({"flash": "Чат Flash", "flash_25": "Чат Flash", "pro": "Чат Pro",
+                                                           "nanobanana": "Картинка", "nanobanana_pro": "Картинка Pro"}
+                                                          .get(model_key, "Чат")),
+                "image" if (not biz_tool_id and "nano" in model_key) else "chat")
             current_balance = credit_result.get("credits", 0)
             if not credit_result.get("error"):
                 balance = current_balance
@@ -647,7 +692,8 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                     payload = {"type": "text", "credits": current_balance, "text": text_output}
                 else:
                     # Модель ничего не вернула (например, сработал фильтр) — возвращаем кредиты
-                    new_balance = await refund_credits(email, required_credits, current_balance)
+                    new_balance = await refund_credits(email, required_credits, current_balance,
+                                                    "image" if (not biz_tool_id and "nano" in model_key) else "chat")
                     balance = new_balance
                     payload = {"type": "text", "credits": new_balance,
                                "text": "🌫 Туман скрыл ответ. Кредиты вернула, попробуй переформулировать запрос."}
@@ -656,7 +702,8 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
 
             except Exception as e:
                 print(f"Ошибка при запросе к модели {resolved_model}: {e}")
-                new_balance = await refund_credits(email, required_credits, current_balance)
+                new_balance = await refund_credits(email, required_credits, current_balance,
+                                                    "image" if (not biz_tool_id and "nano" in model_key) else "chat")
                 balance = new_balance
                 await safe_send(websocket, {
                     "type": "text", "credits": new_balance,
@@ -1179,7 +1226,7 @@ async def run_template(request: Request):
     try:
         price = ECO_TEMPLATE_PRICE if eco else template["price"]
         credit = await check_and_deduct_credits(email, price, f"Шаблон «{template.get('title', template['id'])}»"
-                                                + (" (Эконом)" if eco else ""))
+                                                + (" (Эконом)" if eco else ""), "template")
         balance = credit.get("credits", 0)
         if not credit.get("success"):
             if credit.get("error"):
@@ -1204,7 +1251,7 @@ async def run_template(request: Request):
             image_data, text_output, mime_type = None, "", "image/jpeg"
 
         if not image_data:
-            balance = await refund_credits(email, price, balance)
+            balance = await refund_credits(email, price, balance, "template")
             return {"ok": False, "credits": balance,
                     "error": "Картинка не получилась. Кредиты вернула, попробуйте другое фото или ещё раз"}
 
@@ -1777,7 +1824,8 @@ async def _video_worker(job_id: str):
         raise last_err or RuntimeError("не получилось")
     except Exception as e:
         print(f"❌ {job['model']} для {job['email']} не получилось: {e}")
-        balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0))
+        balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0),
+                                       {"image": "image", "audio": "audio"}.get(VIDEO_MODELS[job["model"]].get("kind"), "video"))
         what = "Картинка" if VIDEO_MODELS[job["model"]].get("kind") == "image" else "Видео"
         job.update(status="error", credits=balance,
                    error=f"{what} не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
@@ -1929,7 +1977,8 @@ async def video_start(request: Request):
     if VIDEO_MODELS[slug].get("qualities"):
         quality = _video_quality(slug, data.get("quality"))["id"]
     cost = _video_cost(slug, duration, quality)
-    credit = await check_and_deduct_credits(email, cost, VIDEO_MODELS[slug]["name"] + (f", {duration} сек" if duration else ""))
+    credit = await check_and_deduct_credits(email, cost, VIDEO_MODELS[slug]["name"] + (f", {duration} сек" if duration else ""),
+                                            {"image": "image", "audio": "audio"}.get(kind, "video"))
     if not credit.get("success"):
         if credit.get("error"):
             return {"ok": False, "error": "Сервер кредитов не отвечает. Кредиты не списаны"}
