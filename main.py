@@ -1052,6 +1052,51 @@ VIDEO_MODELS = {
                  {"id": "sounds", "name": "Звуки и атмосфера", "desc": "Дождь, город, костёр, кафе…", "credits": 30},
              ], "quality": "song"},
     # ---------------- видео (Seedance/Pruna/Sora — цена × 2, Wan — × 3) ----------------
+    # ---- Veo 3.1 (ролик всегда 8 сек) ----
+    "veo-3-1-lite":    {"tool": "veo-3-1", "vmodel": "veo3.1-lite", "name": "Veo 3.1 Lite", "credits": 30, "photo": "forbidden",
+                        "desc": "8 сек по описанию, самая доступная", "aspects": ["16:9", "9:16"]},
+    "veo-3-1-fast":    {"tool": "veo-3-1", "vmodel": "veo3.1-fast", "name": "Veo 3.1 Fast", "credits": 60, "photo": None,
+                        "desc": "8 сек со звуком, по тексту или из фото", "aspects": ["16:9", "9:16"]},
+    "veo-3-1-quality": {"tool": "veo-3-1", "vmodel": "veo3.1-quality", "name": "Veo 3.1 Quality", "credits": 300, "photo": None,
+                        "desc": "Максимальное качество Google, 8 сек", "aspects": ["16:9", "9:16"]},
+    # ---- Wan 3.0 ----
+    "wan-3-0-480":   {"tool": "wan-3-0", "resolution": "480P", "name": "Wan 3.0 480p", "credits": 15, "per_sec": True,
+                      "desc": "Видео со звуком по тексту или из фото", "photo": None, "durations": [5, 10, 15], "aspects": ["16:9", "9:16", "1:1", "4:3", "3:4"]},
+    "wan-3-0-720":   {"tool": "wan-3-0", "resolution": "720P", "name": "Wan 3.0 720p", "credits": 30, "per_sec": True,
+                      "desc": "То же в 720p — чётче", "photo": None, "durations": [5, 10, 15], "aspects": ["16:9", "9:16", "1:1", "4:3", "3:4"]},
+    "wan-3-0-prime-480": {"tool": "wan-3-0-video-prime", "resolution": "480P", "name": "Wan 3.0 Prime 480p", "credits": 27,
+                          "per_sec": True, "desc": "Флагман Wan: лучше движение и звук", "photo": None,
+                          "durations": [5, 10, 15], "aspects": ["16:9", "9:16", "1:1", "4:3", "3:4"]},
+    "wan-3-0-prime-720": {"tool": "wan-3-0-video-prime", "resolution": "720P", "name": "Wan 3.0 Prime 720p", "credits": 54,
+                          "per_sec": True, "desc": "Флагман Wan в 720p", "photo": None,
+                          "durations": [5, 10, 15], "aspects": ["16:9", "9:16", "1:1", "4:3", "3:4"]},
+    # ---- Seedance 2.5 ----
+    "seedance-2-5-480": {"tool": "seedance-2-5", "resolution": "480p", "name": "Seedance 2.5 480p", "credits": 42, "per_sec": True,
+                         "desc": "Новый Seedance со звуком, по тексту или из фото", "photo": None,
+                         "durations": [4, 6, 8, 10], "aspects": ["16:9", "9:16", "1:1", "4:3", "3:4"]},
+    "seedance-2-5-720": {"tool": "seedance-2-5", "resolution": "720p", "name": "Seedance 2.5 720p", "credits": 84, "per_sec": True,
+                         "desc": "Seedance 2.5 в 720p", "photo": None, "durations": [4, 6, 8, 10], "aspects": ["16:9", "9:16", "1:1", "4:3", "3:4"]},
+    # ---- Kling 2.1 (цена за ролик 5 или 10 сек) ----
+    "kling-2-1-standard": {"tool": "kling-2-1", "kmodel": "kling/v2-1-standard", "name": "Kling 2.1 Standard", "credits": 75,
+                           "desc": "Оживляет фото — прикрепите фото 📎", "photo": "required", "durations": [5, 10],
+                           "duration_prices": {"5": 75, "10": 150}, "no_aspect": True},
+    "kling-2-1-pro":      {"tool": "kling-2-1", "kmodel": "kling/v2-1-pro", "name": "Kling 2.1 Pro", "credits": 120,
+                           "desc": "Оживляет фото качественнее — прикрепите фото 📎", "photo": "required", "durations": [5, 10],
+                           "duration_prices": {"5": 120, "10": 270}, "no_aspect": True},
+    "kling-2-1-master":   {"tool": "kling-2-1", "kmodel": "master", "name": "Kling 2.1 Master", "credits": 420,
+                           "desc": "Топ-качество Kling, по тексту или из фото", "photo": None, "durations": [5, 10],
+                           "duration_prices": {"5": 420, "10": 840}, "aspects": ["16:9", "9:16", "1:1"]},
+    # ---- Gemini Omni (со звуком) ----
+    "gemini-omni": {"tool": "gemini-omni", "name": "Gemini Omni", "credits": 180, "photo": None,
+                    "desc": "Видео Google со звуком и речью, до 10 сек", "durations": [4, 6, 8, 10],
+                    "duration_prices": {"4": 180, "6": 240, "8": 300, "10": 360}, "aspects": ["16:9", "9:16"]},
+    # ---- Pika 2.2 (без звука) ----
+    "pika-720":  {"tool": "pika", "resolution": "720p", "name": "Pika 2.2 720p", "credits": 105, "photo": None,
+                  "desc": "Яркая анимация, без звука", "durations": [5, 10], "duration_prices": {"5": 105, "10": 240},
+                  "aspects": ["16:9", "9:16", "1:1", "4:5"]},
+    "pika-1080": {"tool": "pika", "resolution": "1080p", "name": "Pika 2.2 1080p", "credits": 210, "photo": None,
+                  "desc": "Pika в 1080p, без звука", "durations": [5, 10], "duration_prices": {"5": 210, "10": 480},
+                  "aspects": ["16:9", "9:16", "1:1", "4:5"]},
     "grok-video-480":         {"tool": "grok-video", "resolution": "480p", "name": "Grok Video 480p", "credits": 6,
                                "desc": "Ролики 6–30 сек по тексту или из фото", "per_sec": True, "photo": None,
                                "durations": [6, 10, 15, 20, 30], "aspects": ["16:9", "9:16", "1:1"]},
@@ -1203,6 +1248,56 @@ def _bh_create_music(prompt: str, kind: str):
 def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
     full = _video_prompt(prompt, bool(image_url), aspect)
     m = VIDEO_MODELS[slug]
+    tool = m.get("tool", slug)
+    asp = aspect or "16:9"
+    if tool in ("wan-3-0", "wan-3-0-video-prime"):
+        prime = tool == "wan-3-0-video-prime"
+        tkey = "wan_3_0_prime_generation_type" if prime else "wan_3_0_generation_type"
+        inp = {"resolution": m["resolution"], "duration": int(duration or 5), "audio": True}
+        inp["aspect_ratio" if prime else "size"] = "adaptive" if image_url else asp
+        if image_url:
+            inp.update({tkey: "first_frame", "frame_prompt": full[:20000], "first_frame_url": image_url})
+        else:
+            inp.update({tkey: "text", "text_prompt": full[:20000]})
+        return _bh_post_operation(tool, inp)
+    if tool == "seedance-2-5":
+        inp = {"seedance_2_5_generation_type": "image" if image_url else "text", "prompt": full[:20000],
+               "size": "adaptive" if image_url else asp, "resolution": m["resolution"], "duration": int(duration or 4),
+               "generate_audio": True, "watermark": False, "draft_mode": "off", "output_format": "mp4"}
+        if image_url:
+            inp["image_urls"] = [image_url]
+        return _bh_post_operation(tool, inp)
+    if tool == "kling-2-1":
+        km = m["kmodel"]
+        if km == "master":
+            km = "kling/v2-1-master-image-to-video" if image_url else "kling/v2-1-master-text-to-video"
+        inp = {"mode": "image" if image_url else "text", "model": km, "prompt": full[:5000],
+               "duration": str(duration or 5), "cfg_scale": 0.5, "negative_prompt": "blur, low quality, artifacts, text, watermark"}
+        if image_url:
+            inp["image_url"] = image_url
+        else:
+            inp["aspect_ratio"] = asp
+        return _bh_post_operation(tool, inp)
+    if tool == "veo-3-1":
+        inp = {"generation_type": "image" if image_url else "text", "model": m["vmodel"], "prompt": full[:4000],
+               "aspect_ratio": asp if asp in ("16:9", "9:16") else "16:9", "resolution": "1080p"}
+        if image_url:
+            inp["image_urls"] = image_url  # у Veo одна ссылка строкой
+        return _bh_post_operation(tool, inp)
+    if tool == "gemini-omni":
+        inp = {"generation_type": "video", "prompt": full[:4000], "duration": str(duration or 4),
+               "aspect_ratio": asp if asp in ("16:9", "9:16") else "16:9", "resolution": "1080p"}
+        if image_url:
+            inp["image_urls"] = [image_url]
+        return _bh_post_operation(tool, inp)
+    if tool == "pika":
+        inp = {"pika_generation_type": "image_to_video" if image_url else "text_to_video", "prompt": full[:4000],
+               "resolution": m["resolution"], "duration_seconds_mode": str(duration or 5)}
+        if image_url:
+            inp["image_url"] = image_url
+        else:
+            inp["aspect_ratio"] = asp
+        return _bh_post_operation(tool, inp)
     if m.get("tool") == "grok-video":
         inp = {"model": "grok-imagine/image-to-video" if image_url else "grok-imagine/text-to-video",
                "prompt": full[:5000], "duration": int(duration or 6), "resolution": m.get("resolution", "480p")}
@@ -1277,6 +1372,9 @@ def _video_quality(slug: str, q):
 
 def _video_cost(slug: str, duration, quality=None) -> int:
     m = VIDEO_MODELS[slug]
+    if m.get("duration_prices"):
+        d = str(duration or _video_durations(slug)[0])
+        return int(m["duration_prices"].get(d) or min(m["duration_prices"].values()))
     if m.get("qualities"):
         q = _video_quality(slug, quality)
         return q["credits"] * int(duration or 1) if q.get("per_sec") else q["credits"]
@@ -1355,10 +1453,10 @@ async def _video_worker(job_id: str):
         for mode in modes:
             try:
                 if is_image:
-                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], image_url, job["aspect"], mode,
+                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], image_url, job.get("aspect"), mode,
                                                     job.get("quality"))
                 else:
-                    op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job["aspect"], job.get("duration"))
+                    op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job.get("aspect"), job.get("duration"))
                 print(f"🎬 {job['model']}{' (' + mode + ')' if mode else ''} для {job['email']}: операция {op_id}")
                 url = await _bh_wait(op_id, 5 * 60 if is_image else VIDEO_TIMEOUT_SEC, 3 if is_image else 5)
                 job.update(status="done", url=url)
@@ -1418,10 +1516,24 @@ async def video_catalog(key: str = ""):
     return data
 
 
+def _min_price(slug: str) -> int:
+    """Минимальная цена одного запуска — для сортировки меню."""
+    m = VIDEO_MODELS[slug]
+    if m.get("duration_prices"):
+        return min(int(v) for v in m["duration_prices"].values())
+    if m.get("qualities"):
+        q = min(m["qualities"], key=lambda x: x["credits"])
+        return q["credits"] * (5 if q.get("per_sec") else 1)
+    if m.get("per_sec"):
+        return m["credits"] * _video_durations(slug)[0]
+    return m["credits"]
+
+
 @app.get("/api/video/models")
 async def video_models():
     return {"ok": True, "enabled": bool(BRATUKHA_API_KEY), "aspects": list(VIDEO_ASPECTS), "durations": list(VIDEO_DURATIONS),
-            "models": [dict(id=k, **v) for k, v in VIDEO_MODELS.items()] if BRATUKHA_API_KEY else []}
+            "models": sorted([dict(id=k, **v, min_price=_min_price(k)) for k, v in VIDEO_MODELS.items()],
+                             key=lambda x: x["min_price"]) if BRATUKHA_API_KEY else []}
 
 
 @app.post("/api/video/start")
@@ -1464,7 +1576,7 @@ async def video_start(request: Request):
         if secs > limit:
             return {"ok": False, "error": f"Запись длиннее {limit} секунд. Обрежьте её"}
         duration = max(1, _math.ceil(secs))
-    elif VIDEO_MODELS[slug].get("per_sec"):
+    elif VIDEO_MODELS[slug].get("per_sec") or VIDEO_MODELS[slug].get("duration_prices"):
         durs = _video_durations(slug)
         try:
             duration = int(data.get("duration") or durs[0])
