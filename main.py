@@ -650,6 +650,46 @@ async def storage_subscribe(request: Request):
     return {"ok": True, "credits": credit.get("credits", 0), "until": until.strftime("%d.%m.%Y")}
 
 
+@app.post("/api/works/import")
+async def works_import(request: Request):
+    """Разовый перенос старых работ из памяти браузера (до 12 картинок) на сервер."""
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    added = 0
+    for it in (data.get("items") or [])[:12]:
+        try:
+            src = str(it.get("src") or "")
+            if not src.startswith("data:image/"):
+                continue
+            head, b64 = src.split(",", 1)
+            raw = base64.b64decode(b64)
+            if len(raw) > 3 * 1024 * 1024:
+                continue
+            title = str(it.get("title") or "Работа")[:120]
+            title = title if title.startswith("Шаблон") else f"Шаблон «{title}»"
+            at = float(it.get("at") or 0) / 1000.0
+            async with db_pool.acquire() as con:  # не дублируем работы, которые сервер уже сохранил сам
+                dup = await con.fetchval(
+                    "SELECT 1 FROM works WHERE email=$1 AND title LIKE $2 AND kind='image' "
+                    "AND abs(extract(epoch from created_at) - $3) < 900 LIMIT 1", email, title[:60] + "%", at)
+            if dup:
+                continue
+            await save_work(email, "image", title, "Шаблоны", data=raw, mime=head[5:].split(";")[0] or "image/jpeg")
+            added += 1
+        except Exception as e:
+            print(f"⚠️ Перенос работы из браузера {email}: {e}")
+    if added:
+        print(f"📥 {email}: перенесено работ из браузера {added}")
+    return {"ok": True, "added": added}
+
+
 @app.post("/api/admin/import-users")
 async def import_users(request: Request):
     """Разовый перенос пользователей из Google-таблицы. Вызывается скриптом таблицы с секретным ключом."""
