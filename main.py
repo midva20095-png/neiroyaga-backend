@@ -6,6 +6,7 @@ import base64
 import uuid
 import asyncio
 import hashlib
+import datetime as _dt
 import binascii
 import re as _re
 
@@ -190,6 +191,13 @@ CREATE TABLE IF NOT EXISTS works (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE works ADD COLUMN IF NOT EXISTS skey TEXT;
+ALTER TABLE works ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE works ADD COLUMN IF NOT EXISTS size BIGINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS storage_subs (
+    email TEXT PRIMARY KEY,
+    until TIMESTAMPTZ NOT NULL
+);
 CREATE INDEX IF NOT EXISTS works_email_idx ON works (email, created_at DESC);
 CREATE INDEX IF NOT EXISTS works_exp_idx ON works (expires_at);
 CREATE TABLE IF NOT EXISTS settings (
@@ -325,6 +333,70 @@ async def db_add(email: str, amount: int, kind: str, note: str = "", category: s
 # картинки нашей модели (чат и шаблоны) — в базе, сжатыми.
 WORKS_DAYS = 10
 WORKS_MAX_PER_USER = 300
+# Подписка «Хранилище» (1 кр. = 1 ₽): пока активна, все работы клиента хранятся без срока
+SUB_PRICES = {30: 149, 90: 399}          # 1 месяц или 3 месяца
+SUB_MAX_AHEAD_DAYS = 93                  # оплатить можно не дальше чем на 3 месяца вперёд
+SUB_QUOTA_BYTES = int(float(os.getenv("STORAGE_QUOTA_GB", "3")) * 1024 ** 3)       # на одного клиента
+SUB_MAX_FILE = int(float(os.getenv("STORAGE_MAX_FILE_MB", "300")) * 1024 ** 2)      # один файл
+STORAGE_TOTAL_CAP = int(float(os.getenv("STORAGE_TOTAL_GB", "100")) * 1024 ** 3)    # всё хранилище
+SUB_GRACE_DAYS = 3                                                                   # после окончания подписки
+EXT_MIME = {"video": ("mp4", "video/mp4"), "audio": ("mp3", "audio/mpeg")}
+
+S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME", "").strip()
+_s3 = None
+
+
+def s3():
+    """Клиент хранилища Railway Bucket (S3). Ключи берутся из переменных AWS_*."""
+    global _s3
+    if _s3 is None and S3_BUCKET:
+        import boto3
+        from botocore.config import Config
+        _s3 = boto3.client("s3", endpoint_url=os.getenv("AWS_ENDPOINT_URL"),
+                           region_name=os.getenv("AWS_DEFAULT_REGION") or "auto",
+                           aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                           aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                           config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
+    return _s3
+
+
+def _s3_copy_from_url(url: str, key: str, mime: str) -> int:
+    """Скачиваем файл у Братухи и кладём в своё хранилище. Возвращает размер в байтах."""
+    import tempfile
+    r = requests.get(url, stream=True, timeout=120)
+    if r.status_code != 200:
+        raise RuntimeError(f"файл недоступен ({r.status_code})")
+    size = 0
+    with tempfile.TemporaryFile() as tmp:
+        for part in r.iter_content(256 * 1024):
+            size += len(part)
+            if size > SUB_MAX_FILE:
+                r.close()
+                raise RuntimeError("файл слишком большой")
+            tmp.write(part)
+        r.close()
+        tmp.seek(0)
+        s3().upload_fileobj(tmp, S3_BUCKET, key, ExtraArgs={"ContentType": r.headers.get("content-type") or mime})
+    return size
+
+
+def _s3_put_bytes(data: bytes, key: str, mime: str):
+    s3().put_object(Bucket=S3_BUCKET, Key=key, Body=data, ContentType=mime)
+
+
+def _s3_url(key: str, download_name: str = None, ttl: int = 86400) -> str:
+    params = {"Bucket": S3_BUCKET, "Key": key}
+    if download_name:
+        params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
+    return s3().generate_presigned_url("get_object", Params=params, ExpiresIn=ttl)
+
+
+def _s3_delete(keys):
+    keys = [k for k in keys if k]
+    if not keys or not s3():
+        return
+    for i in range(0, len(keys), 900):
+        s3().delete_objects(Bucket=S3_BUCKET, Delete={"Objects": [{"Key": k} for k in keys[i:i + 900]], "Quiet": True})
 
 
 def _shrink_image(data: bytes, mime: str):
@@ -349,12 +421,15 @@ async def save_work(email: str, kind: str, title: str, source: str, url: str = N
         if data:
             data, mime = await asyncio.to_thread(_shrink_image, data, mime)
         async with db_pool.acquire() as con:
-            await con.execute(
+            wid = await con.fetchval(
                 "INSERT INTO works(email, kind, title, source, url, data, mime, expires_at) "
-                "VALUES($1,$2,$3,$4,$5,$6,$7, now() + make_interval(days => $8))",
+                "VALUES($1,$2,$3,$4,$5,$6,$7, now() + make_interval(days => $8)) RETURNING id",
                 norm_email(email), kind, (title or "")[:160], (source or "")[:60], url, data, mime, WORKS_DAYS)
+            until = await con.fetchval("SELECT until FROM storage_subs WHERE email=$1 AND until > now()", norm_email(email))
+        if until and wid:
+            await secure_work(norm_email(email), wid, until)
             await con.execute(
-                "DELETE FROM works WHERE email=$1 AND id NOT IN "
+                "DELETE FROM works WHERE email=$1 AND NOT extended AND id NOT IN "
                 "(SELECT id FROM works WHERE email=$1 ORDER BY created_at DESC LIMIT $2)", norm_email(email), WORKS_MAX_PER_USER)
     except Exception as e:
         print(f"⚠️ Не удалось сохранить работу {email}: {e}")
@@ -373,10 +448,13 @@ async def _works_cleanup_loop():
         try:
             if db_pool is not None:
                 async with db_pool.acquire() as con:
-                    res = await con.execute("DELETE FROM works WHERE expires_at < now()")
-                    n = int(res.split()[-1]) if res and res.split()[-1].isdigit() else 0
-                    if n:
-                        print(f"🧹 Удалено старых работ: {n}")
+                    keys = await con.fetch("DELETE FROM works WHERE expires_at < now() RETURNING skey")
+                    if keys:
+                        print(f"🧹 Удалено старых работ: {len(keys)}")
+                        try:
+                            await asyncio.to_thread(_s3_delete, [k["skey"] for k in keys])
+                        except Exception as e:
+                            print(f"⚠️ Хранилище: не удалось удалить файлы: {e}")
         except Exception as e:
             print(f"⚠️ Очистка работ: {e}")
         await asyncio.sleep(3600)
@@ -390,15 +468,22 @@ async def works_list(email: str, request: Request):
     if not db_ready():
         return {"ok": True, "works": [], "days": WORKS_DAYS}
     async with db_pool.acquire() as con:
-        rows = await con.fetch("SELECT id, kind, title, source, url, (data IS NOT NULL) AS own, mime, created_at, expires_at "
+        rows = await con.fetch("SELECT id, kind, title, source, url, (data IS NOT NULL) AS own, mime, created_at, expires_at, skey, extended "
                                "FROM works WHERE email=$1 AND expires_at > now() ORDER BY created_at DESC LIMIT 300", email)
     now = time.time()
     out = []
     for r in rows:
         left = max(0, (r["expires_at"].timestamp() - now) / 86400)
-        out.append({"id": r["id"], "kind": r["kind"], "title": r["title"] or "", "source": r["source"] or "",
-                    "own": r["own"], "url": None if r["own"] else r["url"], "mime": r["mime"] or "",
-                    "ts": r["created_at"].isoformat(), "days_left": int(left) + (1 if left % 1 else 0)})
+        item = {"id": r["id"], "kind": r["kind"], "title": r["title"] or "", "source": r["source"] or "",
+                "own": r["own"], "url": None if r["own"] else r["url"], "mime": r["mime"] or "", "dl": None,
+                "extended": r["extended"], "ts": r["created_at"].isoformat(), "days_left": int(left) + (1 if left % 1 else 0)}
+        if r["skey"] and s3():
+            try:
+                ext = r["skey"].rsplit(".", 1)[-1]
+                item.update(own=False, url=_s3_url(r["skey"]), dl=_s3_url(r["skey"], f"neyroyaga-{r['id']}.{ext}"))
+            except Exception as e:
+                print(f"⚠️ Хранилище: ссылка для работы {r['id']}: {e}")
+        out.append(item)
     return {"ok": True, "works": out, "days": WORKS_DAYS}
 
 
@@ -433,8 +518,136 @@ async def works_delete(request: Request):
     if not db_ready():
         return {"ok": False}
     async with db_pool.acquire() as con:
-        await con.execute("DELETE FROM works WHERE id=$1 AND email=$2", int(data.get("id") or 0), email)
+        key = await con.fetchval("DELETE FROM works WHERE id=$1 AND email=$2 RETURNING skey", int(data.get("id") or 0), email)
+    if key:
+        try:
+            await asyncio.to_thread(_s3_delete, [key])
+        except Exception as e:
+            print(f"⚠️ Хранилище: не удалось удалить файл: {e}")
     return {"ok": True}
+
+
+async def _storage_used(con, email=None) -> int:
+    if email:
+        return int(await con.fetchval("SELECT COALESCE(SUM(size),0) FROM works WHERE email=$1 AND skey IS NOT NULL", email) or 0)
+    return int(await con.fetchval("SELECT COALESCE(SUM(size),0) FROM works WHERE skey IS NOT NULL") or 0)
+
+
+async def secure_work(email: str, work_id: int, until) -> bool:
+    """Кладём работу в хранилище по подписке, соблюдая все лимиты. Без хранилища работа живёт обычные 10 дней."""
+    if not S3_BUCKET or not s3():
+        return False
+    try:
+        async with db_pool.acquire() as con:
+            w = await con.fetchrow("SELECT id, kind, url, data, mime, skey FROM works WHERE id=$1 AND email=$2 AND expires_at > now()",
+                                   work_id, email)
+            if not w:
+                return False
+            keep_until = until + _dt.timedelta(days=SUB_GRACE_DAYS)
+            if w["skey"]:
+                await con.execute("UPDATE works SET extended=TRUE, expires_at=$2 WHERE id=$1", work_id, keep_until)
+                return True
+            used, total = await _storage_used(con, email), await _storage_used(con)
+        if used >= SUB_QUOTA_BYTES:
+            print(f"ℹ️ Хранилище {email}: лимит {SUB_QUOTA_BYTES // 1024 ** 3} ГБ занят, работа {work_id} хранится 10 дней")
+            return False
+        if total >= STORAGE_TOTAL_CAP:
+            print(f"⚠️ Хранилище заполнено ({total // 1024 ** 3} ГБ из {STORAGE_TOTAL_CAP // 1024 ** 3}) — новые работы не копирую")
+            return False
+        folder = f"works/{hashlib.sha1(email.encode()).hexdigest()[:16]}"
+        if w["data"] is not None:
+            data = bytes(w["data"])
+            if len(data) > SUB_MAX_FILE:
+                return False
+            key = f"{folder}/{w['id']}.jpg"
+            await asyncio.to_thread(_s3_put_bytes, data, key, w["mime"] or "image/jpeg")
+            size = len(data)
+        elif w["url"]:
+            ext, mime = EXT_MIME.get(w["kind"], ("jpg", "image/jpeg"))
+            m = _re.search(r"\.(png|jpe?g|webp|mp4|mov|webm|mp3|wav|m4a|ogg)(\?|$)", w["url"], _re.I)
+            if m:
+                ext = m.group(1).lower().replace("jpeg", "jpg")
+            key = f"{folder}/{w['id']}.{ext}"
+            size = await asyncio.to_thread(_s3_copy_from_url, w["url"], key, mime)
+        else:
+            return False
+        if used + size > SUB_QUOTA_BYTES:
+            await asyncio.to_thread(_s3_delete, [key])
+            print(f"ℹ️ Хранилище {email}: работа {work_id} не помещается в лимит")
+            return False
+        async with db_pool.acquire() as con:
+            await con.execute("UPDATE works SET skey=$2, size=$3, data=NULL, extended=TRUE, expires_at=$4 WHERE id=$1",
+                              work_id, key, size, keep_until)
+        return True
+    except Exception as e:
+        print(f"⚠️ Хранилище: работа {work_id} для {email} не сохранена: {e}")
+        return False
+
+
+async def _secure_all(email: str, until):
+    """После оплаты подписки: сохраняем все ещё живые работы и сдвигаем срок уже сохранённых."""
+    async with db_pool.acquire() as con:
+        await con.execute("UPDATE works SET expires_at=$2 WHERE email=$1 AND skey IS NOT NULL",
+                          email, until + _dt.timedelta(days=SUB_GRACE_DAYS))
+        ids = await con.fetch("SELECT id FROM works WHERE email=$1 AND skey IS NULL AND expires_at > now() "
+                              "ORDER BY created_at DESC", email)
+    ok = 0
+    for r in ids:
+        ok += 1 if await secure_work(email, r["id"], until) else 0
+    print(f"💾 Хранилище {email}: сохранено работ {ok} из {len(ids)}")
+
+
+@app.get("/api/storage/{email}")
+async def storage_info(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready() or not S3_BUCKET:
+        return {"ok": True, "available": False}
+    async with db_pool.acquire() as con:
+        until = await con.fetchval("SELECT until FROM storage_subs WHERE email=$1", email)
+        used = await _storage_used(con, email)
+    active = bool(until and until.timestamp() > time.time())
+    return {"ok": True, "available": True, "active": active,
+            "until": until.strftime("%d.%m.%Y") if until else None,
+            "used_mb": round(used / 1024 ** 2, 1), "quota_gb": round(SUB_QUOTA_BYTES / 1024 ** 3, 1),
+            "prices": SUB_PRICES, "days": WORKS_DAYS}
+
+
+@app.post("/api/storage/subscribe")
+async def storage_subscribe(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready() or not S3_BUCKET:
+        return {"ok": False, "error": "Хранилище пока недоступно"}
+    try:
+        days = int(data.get("days") or 0)
+    except (TypeError, ValueError):
+        days = 0
+    price = SUB_PRICES.get(days)
+    if not price:
+        return {"ok": False, "error": "Такого срока нет"}
+    async with db_pool.acquire() as con:
+        cur = await con.fetchval("SELECT until FROM storage_subs WHERE email=$1", email)
+    left = max(0.0, (cur.timestamp() - time.time()) / 86400) if cur else 0.0
+    if left + days > SUB_MAX_AHEAD_DAYS:
+        return {"ok": False, "error": f"Хранилище уже оплачено ещё на {int(left)} дн. Оплатить можно не дальше чем на 3 месяца вперёд — продлите ближе к окончанию"}
+    credit = await check_and_deduct_credits(email, price, "Хранилище: " + ("1 месяц" if days == 30 else "3 месяца"), "storage")
+    if not credit.get("success"):
+        return {"ok": False, "error": f"Не хватает кредитов: нужно {price} кр.", "credits": credit.get("credits", 0)}
+    async with db_pool.acquire() as con:
+        until = await con.fetchval(
+            "INSERT INTO storage_subs(email, until) VALUES($1, now() + make_interval(days => $2)) "
+            "ON CONFLICT (email) DO UPDATE SET until = GREATEST(storage_subs.until, now()) + make_interval(days => $2) "
+            "RETURNING until", email, days)
+    print(f"💾 Подписка «Хранилище» {email}: +{days} дн. до {until:%d.%m.%Y} ({price} кр.)")
+    asyncio.create_task(_secure_all(email, until))
+    return {"ok": True, "credits": credit.get("credits", 0), "until": until.strftime("%d.%m.%Y")}
 
 
 @app.post("/api/admin/import-users")
