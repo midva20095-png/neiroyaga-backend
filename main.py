@@ -103,6 +103,13 @@ PAYMENT_PACKAGES = parse_packages(PAYMENT_PACKAGES_RAW)
 VIP_PACK_RUB = 5000
 VIP_PACK_CREDITS = 5500
 VIP_DAYS = 30
+# Реферальная программа: оба получают % от первой оплаты друга от REF_MIN_RUB
+REF_PERCENT = 5
+REF_MIN_RUB = 1000
+REF_APPLY_DAYS = 30        # ввести код можно в течение 30 дней после регистрации и до первой оплаты
+REF_MONTHLY_CAP = 20       # не больше 20 награждённых друзей за 30 дней на одного пригласившего
+REF_FAIL_LIMIT = 10        # попыток ввода неверного кода в сутки
+REF_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # без похожих символов 0/O, 1/I/L
 if not PAYMENT_PACKAGES:
     print("⚠️ PAYMENT_PACKAGES не задан: сумму и кредиты присылает браузер, это можно подделать.")
 if REQUIRE_TOKEN and not APP_SECRET:
@@ -198,6 +205,20 @@ CREATE TABLE IF NOT EXISTS works (
 ALTER TABLE works ADD COLUMN IF NOT EXISTS skey TEXT;
 ALTER TABLE works ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE works ADD COLUMN IF NOT EXISTS size BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ref_code TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code_idx ON users (ref_code);
+CREATE TABLE IF NOT EXISTS referrals (
+    invitee TEXT PRIMARY KEY,
+    inviter TEXT NOT NULL,
+    code TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    rewarded BOOLEAN NOT NULL DEFAULT FALSE,
+    payment_id TEXT,
+    reward INTEGER NOT NULL DEFAULT 0,
+    inviter_reward INTEGER NOT NULL DEFAULT 0,
+    rewarded_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS referrals_inviter_idx ON referrals (inviter);
 CREATE TABLE IF NOT EXISTS vip_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -696,6 +717,122 @@ async def works_import(request: Request):
     if added:
         print(f"📥 {email}: перенесено работ из браузера {added}")
     return {"ok": True, "added": added}
+
+
+# ==================== Реферальная программа ====================
+_ref_fails = {}  # email -> [кол-во, начало суток]
+
+
+async def _referral_reward(con, email: str, paid: float, payment_id: str):
+    """Бонус за первую оплату друга от REF_MIN_RUB. Вызывается внутри транзакции зачисления платежа."""
+    if paid < REF_MIN_RUB:
+        return
+    ref = await con.fetchrow("SELECT inviter FROM referrals WHERE invitee=$1 AND NOT rewarded FOR UPDATE", email)
+    if not ref:
+        return
+    bonus = int(paid * REF_PERCENT // 100)
+    if bonus <= 0:
+        return
+    inviter = ref["inviter"]
+    recent = await con.fetchval("SELECT COUNT(*) FROM referrals WHERE inviter=$1 AND rewarded AND inviter_reward > 0 "
+                                "AND rewarded_at > now() - interval '30 days'", inviter)
+    inviter_bonus = bonus if recent < REF_MONTHLY_CAP else 0
+    bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits", email, bonus)
+    await db_log(con, email, bonus, bal, "referral", f"Бонус {REF_PERCENT}% по приглашению друга")
+    if inviter_bonus:
+        ibal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits", inviter, inviter_bonus)
+        if ibal is not None:
+            await db_log(con, inviter, inviter_bonus, ibal, "referral", f"Бонус {REF_PERCENT}% за оплату друга")
+        else:
+            inviter_bonus = 0
+    await con.execute("UPDATE referrals SET rewarded=TRUE, payment_id=$2, reward=$3, inviter_reward=$4, rewarded_at=now() "
+                      "WHERE invitee=$1", email, payment_id, bonus, inviter_bonus)
+    print(f"🎁 Реферал: {email} +{bonus} кр., пригласивший {inviter} +{inviter_bonus} кр.")
+
+
+async def _ensure_ref_code(con, email: str) -> str:
+    code = await con.fetchval("SELECT ref_code FROM users WHERE email=$1", email)
+    if code:
+        return code
+    for _ in range(20):
+        code = "YAGA-" + "".join(_secrets.choice(REF_ALPHABET) for _ in range(6))
+        try:
+            done = await con.fetchval("UPDATE users SET ref_code=$2 WHERE email=$1 AND ref_code IS NULL RETURNING ref_code", email, code)
+            if done:
+                return done
+            return await con.fetchval("SELECT ref_code FROM users WHERE email=$1", email)
+        except Exception:
+            continue  # такой код уже занят — пробуем другой
+    raise RuntimeError("не удалось выдать код")
+
+
+async def _ref_can_apply(con, email: str):
+    """Можно ли этому клиенту ввести код друга. Возвращает (можно, причина)."""
+    if await con.fetchval("SELECT 1 FROM referrals WHERE invitee=$1", email):
+        return False, "Код друга уже введён"
+    if await con.fetchval("SELECT 1 FROM payments WHERE email=$1 LIMIT 1", email):
+        return False, "Код друга можно ввести только до первой оплаты"
+    created = await con.fetchval("SELECT created_at FROM users WHERE email=$1", email)
+    if not created or (time.time() - created.timestamp()) > REF_APPLY_DAYS * 86400:
+        return False, f"Код друга можно ввести в течение {REF_APPLY_DAYS} дней после регистрации"
+    return True, ""
+
+
+@app.get("/api/referral/{email}")
+async def referral_info(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "Программа пока недоступна"}
+    async with db_pool.acquire() as con:
+        code = await _ensure_ref_code(con, email)
+        st = await con.fetchrow("SELECT COUNT(*) AS invited, COUNT(*) FILTER (WHERE rewarded) AS paid, "
+                                "COALESCE(SUM(inviter_reward),0) AS earned FROM referrals WHERE inviter=$1", email)
+        mine = await con.fetchrow("SELECT code, rewarded, reward FROM referrals WHERE invitee=$1", email)
+        can, why = await _ref_can_apply(con, email)
+    return {"ok": True, "code": code, "link": f"https://babayagaland.ru/kabinet?ref={code}",
+            "invited": int(st["invited"]), "paid": int(st["paid"]), "earned": int(st["earned"]),
+            "percent": REF_PERCENT, "min_rub": REF_MIN_RUB, "can_apply": can, "why": why,
+            "applied": {"code": mine["code"], "rewarded": mine["rewarded"], "reward": mine["reward"]} if mine else None}
+
+
+@app.post("/api/referral/apply")
+async def referral_apply(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "Программа пока недоступна"}
+    day = int(time.time() // 86400)
+    fails = _ref_fails.get(email)
+    if fails and fails[1] == day and fails[0] >= REF_FAIL_LIMIT:
+        return {"ok": False, "error": "Слишком много попыток. Попробуйте завтра"}
+    code = _re.sub(r"[^A-Z0-9-]", "", str(data.get("code") or "").upper())
+    if code and not code.startswith("YAGA-"):
+        code = "YAGA-" + code.replace("YAGA", "").lstrip("-")
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            can, why = await _ref_can_apply(con, email)
+            if not can:
+                return {"ok": False, "error": why}
+            inviter = await con.fetchval("SELECT email FROM users WHERE ref_code=$1", code) if len(code) == 11 else None
+            if not inviter:
+                f = _ref_fails.get(email)
+                _ref_fails[email] = [(f[0] + 1) if f and f[1] == day else 1, day]
+                return {"ok": False, "error": "Такого кода нет. Проверьте, нет ли опечатки"}
+            if inviter == email:
+                return {"ok": False, "error": "Нельзя ввести свой собственный код"}
+            done = await con.fetchval("INSERT INTO referrals(invitee, inviter, code) VALUES($1,$2,$3) "
+                                      "ON CONFLICT (invitee) DO NOTHING RETURNING invitee", email, inviter, code)
+            if not done:
+                return {"ok": False, "error": "Код друга уже введён"}
+    print(f"🎁 {email} ввёл код {code} ({inviter})")
+    return {"ok": True, "message": f"Код принят! После первой оплаты от {REF_MIN_RUB} ₽ вы оба получите {REF_PERCENT}% бонусом"}
 
 
 @app.post("/api/admin/import-users")
@@ -1329,6 +1466,7 @@ async def yookassa_webhook(request: Request):
                             paid = float(amount or 0)
                         except (TypeError, ValueError):
                             paid = 0.0
+                        await _referral_reward(con, norm_email(email), paid, payment_id)
                         if str(metadata.get("vip")) == "1" and paid >= VIP_PACK_RUB:
                             until = await con.fetchval(
                                 "INSERT INTO vip_subs(email, until) VALUES($1, now() + make_interval(days => $2)) "
