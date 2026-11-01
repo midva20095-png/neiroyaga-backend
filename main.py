@@ -12,7 +12,7 @@ import re as _re
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
@@ -178,6 +178,20 @@ CREATE TABLE IF NOT EXISTS payments (
     credits INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS works (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT,
+    source TEXT,
+    url TEXT,
+    data BYTEA,
+    mime TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS works_email_idx ON works (email, created_at DESC);
+CREATE INDEX IF NOT EXISTS works_exp_idx ON works (expires_at);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -242,6 +256,7 @@ async def db_startup():
             DB_MIGRATED = (await _get_setting(con, "migrated")) == "1"
             if DB_MIGRATED:
                 await _enable_tokens(con)
+        asyncio.create_task(_works_cleanup_loop())
         print("✅ База данных подключена" + (" — пользователи в базе" if DB_MIGRATED else
                                               " — ждёт переноса пользователей из таблицы"))
     except Exception as e:
@@ -303,6 +318,123 @@ async def db_add(email: str, amount: int, kind: str, note: str = "", category: s
                 return None
             await db_log(con, email, int(amount), bal, kind, note, category)
             return bal
+
+
+# ==================== Мои работы ====================
+# Хранятся 10 дней: видео, песни и картинки Братухи — ссылкой (Братуха сама хранит файлы 10 дней),
+# картинки нашей модели (чат и шаблоны) — в базе, сжатыми.
+WORKS_DAYS = 10
+WORKS_MAX_PER_USER = 300
+
+
+def _shrink_image(data: bytes, mime: str):
+    """Сжимаем до 1600 px JPEG, чтобы база не разрасталась. Если Pillow нет — храним как есть."""
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        im = im.convert("RGB")
+        im.thumbnail((1600, 1600))
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=86, optimize=True)
+        return out.getvalue(), "image/jpeg"
+    except Exception:
+        return data, mime or "image/png"
+
+
+async def save_work(email: str, kind: str, title: str, source: str, url: str = None, data: bytes = None, mime: str = None):
+    if not db_ready() or not email:
+        return
+    try:
+        if data:
+            data, mime = await asyncio.to_thread(_shrink_image, data, mime)
+        async with db_pool.acquire() as con:
+            await con.execute(
+                "INSERT INTO works(email, kind, title, source, url, data, mime, expires_at) "
+                "VALUES($1,$2,$3,$4,$5,$6,$7, now() + make_interval(days => $8))",
+                norm_email(email), kind, (title or "")[:160], (source or "")[:60], url, data, mime, WORKS_DAYS)
+            await con.execute(
+                "DELETE FROM works WHERE email=$1 AND id NOT IN "
+                "(SELECT id FROM works WHERE email=$1 ORDER BY created_at DESC LIMIT $2)", norm_email(email), WORKS_MAX_PER_USER)
+    except Exception as e:
+        print(f"⚠️ Не удалось сохранить работу {email}: {e}")
+
+
+def remember_work(*args, **kwargs):
+    """Сохраняем в фоне, не задерживая ответ клиенту."""
+    try:
+        asyncio.get_running_loop().create_task(save_work(*args, **kwargs))
+    except RuntimeError:
+        pass
+
+
+async def _works_cleanup_loop():
+    while True:
+        try:
+            if db_pool is not None:
+                async with db_pool.acquire() as con:
+                    res = await con.execute("DELETE FROM works WHERE expires_at < now()")
+                    n = int(res.split()[-1]) if res and res.split()[-1].isdigit() else 0
+                    if n:
+                        print(f"🧹 Удалено старых работ: {n}")
+        except Exception as e:
+            print(f"⚠️ Очистка работ: {e}")
+        await asyncio.sleep(3600)
+
+
+@app.get("/api/works/{email}")
+async def works_list(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "works": [], "days": WORKS_DAYS}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch("SELECT id, kind, title, source, url, (data IS NOT NULL) AS own, mime, created_at, expires_at "
+                               "FROM works WHERE email=$1 AND expires_at > now() ORDER BY created_at DESC LIMIT 300", email)
+    now = time.time()
+    out = []
+    for r in rows:
+        left = max(0, (r["expires_at"].timestamp() - now) / 86400)
+        out.append({"id": r["id"], "kind": r["kind"], "title": r["title"] or "", "source": r["source"] or "",
+                    "own": r["own"], "url": None if r["own"] else r["url"], "mime": r["mime"] or "",
+                    "ts": r["created_at"].isoformat(), "days_left": int(left) + (1 if left % 1 else 0)})
+    return {"ok": True, "works": out, "days": WORKS_DAYS}
+
+
+@app.get("/api/works/file/{work_id}")
+async def works_file(work_id: int, request: Request, email: str = "", dl: int = 0):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return JSONResponse({"ok": False}, status_code=404)
+    async with db_pool.acquire() as con:
+        r = await con.fetchrow("SELECT data, mime, title FROM works WHERE id=$1 AND email=$2 AND expires_at > now()",
+                               int(work_id), email)
+    if not r or r["data"] is None:
+        return JSONResponse({"ok": False, "error": "Работа не найдена или срок хранения истёк"}, status_code=404)
+    mime = r["mime"] or "image/jpeg"
+    headers = {"Cache-Control": "private, max-age=86400"}
+    if dl:
+        headers["Content-Disposition"] = f'attachment; filename="neyroyaga-{int(work_id)}.{mime.split("/")[-1].replace("jpeg", "jpg")}"'
+    return Response(content=bytes(r["data"]), media_type=mime, headers=headers)
+
+
+@app.post("/api/works/delete")
+async def works_delete(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False}
+    async with db_pool.acquire() as con:
+        await con.execute("DELETE FROM works WHERE id=$1 AND email=$2", int(data.get("id") or 0), email)
+    return {"ok": True}
 
 
 @app.post("/api/admin/import-users")
@@ -537,6 +669,9 @@ def build_history(history_list) -> list:
     return contents
 
 
+MODEL_TITLES = {"nanobanana": "Картинка", "nanobanana_pro": "Картинка Pro", "flash": "Flash", "flash_25": "Flash", "pro": "Pro"}
+
+
 def parse_response(response):
     text_output, image_data, mime_type = "", None, "image/jpeg"
     candidate = response.candidates[0] if getattr(response, 'candidates', None) else None
@@ -684,6 +819,11 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 text_output, image_data, mime_type = parse_response(response)
 
                 if image_data:
+                    try:
+                        remember_work(email, "image", (prompt or "Картинка")[:120], MODEL_TITLES.get(model_key, "Картинка"),
+                                      data=base64.b64decode(image_data), mime=mime_type)
+                    except Exception:
+                        pass
                     payload = {
                         "type": "image", "data": image_data, "mimeType": mime_type, "credits": current_balance,
                         "text": text_output or f"🎨 Твой шедевр готов! (-{required_credits} кр.)"
@@ -1255,6 +1395,11 @@ async def run_template(request: Request):
             return {"ok": False, "credits": balance,
                     "error": "Картинка не получилась. Кредиты вернула, попробуйте другое фото или ещё раз"}
 
+        try:
+            remember_work(email, "image", f"Шаблон «{template.get('title', template['id'])}»", "Шаблоны",
+                          data=base64.b64decode(image_data), mime=mime_type)
+        except Exception:
+            pass
         if TEMPLATES_SCRIPT_URL:  # счётчик популярности, не ждём ответа
             asyncio.create_task(asyncio.to_thread(_count_hit, template["id"]))
         return {"ok": True, "credits": balance, "image": image_data, "mimeType": mime_type, "text": text_output}
@@ -1788,6 +1933,9 @@ async def _video_worker(job_id: str):
             print(f"🎵 suno ({job.get('quality')}) для {job['email']}: операция {op_id}")
             urls = await _bh_wait_all(op_id, 8 * 60, 8)
             job.update(status="done", url=urls[0], urls=urls)
+            for i, u in enumerate(urls):
+                remember_work(job["email"], "audio", (job.get("prompt") or "Песня")[:110] + (f" · вариант {i + 1}" if len(urls) > 1 else ""),
+                              m["name"], url=u)
             print(f"✅ suno готово для {job['email']}")
             return
         if m.get("audio"):
@@ -1797,6 +1945,7 @@ async def _video_worker(job_id: str):
             print(f"🎙 {job['model']} ({job.get('quality')}, {job.get('duration')} сек) для {job['email']}: операция {op_id}")
             url = await _bh_wait(op_id, 25 * 60, 10)
             job.update(status="done", url=url)
+            remember_work(job["email"], "video", (job.get("prompt") or "Говорящее фото")[:120], m["name"], url=url)
             print(f"✅ {job['model']} готово для {job['email']}")
             return
         is_image = m.get("kind") == "image"
@@ -1813,6 +1962,7 @@ async def _video_worker(job_id: str):
                 print(f"🎬 {job['model']}{' (' + mode + ')' if mode else ''} для {job['email']}: операция {op_id}")
                 url = await _bh_wait(op_id, 5 * 60 if is_image else VIDEO_TIMEOUT_SEC, 3 if is_image else 5)
                 job.update(status="done", url=url)
+                remember_work(job["email"], "image" if is_image else "video", (job.get("prompt") or m["name"])[:120], m["name"], url=url)
                 print(f"✅ {job['model']} готово для {job['email']}")
                 return
             except Exception as e:
