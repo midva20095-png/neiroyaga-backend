@@ -99,6 +99,10 @@ def parse_packages(raw: str) -> dict:
 
 
 PAYMENT_PACKAGES = parse_packages(PAYMENT_PACKAGES_RAW)
+# VIP-пакет: 5000 ₽ → 5500 кр. + статус VIP на 30 дней (повторная покупка продлевает)
+VIP_PACK_RUB = 5000
+VIP_PACK_CREDITS = 5500
+VIP_DAYS = 30
 if not PAYMENT_PACKAGES:
     print("⚠️ PAYMENT_PACKAGES не задан: сумму и кредиты присылает браузер, это можно подделать.")
 if REQUIRE_TOKEN and not APP_SECRET:
@@ -194,6 +198,10 @@ CREATE TABLE IF NOT EXISTS works (
 ALTER TABLE works ADD COLUMN IF NOT EXISTS skey TEXT;
 ALTER TABLE works ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE works ADD COLUMN IF NOT EXISTS size BIGINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS vip_subs (
+    email TEXT PRIMARY KEY,
+    until TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS storage_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -731,7 +739,7 @@ async def import_users(request: Request):
 
 
 KIND_TITLES = {"payment": "Пополнение", "spend": "Списание", "refund": "Возврат", "migration": "Перенос баланса",
-               "admin": "Начисление"}
+               "admin": "Начисление", "vip": "VIP-статус", "referral": "Бонус за друга"}
 
 
 CATEGORY_BY_NOTE = (("Шаблон", "template"), ("Чат", "chat"), ("Бизнес", "chat"), ("Картинка", "image"))
@@ -752,12 +760,21 @@ def _tx_category(kind, note, category):
     return "other"
 
 
-def _level(bought: int):
-    if bought >= 5000:
-        return {"name": "VIP", "next": None, "left": 0}
+async def vip_until(email: str):
+    """Дата окончания VIP или None, если VIP не активен."""
+    if not db_ready():
+        return None
+    async with db_pool.acquire() as con:
+        u = await con.fetchval("SELECT until FROM vip_subs WHERE email=$1", norm_email(email))
+    return u if u and u.timestamp() > time.time() else None
+
+
+def _level(bought: int, vip=None):
+    if vip:
+        return {"name": "VIP", "next": None, "left": 0, "until": vip.strftime("%d.%m.%Y")}
     if bought >= 1000:
-        return {"name": "Постоянный клиент", "next": "VIP", "left": 5000 - bought}
-    return {"name": "Новичок", "next": "Постоянный клиент", "left": 1000 - bought}
+        return {"name": "Постоянный клиент", "next": None, "left": 0}
+    return {"name": "Новичок", "next": None, "left": 0}
 
 
 @app.get("/api/account/{email}")
@@ -795,9 +812,12 @@ async def account_info(email: str, request: Request):
             cats[cat] = cats[cat] - val
     cats = {k: v for k, v in cats.items() if v > 0}
     bought = int(stats["bought"])
+    vip = await vip_until(email)
     return {"ok": True, "db": True, "email": email, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
-            "categories": cats, "level": _level(bought), "history": history}
+            "categories": cats, "level": _level(bought, vip), "history": history,
+            "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
+                    "pack": {"rub": VIP_PACK_RUB, "credits": VIP_PACK_CREDITS, "days": VIP_DAYS}}}
 
 
 @app.post("/api/account/password")
@@ -1201,7 +1221,10 @@ async def create_payment(request: Request):
     if not email or amount <= 0:
         return {"success": False, "error": "Неверные параметры"}
 
-    if PAYMENT_PACKAGES:
+    is_vip_pack = amount == VIP_PACK_RUB
+    if is_vip_pack:
+        credits = VIP_PACK_CREDITS  # VIP-пакет: кредиты и статус определяет сервер
+    elif PAYMENT_PACKAGES:
         if amount not in PAYMENT_PACKAGES:
             return {"success": False, "error": "Такого пакета нет, обновите страницу"}
         credits = PAYMENT_PACKAGES[amount]  # кредиты определяет сервер, а не браузер
@@ -1215,8 +1238,9 @@ async def create_payment(request: Request):
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": RETURN_URL},
-        "description": f"Покупка {credits} кредитов НейроЯга для {email}"[:128],
-        "metadata": {"email": email, "credits": credits}
+        "description": (f"VIP-пакет НейроЯга: {credits} кредитов + VIP на {VIP_DAYS} дней для {email}" if is_vip_pack
+                        else f"Покупка {credits} кредитов НейроЯга для {email}")[:128],
+        "metadata": {"email": email, "credits": credits, "vip": "1" if is_vip_pack else "0"}
     }
     try:
         response = await asyncio.to_thread(
@@ -1301,6 +1325,17 @@ async def yookassa_webhook(request: Request):
                         if bal is None:
                             raise RuntimeError("пользователь не найден")
                         await db_log(con, norm_email(email), credits_to_add, bal, "payment", f"Оплата {amount} ₽")
+                        try:
+                            paid = float(amount or 0)
+                        except (TypeError, ValueError):
+                            paid = 0.0
+                        if str(metadata.get("vip")) == "1" and paid >= VIP_PACK_RUB:
+                            until = await con.fetchval(
+                                "INSERT INTO vip_subs(email, until) VALUES($1, now() + make_interval(days => $2)) "
+                                "ON CONFLICT (email) DO UPDATE SET until = GREATEST(vip_subs.until, now()) + make_interval(days => $2) "
+                                "RETURNING until", norm_email(email), VIP_DAYS)
+                            await db_log(con, norm_email(email), 0, bal, "vip", f"VIP до {until:%d.%m.%Y}")
+                            print(f"👑 {email}: VIP до {until:%d.%m.%Y}")
             except Exception as e:
                 print(f"❌ База: зачисление платежа {payment_id} для {email}: {e}")
                 return JSONResponse({"status": "retry"}, status_code=500)
@@ -1445,6 +1480,7 @@ def normalize_template(row: dict):
         "image": str(row.get("image") or "").strip(), "price": price,
         "fields": parse_fields(row.get("fields")), "trend": _truthy(row.get("trend")),
         "cats": cats, "runs": _to_int(row.get("runs"), 0),
+        "vip": any(c.lower() == "vip" for c in cats) or _truthy(row.get("vip")),
         "formats": [a for a in (x.strip() for x in str(row.get("formats") or "").replace(",", ";").split(";")) if a in ASPECTS],
         "_prompt": str(row.get("prompt")).strip(), "_model": model_key,
     }
@@ -1570,7 +1606,9 @@ async def get_balance(email: str, request: Request):
     res = await check_and_deduct_credits(email, 0)
     if res.get("error"):
         return {"ok": False, "error": "Сервер кредитов не отвечает"}
-    return {"ok": True, "credits": res.get("credits", 0)}
+    vip = await vip_until(email)
+    return {"ok": True, "credits": res.get("credits", 0), "vip": bool(vip), "vip_until": vip.strftime("%d.%m.%Y") if vip else None,
+            "vip_pack": {"rub": VIP_PACK_RUB, "credits": VIP_PACK_CREDITS, "days": VIP_DAYS}}
 
 
 @app.post("/api/templates/run")
@@ -1589,6 +1627,8 @@ async def run_template(request: Request):
     template = next((t for t in templates if t["id"] == str(data.get("templateId"))), None)
     if not template:
         return {"ok": False, "error": "Шаблон не найден, обновите страницу"}
+    if template.get("vip") and not await vip_until(email):  # проверка на сервере — обойти через браузер нельзя
+        return {"ok": False, "vip_required": True, "error": "Этот шаблон доступен только VIP-клиентам"}
 
     aspect = clean_aspect(data.get("aspect"))
     answers_raw = data.get("answers") if isinstance(data.get("answers"), dict) else {}
