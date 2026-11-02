@@ -289,6 +289,29 @@ CREATE TABLE IF NOT EXISTS gift_certs (
     used_by TEXT,
     used_at TIMESTAMPTZ
 );
+CREATE TABLE IF NOT EXISTS chats (
+    email TEXT NOT NULL,
+    id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT 'Новый чат',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (email, id)
+);
+CREATE INDEX IF NOT EXISTS chats_email_upd_idx ON chats (email, updated_at DESC);
+CREATE TABLE IF NOT EXISTS chat_msgs (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_msgs_chat_idx ON chat_msgs (email, chat_id, created_at, id);
+CREATE TABLE IF NOT EXISTS chat_import (
+    email TEXT PRIMARY KEY,
+    done BOOLEAN NOT NULL DEFAULT FALSE,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS vip_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -2874,24 +2897,107 @@ async def tscript(payload: dict):
     return await asyncio.to_thread(_tscript_sync, payload)
 
 
+# ==================== Чаты (база данных; старые переносятся из Google-таблицы) ====================
+CHATS_MAX_PER_USER = 500
+CHAT_MSGS_MAX = 1000
+_chat_importing: set = set()
+
+
+async def _chats_import(email: str):
+    """Разовый перенос чатов клиента из Google-таблицы в базу (в фоне)."""
+    if not TEMPLATES_SCRIPT_URL or email in _chat_importing:
+        return
+    async with db_pool.acquire() as con:
+        claimed = await con.fetchval(
+            "INSERT INTO chat_import(email) VALUES($1) ON CONFLICT (email) DO UPDATE SET started_at=now() "
+            "WHERE NOT chat_import.done AND chat_import.started_at < now() - interval '10 minutes' RETURNING email", email)
+    if not claimed:
+        return
+    _chat_importing.add(email)
+    n_chats = n_msgs = 0
+    try:
+        d = await tscript({"action": "chats_list", "email": email})
+        if not d or not d.get("ok"):
+            raise RuntimeError("таблица не ответила")
+        for c in (d.get("chats") or [])[:CHATS_MAX_PER_USER]:
+            cid = str(c.get("id") or "")
+            if not CHAT_ID_RE.match(cid):
+                continue
+            m = await tscript({"action": "chat_get", "email": email, "chat_id": cid})
+            if not m or not m.get("ok"):
+                continue
+            msgs = (m.get("messages") or [])[-CHAT_MSGS_MAX:]
+            upd = (int(c.get("updated") or 0) / 1000.0) or time.time()
+            async with db_pool.acquire() as con:
+                async with con.transaction():
+                    await con.execute("INSERT INTO chats(email, id, title, created_at, updated_at) "
+                                      "VALUES($1,$2,$3, to_timestamp($4), to_timestamp($4)) ON CONFLICT (email, id) DO NOTHING",
+                                      email, cid, str(c.get("title") or "Чат")[:80], upd)
+                    for i, msg in enumerate(msgs):  # старые сообщения — раньше новых
+                        await con.execute("INSERT INTO chat_msgs(email, chat_id, role, text, created_at) VALUES($1,$2,$3,$4, to_timestamp($5))",
+                                          email, cid, "user" if msg.get("role") == "user" else "bot",
+                                          str(msg.get("text") or "")[:MAX_CHAT_TEXT], upd - (len(msgs) - i))
+            n_chats += 1
+            n_msgs += len(msgs)
+        async with db_pool.acquire() as con:
+            await con.execute("UPDATE chat_import SET done=TRUE WHERE email=$1", email)
+        print(f"💬 Чаты {email} перенесены в базу: {n_chats} чатов, {n_msgs} сообщений")
+    except Exception as e:
+        print(f"⚠️ Перенос чатов {email}: {e} — повторю при следующем заходе")
+        async with db_pool.acquire() as con:
+            await con.execute("DELETE FROM chat_import WHERE email=$1 AND NOT done", email)
+    finally:
+        _chat_importing.discard(email)
+
+
+async def _chats_ready(email: str) -> bool:
+    """True — чаты клиента уже в базе. Иначе запускаем перенос в фоне."""
+    async with db_pool.acquire() as con:
+        done = await con.fetchval("SELECT done FROM chat_import WHERE email=$1", email)
+    if done:
+        return True
+    if TEMPLATES_SCRIPT_URL and email not in _chat_importing:
+        asyncio.create_task(_chats_import(email))
+    return not TEMPLATES_SCRIPT_URL
+
+
 @app.get("/api/chats/{email}")
 async def chats_list(email: str, request: Request):
-    email = email.strip()
+    email = norm_email(email)
     if not is_authorized(email, token_from_request(request)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-    d = await tscript({"action": "chats_list", "email": email})
-    if not d or not d.get("ok"):
-        return {"ok": False, "error": "Не удалось загрузить чаты", "chats": []}
-    return {"ok": True, "chats": d.get("chats", [])}
+    if not db_ready():
+        d = await tscript({"action": "chats_list", "email": email})
+        if not d or not d.get("ok"):
+            return {"ok": False, "error": "Не удалось загрузить чаты", "chats": []}
+        return {"ok": True, "chats": d.get("chats", [])}
+    ready = await _chats_ready(email)
+    async with db_pool.acquire() as con:
+        rows = await con.fetch("SELECT id, title, updated_at FROM chats WHERE email=$1 ORDER BY updated_at DESC LIMIT 200", email)
+    chats = [{"id": r["id"], "title": r["title"], "updated": int(r["updated_at"].timestamp() * 1000)} for r in rows]
+    if not ready:  # пока идёт перенос — добавляем чаты из таблицы
+        d = await tscript({"action": "chats_list", "email": email})
+        have = {c["id"] for c in chats}
+        for c in (d or {}).get("chats", []) if d and d.get("ok") else []:
+            if str(c.get("id")) not in have:
+                chats.append(c)
+        chats.sort(key=lambda c: -int(c.get("updated") or 0))
+    return {"ok": True, "chats": chats[:200]}
 
 
 @app.get("/api/chats/{email}/{chat_id}")
 async def chat_get(email: str, chat_id: str, request: Request):
-    email = email.strip()
+    email = norm_email(email)
     if not is_authorized(email, token_from_request(request)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
     if not CHAT_ID_RE.match(chat_id):
         return {"ok": False, "error": "Чат не найден"}
+    if db_ready():
+        async with db_pool.acquire() as con:
+            rows = await con.fetch("SELECT role, text FROM chat_msgs WHERE email=$1 AND chat_id=$2 ORDER BY created_at, id", email, chat_id)
+            done = await con.fetchval("SELECT done FROM chat_import WHERE email=$1", email)
+        if rows or done or not TEMPLATES_SCRIPT_URL:
+            return {"ok": True, "messages": [{"role": r["role"], "text": r["text"]} for r in rows]}
     d = await tscript({"action": "chat_get", "email": email, "chat_id": chat_id})
     if not d or not d.get("ok"):
         return {"ok": False, "error": "Не удалось открыть чат"}
@@ -2904,7 +3010,7 @@ async def chat_message(request: Request):
         data = await request.json()
     except Exception:
         return {"ok": False, "error": "Неверный запрос"}
-    email = str(data.get("email") or "").strip()
+    email = norm_email(data.get("email"))
     chat_id = str(data.get("chat_id") or "")
     role = "user" if data.get("role") == "user" else "bot"
     text = str(data.get("text") or "")[:MAX_CHAT_TEXT]
@@ -2913,6 +3019,18 @@ async def chat_message(request: Request):
         return {"ok": False, "error": "Неверные параметры"}
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if db_ready():
+        async with db_pool.acquire() as con:
+            async with con.transaction():
+                await con.execute("INSERT INTO chats(email, id, title) VALUES($1,$2,$3) "
+                                  "ON CONFLICT (email, id) DO UPDATE SET updated_at=now()", email, chat_id, title or "Новый чат")
+                await con.execute("INSERT INTO chat_msgs(email, chat_id, role, text) VALUES($1,$2,$3,$4)", email, chat_id, role, text)
+            await con.execute("DELETE FROM chat_msgs WHERE email=$1 AND chat_id=$2 AND id NOT IN "
+                              "(SELECT id FROM chat_msgs WHERE email=$1 AND chat_id=$2 ORDER BY created_at DESC, id DESC LIMIT $3)",
+                              email, chat_id, CHAT_MSGS_MAX)
+            await con.execute("DELETE FROM chats WHERE email=$1 AND id IN (SELECT id FROM chats WHERE email=$1 ORDER BY updated_at DESC OFFSET $2)",
+                              email, CHATS_MAX_PER_USER)
+        return {"ok": True}
     payload = {"action": "chat_add", "email": email, "chat_id": chat_id, "title": title, "role": role, "text": text}
     d = None
     for attempt in range(3):  # таблица могла быть занята другой записью — пробуем ещё раз
@@ -2929,14 +3047,24 @@ async def chat_delete(request: Request):
         data = await request.json()
     except Exception:
         return {"ok": False, "error": "Неверный запрос"}
-    email = str(data.get("email") or "").strip()
+    email = norm_email(data.get("email"))
     chat_id = str(data.get("chat_id") or "")
     if not email or not CHAT_ID_RE.match(chat_id):
         return {"ok": False, "error": "Неверные параметры"}
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-    d = await tscript({"action": "chat_delete", "email": email, "chat_id": chat_id})
-    return {"ok": bool(d and d.get("ok"))}
+    done = True
+    if db_ready():
+        async with db_pool.acquire() as con:
+            async with con.transaction():
+                await con.execute("DELETE FROM chat_msgs WHERE email=$1 AND chat_id=$2", email, chat_id)
+                await con.execute("DELETE FROM chats WHERE email=$1 AND id=$2", email, chat_id)
+            done = bool(await con.fetchval("SELECT done FROM chat_import WHERE email=$1", email))
+    if not done or not db_ready():  # чтобы старый чат не «воскрес» при переносе
+        d = await tscript({"action": "chat_delete", "email": email, "chat_id": chat_id})
+        if not db_ready():
+            return {"ok": bool(d and d.get("ok"))}
+    return {"ok": True}
 
 
 # ==================== Видео (через Братуху) ====================
