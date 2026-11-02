@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>НейроЯга · Админ-панель</title>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#0b0614;--p1:#140c24;--p2:#1c1233;--tx:#f3efff;--mut:#a79cc4;--ln:rgba(255,255,255,.08);--ln2:rgba(255,255,255,.14);--cy:#00d4ff;--pu:#9d4dff;--pk:#ff2ec4;--ok:#3ee08f;--grad:linear-gradient(135deg,#00d4ff,#9d4dff 50%,#ff2ec4)}
+body{margin:0;background:radial-gradient(60% 40% at 10% 0,rgba(0,212,255,.1),transparent 60%),radial-gradient(50% 40% at 90% 0,rgba(255,46,196,.1),transparent 60%),var(--bg);color:var(--tx);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+a{color:var(--cy)}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.top h1{margin:0;font-size:20px;flex:1}
+.top h1 i{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.btn{padding:11px 18px;border-radius:12px;background:var(--grad);color:#fff;font-weight:700}
+.btn:disabled{opacity:.5}
+.ghost{padding:9px 14px;border-radius:12px;border:1px solid var(--ln2);font-weight:600}
+.ghost:hover{border-color:var(--pu)}
+.danger{border-color:rgba(255,80,120,.6);color:#ff9fb8}
+.in{width:100%;padding:11px 13px;border-radius:12px;border:1px solid var(--ln2);background:var(--p1);outline:none}
+.in:focus{border-color:var(--pu)}
+.card{background:rgba(255,255,255,.03);border:1px solid var(--ln2);border-radius:18px;padding:16px;margin-bottom:14px}
+.card h3{margin:0 0 12px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--p1);border:1px solid var(--ln2);border-radius:16px;padding:14px}
+.kpi small{color:var(--mut);font-size:12px}
+.kpi b{display:block;font-size:22px;margin-top:2px}
+.kpi.hot{border-color:rgba(255,46,196,.5);background:linear-gradient(135deg,rgba(255,46,196,.12),rgba(157,77,255,.08))}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.tabs{display:flex;gap:6px;margin-bottom:16px}
+.tabs button{padding:9px 16px;border-radius:12px;border:1px solid var(--ln2);color:var(--mut);font-weight:700}
+.tabs button.on{background:var(--grad);color:#fff;border-color:transparent}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--ln);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12.5px}
+tr.click{cursor:pointer}
+tr.click:hover td{background:rgba(157,77,255,.08)}
+.tbl{overflow-x:auto}
+.p{color:var(--ok);font-weight:700}.m{color:#ff8be0;font-weight:700}
+.dim{color:var(--mut)}
+.chart{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:10px}
+.chart div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+.chart i{display:block;width:100%;border-radius:6px 6px 2px 2px;background:var(--grad);min-height:2px}
+.chart span{font-size:10.5px;color:var(--mut)}
+.chart em{font-style:normal;font-size:10.5px;color:var(--tx)}
+.bar{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;margin:7px 0;font-size:13.5px}
+.bar div{height:9px;background:rgba(255,255,255,.07);border-radius:9px;overflow:hidden}
+.bar div i{display:block;height:100%;background:var(--grad)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row .in{flex:1;min-width:140px}
+.tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:rgba(255,255,255,.08)}
+.tag.vip{background:linear-gradient(135deg,#ffd76a,#ff9f43);color:#3a1d00}
+.tag.on{background:rgba(62,224,143,.2);color:#9ff5c8}
+.login{max-width:400px;margin:12vh auto 0;text-align:center}
+.login p{color:var(--mut)}
+.code{font-size:28px;letter-spacing:.35em;text-align:center}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#231842;border:1px solid var(--ln2);padding:12px 18px;border-radius:14px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;max-width:92vw;text-align:center;z-index:9}
+.toast.on{opacity:1}
+.pw{font:700 20px/1.3 ui-monospace,Menlo,monospace;letter-spacing:.08em;background:var(--p1);border:1px dashed var(--pu);border-radius:12px;padding:10px 14px;margin:8px 0;user-select:all}
+@media(max-width:820px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+(function () {
+  'use strict';
+  var app = document.getElementById('app');
+  var T = sessionStorage.getItem('ny_admin') || '';
+  var S = { tab: 'sum', q: '', user: null };
+  var CAT = { chat: '💬 Чат', image: '🎨 Картинки', template: '✨ Шаблоны', video: '🎬 Видео', audio: '🎵 Музыка', storage: '💾 Хранилище', other: '• Прочее' };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function n(v) { return String(Math.round(v || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+  function dt(iso) { if (!iso) return '—'; var d = new Date(iso); return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
+  var tt; function toast(t) { var el = document.getElementById('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(tt); tt = setTimeout(function () { el.classList.remove('on'); }, 3500); }
+
+  function api(path, body) {
+    var opt = { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': T } };
+    if (body) opt.body = JSON.stringify(body);
+    return fetch(path, opt).then(function (r) {
+      if (r.status === 401) { T = ''; sessionStorage.removeItem('ny_admin'); login(); throw new Error('auth'); }
+      return r.json();
+    });
+  }
+
+  /* ---------- вход ---------- */
+  function login(msg) {
+    app.innerHTML = '<div class="login card"><h2 style="margin:0 0 8px">🔐 Админ-панель <span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent">НейроЯги</span></h2>' +
+      '<p>Код для входа придёт в Telegram от бота поддержки.</p>' +
+      '<button class="btn" id="getcode" style="width:100%">Получить код в Telegram</button>' +
+      '<div id="codebox" style="display:none;margin-top:14px"><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">' +
+      '<button class="btn" id="enter" style="width:100%;margin-top:10px">Войти</button></div>' +
+      '<p id="lerr" style="color:#ff9fb8;min-height:20px">' + esc(msg || '') + '</p></div>';
+    document.getElementById('getcode').onclick = function () {
+      var b = this; b.disabled = true;
+      fetch('/api/admin/code', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (r) {
+        b.disabled = false;
+        if (!r.ok) { document.getElementById('lerr').textContent = r.error || 'Ошибка'; return; }
+        b.textContent = 'Отправить код ещё раз';
+        document.getElementById('codebox').style.display = 'block'; document.getElementById('code').focus();
+        document.getElementById('lerr').textContent = '';
+      }).catch(function () { b.disabled = false; document.getElementById('lerr').textContent = 'Нет связи с сервером'; });
+    };
+    var enter = function () {
+      var c = document.getElementById('code').value.trim();
+      fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: c }) })
+        .then(function (r) { return r.json(); }).then(function (r) {
+          if (!r.ok) { document.getElementById('lerr').textContent = r.error || 'Неверный код'; return; }
+          T = r.token; sessionStorage.setItem('ny_admin', T); main();
+        });
+    };
+    document.getElementById('enter').onclick = enter;
+    document.getElementById('code').onkeydown = function (e) { if (e.key === 'Enter') enter(); };
+  }
+
+  /* ---------- каркас ---------- */
+  function main() {
+    app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1><button class="ghost" id="logout">Выйти</button></div>' +
+      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button></div><div id="view"></div>';
+    document.getElementById('logout').onclick = function () { sessionStorage.removeItem('ny_admin'); T = ''; login(); };
+    app.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-t'); S.user = null; show(); }; });
+    show();
+  }
+  function show() {
+    app.querySelectorAll('[data-t]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-t') === S.tab); });
+    if (S.user) return userView(S.user);
+    if (S.tab === 'sum') summary(); else users();
+  }
+  function view(h) { document.getElementById('view').innerHTML = h; }
+
+  /* ---------- сводка ---------- */
+  function summary() {
+    view('<p class="dim">Загружаю…</p>');
+    api('/api/admin/stats').then(function (r) {
+      if (!r.ok) { view('<p>' + esc(r.error) + '</p>'); return; }
+      var rv = r.revenue, u = r.users;
+      var h = '<div class="grid">' +
+        '<div class="kpi hot"><small>Выручка сегодня</small><b>' + n(rv.today) + ' ₽</b></div>' +
+        '<div class="kpi"><small>За 7 дней</small><b>' + n(rv.d7) + ' ₽</b></div>' +
+        '<div class="kpi"><small>За 30 дней</small><b>' + n(rv.d30) + ' ₽</b><small>' + rv.n30 + ' платежей</small></div>' +
+        '<div class="kpi"><small>Всего с начала</small><b>' + n(rv.total) + ' ₽</b></div>' +
+        '<div class="kpi"><small>Клиентов всего</small><b>' + n(u.total) + '</b><small>активны за 7 дней: ' + n(u.active7) + '</small></div>' +
+        '<div class="kpi"><small>Новые: сегодня / 7 / 30 дней</small><b>' + u.d1 + ' / ' + u.d7 + ' / ' + u.d30 + '</b></div>' +
+        '<div class="kpi"><small>Кредитов на балансах</small><b>' + n(u.credits) + '</b><small>это ваш долг перед клиентами</small></div>' +
+        '<div class="kpi"><small>👑 VIP / 💾 Хранилище</small><b>' + r.vip + ' / ' + r.storage + '</b><small>в поддержке сейчас: ' + r.support_online + '</small></div></div>';
+      var mx = Math.max.apply(null, r.days.map(function (d) { return d.s; }).concat([1]));
+      h += '<div class="card"><h3>Выручка за 14 дней</h3>' + (r.days.length ? '<div class="chart">' + r.days.map(function (d) {
+        return '<div><em>' + (d.s ? n(d.s) : '') + '</em><i style="height:' + Math.max(2, Math.round(d.s / mx * 110)) + 'px"></i><span>' + esc(d.d) + '</span></div>';
+      }).join('') + '</div>' : '<p class="dim">Платежей пока нет</p>') + '</div>';
+      var cm = Math.max.apply(null, r.categories.map(function (c) { return c.s; }).concat([1]));
+      h += '<div class="two"><div class="card"><h3>Траты клиентов за 30 дней</h3>' + (r.categories.length ? r.categories.map(function (c) {
+        return '<div class="bar"><span>' + esc(CAT[c.c] || c.c) + '</span><div><i style="width:' + Math.max(3, Math.round(c.s / cm * 100)) + '%"></i></div><b>' + n(c.s) + ' кр.</b></div>';
+      }).join('') : '<p class="dim">Пока пусто</p>') + '</div>' +
+        '<div class="card"><h3>Популярные шаблоны за 30 дней</h3>' + (r.templates.length ? '<table><tr><th>Шаблон</th><th>Запусков</th><th>Кредитов</th></tr>' + r.templates.map(function (t) {
+          return '<tr><td>' + esc(t.t) + '</td><td>' + t.n + '</td><td>' + n(t.s) + '</td></tr>';
+        }).join('') + '</table>' : '<p class="dim">Пока пусто</p>') + '</div></div>';
+      h += '<div class="card"><h3>Последние платежи</h3><div class="tbl"><table><tr><th>Когда</th><th>Клиент</th><th>Сумма</th><th>Кредитов</th></tr>' +
+        (r.payments.map(function (p) { return '<tr class="click" data-u="' + esc(p.email) + '"><td>' + dt(p.at) + '</td><td>' + esc(p.email) + '</td><td class="p">' + n(p.rub) + ' ₽</td><td>' + n(p.credits) + '</td></tr>'; }).join('') || '<tr><td colspan="4" class="dim">Платежей пока нет</td></tr>') +
+        '</table></div></div>';
+      h += '<p class="dim" style="font-size:12.5px">Бот Telegram: ' + (r.bot ? '✅ подключён' : '❌ не настроен') + ' · Чеки 54-ФЗ: ' + (r.receipts ? '✅ передаются в ЮKassa' : '⚪ не передаются (YOOKASSA_RECEIPT)') + '</p>';
+      view(h); bindUsers();
+    }).catch(function () {});
+  }
+
+  /* ---------- клиенты ---------- */
+  function users() {
+    view('<div class="card"><div class="row"><input class="in" id="q" placeholder="Поиск по почте" value="' + esc(S.q) + '"><button class="btn" id="go">Найти</button></div></div><div id="list"><p class="dim">Загружаю…</p></div>');
+    var run = function () {
+      S.q = document.getElementById('q').value.trim();
+      api('/api/admin/users?q=' + encodeURIComponent(S.q)).then(function (r) {
+        document.getElementById('list').innerHTML = '<div class="card tbl"><table><tr><th>Почта</th><th>Баланс</th><th>Оплатил</th><th>Статус</th><th>Последний вход</th></tr>' +
+          (r.users.map(function (u) {
+            return '<tr class="click" data-u="' + esc(u.email) + '"><td>' + esc(u.email) + '</td><td>' + n(u.credits) + ' кр.</td><td>' + n(u.paid) + ' ₽</td><td>' +
+              (u.vip ? '<span class="tag vip">👑 VIP до ' + esc(u.vip) + '</span>' : '') + '</td><td>' + dt(u.last || u.created) + '</td></tr>';
+          }).join('') || '<tr><td colspan="5" class="dim">Никого не нашли</td></tr>') + '</table></div>';
+        bindUsers();
+      }).catch(function () {});
+    };
+    document.getElementById('go').onclick = run;
+    document.getElementById('q').onkeydown = function (e) { if (e.key === 'Enter') run(); };
+    run();
+  }
+  function bindUsers() {
+    document.querySelectorAll('[data-u]').forEach(function (tr) { tr.onclick = function () { S.user = tr.getAttribute('data-u'); show(); window.scrollTo(0, 0); }; });
+  }
+
+  /* ---------- карточка клиента ---------- */
+  function userView(email) {
+    view('<p class="dim">Загружаю…</p>');
+    api('/api/admin/user/' + encodeURIComponent(email)).then(function (r) {
+      if (!r.ok) { view('<p>' + esc(r.error) + '</p><button class="ghost" id="back">← Назад</button>'); document.getElementById('back').onclick = function () { S.user = null; show(); }; return; }
+      var h = '<button class="ghost" id="back" style="margin-bottom:12px">← Назад</button>';
+      h += '<div class="card"><h3 style="font-size:18px;word-break:break-all">' + esc(r.email) + ' ' + (r.vip ? '<span class="tag vip">👑 VIP до ' + esc(r.vip) + '</span>' : '') + (r.storage ? ' <span class="tag on">💾 Хранилище до ' + esc(r.storage) + '</span>' : '') + '</h3>' +
+        '<div class="grid" style="margin:0"><div class="kpi hot"><small>Баланс</small><b>' + n(r.credits) + ' кр.</b></div><div class="kpi"><small>Оплатил всего</small><b>' + n(r.paid) + ' ₽</b></div>' +
+        '<div class="kpi"><small>Регистрация</small><b style="font-size:15px">' + esc(r.created) + '</b><small>вход: ' + esc(r.last || '—') + '</small></div>' +
+        '<div class="kpi"><small>Работ / рефералов</small><b>' + r.works + ' / ' + r.invited + '</b><small>код: ' + esc(r.ref_code || '—') + (r.ref_by ? ' · пригласил ' + esc(r.ref_by.inviter) : '') + '</small></div></div></div>';
+      h += '<div class="two"><div class="card"><h3>💰 Начислить или списать кредиты</h3><div class="row"><input class="in" id="cd" type="number" placeholder="Например 100 или -50" style="max-width:190px"><input class="in" id="cr" placeholder="Причина (видна клиенту)"></div>' +
+        '<div class="row" style="margin-top:8px"><button class="btn" id="cgo">Применить</button><span class="dim" style="font-size:12.5px">Причина появится в истории клиента</span></div></div>' +
+        '<div class="card"><h3>👑 VIP и 🔑 пароль</h3><div class="row"><button class="ghost" data-vip="30">VIP +30 дней</button><button class="ghost" data-vip="365">VIP +1 год</button><button class="ghost danger" data-vip="0">Снять VIP</button></div>' +
+        '<div class="row" style="margin-top:10px"><button class="ghost" id="pw">Задать новый пароль</button><span class="dim" style="font-size:12.5px">Сгенерируется случайный — передайте клиенту</span></div><div id="pwbox"></div></div></div>';
+      h += '<div class="card"><h3>Платежи</h3><div class="tbl"><table><tr><th>Когда</th><th>Сумма</th><th>Кредитов</th><th>ID платежа</th></tr>' +
+        (r.payments.map(function (p) { return '<tr><td>' + esc(p.at) + '</td><td class="p">' + n(p.rub) + ' ₽</td><td>' + n(p.credits) + '</td><td class="dim" style="font-size:12px">' + esc(p.id) + '</td></tr>'; }).join('') || '<tr><td colspan="4" class="dim">Платежей нет</td></tr>') + '</table></div></div>';
+      h += '<div class="card"><h3>История операций (последние 100)</h3><div class="tbl"><table><tr><th>Когда</th><th>Операция</th><th>Сумма</th><th>Остаток</th></tr>' +
+        (r.history.map(function (t) { return '<tr><td>' + esc(t.at) + '</td><td>' + esc(t.kind) + (t.note ? '<br><span class="dim" style="font-size:12.5px">' + esc(t.note) + '</span>' : '') + '</td><td class="' + (t.delta >= 0 ? 'p' : 'm') + '">' + (t.delta > 0 ? '+' : '') + n(t.delta) + '</td><td>' + n(t.balance) + '</td></tr>'; }).join('') || '<tr><td colspan="4" class="dim">Операций нет</td></tr>') + '</table></div></div>';
+      view(h);
+      document.getElementById('back').onclick = function () { S.user = null; show(); };
+      document.getElementById('cgo').onclick = function () {
+        var d = parseInt(document.getElementById('cd').value, 10), reason = document.getElementById('cr').value.trim();
+        if (!d) { toast('Укажите количество кредитов'); return; }
+        if (!reason) { toast('Укажите причину'); return; }
+        if (!confirm((d > 0 ? 'Начислить ' : 'Списать ') + Math.abs(d) + ' кр. клиенту ' + email + '?')) return;
+        api('/api/admin/credits', { email: email, delta: d, reason: reason }).then(function (x) { toast(x.ok ? 'Готово. Баланс: ' + n(x.credits) + ' кр.' : x.error); if (x.ok) userView(email); });
+      };
+      document.querySelectorAll('[data-vip]').forEach(function (b) {
+        b.onclick = function () {
+          var days = +b.getAttribute('data-vip');
+          if (!confirm(days ? 'Выдать VIP на ' + days + ' дней?' : 'Снять VIP?')) return;
+          api('/api/admin/vip', { email: email, days: days }).then(function (x) { toast(x.ok ? (x.vip ? 'VIP до ' + x.vip : 'VIP снят') : x.error); if (x.ok) userView(email); });
+        };
+      });
+      document.getElementById('pw').onclick = function () {
+        if (!confirm('Задать клиенту новый случайный пароль? Старый перестанет работать.')) return;
+        api('/api/admin/password', { email: email }).then(function (x) {
+          if (!x.ok) { toast(x.error); return; }
+          document.getElementById('pwbox').innerHTML = '<p class="dim" style="margin:10px 0 0">Новый пароль (скопируйте и отправьте клиенту):</p><div class="pw">' + esc(x.password) + '</div>';
+        });
+      };
+    }).catch(function () {});
+  }
+
+  if (T) main(); else login();
+})();
+</script>
+</body>
+</html>

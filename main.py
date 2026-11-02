@@ -29,6 +29,12 @@ YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
 
 # Куда ЮKassa вернёт пользователя после оплаты
 RETURN_URL = os.getenv("RETURN_URL", "https://babayagaland.ru/aiayaga")
+# Чеки по 54-ФЗ: YOOKASSA_RECEIPT=1 — передавать данные чека; YOOKASSA_VAT_CODE: 1 = без НДС (самозанятый/УСН)
+YOOKASSA_RECEIPT = os.getenv("YOOKASSA_RECEIPT", "").strip() in ("1", "true", "yes")
+try:
+    YOOKASSA_VAT_CODE = int(os.getenv("YOOKASSA_VAT_CODE", "1"))
+except ValueError:
+    YOOKASSA_VAT_CODE = 1
 
 # Пакеты пополнения в формате "сумма:кредиты,сумма:кредиты", например "199:100,499:300,990:700".
 # Если заданы, сервер сам решает, сколько кредитов дать за сумму, и подделать это из браузера нельзя.
@@ -230,6 +236,12 @@ CREATE TABLE IF NOT EXISTS support_map (
     tg_msg_id BIGINT PRIMARY KEY,
     client_id TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE TABLE IF NOT EXISTS vip_subs (
     email TEXT PRIMARY KEY,
@@ -1101,6 +1113,333 @@ async def _tg_poll_loop():
             await asyncio.sleep(5)
 
 
+# ==================== Защита входа ====================
+LOGIN_MAX_FAILS = 8
+LOGIN_LOCK_SEC = 15 * 60
+_login_fails: dict = {}
+
+
+# ==================== Восстановление пароля ====================
+RESET_TTL_MIN = 30
+RESET_LINK = "https://babayagaland.ru/kabinet?reset="
+_reset_rate: dict = {}
+
+
+def _script_mail(to: str, subject: str, html: str) -> bool:
+    """Письмо через Apps Script таблицы шаблонов (MailApp)."""
+    if not (TEMPLATES_SCRIPT_URL and TEMPLATES_KEY):
+        return False
+    try:
+        r = requests.post(TEMPLATES_SCRIPT_URL, json={"key": TEMPLATES_KEY, "action": "mail", "to": to,
+                                                      "subject": subject, "html": html}, timeout=30)
+        return bool(r.json().get("ok"))
+    except Exception as e:
+        print(f"⚠️ Письмо {to}: {e}")
+        return False
+
+
+def _reset_email_html(link: str) -> str:
+    return ('<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;background:#140c24;color:#f3efff;border-radius:16px">'
+            '<h2 style="margin:0 0 12px">Восстановление пароля НейроЯги</h2>'
+            '<p style="color:#cfc6e8">Кто-то (надеемся, вы) запросил смену пароля. Нажмите кнопку, чтобы задать новый пароль. '
+            f'Ссылка действует {RESET_TTL_MIN} минут и сработает один раз.</p>'
+            f'<p style="margin:22px 0"><a href="{link}" style="background:linear-gradient(135deg,#00d4ff,#9d4dff,#ff2ec4);color:#fff;'
+            'padding:13px 22px;border-radius:12px;text-decoration:none;font-weight:bold">Задать новый пароль</a></p>'
+            '<p style="color:#a79cc4;font-size:13px">Если вы не запрашивали смену пароля — просто проигнорируйте письмо, ваш пароль не изменится.</p></div>')
+
+
+@app.post("/api/auth/forgot")
+async def auth_forgot(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    email = norm_email(data.get("email"))
+    generic = {"ok": True, "message": "Если такой аккаунт есть, мы отправили письмо со ссылкой. Проверьте почту и папку «Спам»"}
+    if not email or "@" not in email or not db_ready():
+        return generic
+    now = time.time()
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
+    by_email = [t for t in _reset_rate.get(email, []) if now - t < 86400]
+    by_ip = [t for t in _reset_rate.get("ip:" + ip, []) if now - t < 3600]
+    if (by_email and now - by_email[-1] < 120) or len(by_email) >= 5 or len(by_ip) >= 10:
+        return {"ok": False, "error": "Письмо уже отправлено. Новое можно запросить через пару минут"}
+    _reset_rate[email] = by_email + [now]
+    _reset_rate["ip:" + ip] = by_ip + [now]
+    async with db_pool.acquire() as con:
+        exists = await con.fetchval("SELECT 1 FROM users WHERE email=$1", email)
+        if not exists:
+            return generic  # не подсказываем, есть ли такой аккаунт
+        token = _secrets.token_urlsafe(32)
+        await con.execute("DELETE FROM password_resets WHERE email=$1 OR expires_at < now()", email)
+        await con.execute("INSERT INTO password_resets(token_hash, email, expires_at) VALUES($1,$2, now() + make_interval(mins => $3))",
+                          hashlib.sha256(token.encode()).hexdigest(), email, RESET_TTL_MIN)
+    sent = await asyncio.to_thread(_script_mail, email, "Восстановление пароля НейроЯги", _reset_email_html(RESET_LINK + token))
+    if not sent:
+        tg_notify(f"⚠️ Не удалось отправить письмо восстановления пароля для {email}. Проверьте Apps Script (действие mail).")
+    print(f"🔑 Восстановление пароля: {email} ({'письмо отправлено' if sent else 'письмо НЕ отправлено'})")
+    return generic
+
+
+@app.post("/api/auth/reset")
+async def auth_reset(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    token = str(data.get("token") or "").strip()
+    password = str(data.get("password") or "")
+    if len(password) < 6:
+        return {"ok": False, "error": "Пароль — не короче 6 символов"}
+    if not token or not db_ready():
+        return {"ok": False, "error": "Ссылка недействительна"}
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            email = await con.fetchval("UPDATE password_resets SET used=TRUE WHERE token_hash=$1 AND NOT used AND expires_at > now() "
+                                       "RETURNING email", hashlib.sha256(token.encode()).hexdigest())
+            if not email:
+                return {"ok": False, "error": "Ссылка устарела или уже использована. Запросите новую"}
+            await con.execute("UPDATE users SET password_hash=$2 WHERE email=$1", email, hash_password(password))
+            await con.execute("DELETE FROM password_resets WHERE email=$1", email)
+    _login_fails.pop(email, None)
+    print(f"🔑 Пароль изменён по ссылке: {email}")
+    return {"ok": True, "email": email, "message": "Пароль изменён. Теперь войдите с новым паролем"}
+
+
+# ==================== Админ-панель (вход по коду из Telegram) ====================
+ADMIN_TTL = 12 * 3600
+_admin_code = {"hash": None, "exp": 0.0, "tries": 0, "sent": []}
+
+
+def _admin_secret() -> bytes:
+    return ("admin|" + (APP_SECRET or "") + "|" + TG_BOT_TOKEN).encode()
+
+
+def make_admin_token() -> str:
+    exp = int(time.time()) + ADMIN_TTL
+    return f"{exp}.{hmac.new(_admin_secret(), str(exp).encode(), hashlib.sha256).hexdigest()}"
+
+
+def check_admin(request: Request) -> bool:
+    tok = request.headers.get("x-admin-token", "")
+    try:
+        exp, sig = tok.split(".", 1)
+        good = hmac.new(_admin_secret(), exp.encode(), hashlib.sha256).hexdigest()
+        return bool(APP_SECRET) and hmac.compare_digest(sig, good) and int(exp) > time.time()
+    except Exception:
+        return False
+
+
+def _admin_denied():
+    return JSONResponse({"ok": False, "error": "Нужно войти в админ-панель"}, status_code=401)
+
+
+@app.get("/admin")
+async def admin_page():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_panel.html")
+    if not os.path.exists(path):
+        return JSONResponse({"ok": False, "error": "admin_panel.html не найден"}, status_code=404)
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    return Response(content=html, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "X-Frame-Options": "DENY"})
+
+
+@app.post("/api/admin/code")
+async def admin_code():
+    if not (TG_BOT_TOKEN and TG_ADMIN_CHAT and APP_SECRET):
+        return {"ok": False, "error": "Не настроен бот Telegram на сервере"}
+    now = time.time()
+    sent = [t for t in _admin_code["sent"] if now - t < 3600]
+    if (sent and now - sent[-1] < 60) or len(sent) >= 6:
+        return {"ok": False, "error": "Код уже отправлен. Новый можно запросить через минуту"}
+    code = f"{_secrets.randbelow(10 ** 6):06d}"
+    _admin_code.update(hash=hashlib.sha256(code.encode()).hexdigest(), exp=now + 300, tries=0, sent=sent + [now])
+    await asyncio.to_thread(_tg_call, "sendMessage", {"chat_id": TG_ADMIN_CHAT,
+                            "text": f"🔐 Код входа в админ-панель: {code}\nДействует 5 минут. Если это не вы — ничего не делайте и не сообщайте код никому."})
+    return {"ok": True}
+
+
+@app.post("/api/admin/login")
+async def admin_login(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    code = str(data.get("code") or "").strip()
+    if not _admin_code["hash"] or time.time() > _admin_code["exp"]:
+        return {"ok": False, "error": "Код устарел. Запросите новый"}
+    _admin_code["tries"] += 1
+    if _admin_code["tries"] > 5:
+        _admin_code["hash"] = None
+        tg_notify("⚠️ 5 неверных кодов входа в админ-панель. Код аннулирован.")
+        return {"ok": False, "error": "Слишком много попыток. Запросите новый код"}
+    if not hmac.compare_digest(hashlib.sha256(code.encode()).hexdigest(), _admin_code["hash"]):
+        return {"ok": False, "error": "Неверный код"}
+    _admin_code["hash"] = None
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    tg_notify(f"🔐 Выполнен вход в админ-панель{(' (IP ' + ip + ')') if ip else ''}")
+    return {"ok": True, "token": make_admin_token()}
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        rev = await con.fetchrow(
+            "SELECT COALESCE(SUM(amount_rub) FILTER (WHERE created_at > date_trunc('day', now())),0) AS d1,"
+            " COALESCE(SUM(amount_rub) FILTER (WHERE created_at > now() - interval '7 days'),0) AS d7,"
+            " COALESCE(SUM(amount_rub) FILTER (WHERE created_at > now() - interval '30 days'),0) AS d30,"
+            " COUNT(*) FILTER (WHERE created_at > now() - interval '30 days') AS n30, COALESCE(SUM(amount_rub),0) AS total FROM payments")
+        usr = await con.fetchrow(
+            "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at > date_trunc('day', now())) AS d1,"
+            " COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS d7,"
+            " COUNT(*) FILTER (WHERE created_at > now() - interval '30 days') AS d30,"
+            " COUNT(*) FILTER (WHERE last_login > now() - interval '7 days') AS active7, COALESCE(SUM(credits),0) AS credits FROM users")
+        vip = await con.fetchval("SELECT COUNT(*) FROM vip_subs WHERE until > now()")
+        store = await con.fetchval("SELECT COUNT(*) FROM storage_subs WHERE until > now()")
+        cats = await con.fetch("SELECT COALESCE(category,'other') AS c, -SUM(delta) AS s FROM transactions "
+                               "WHERE kind='spend' AND created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC")
+        tpls = await con.fetch("SELECT note, COUNT(*) AS n, -SUM(delta) AS s FROM transactions WHERE kind='spend' AND category='template' "
+                               "AND created_at > now() - interval '30 days' GROUP BY note ORDER BY n DESC LIMIT 10")
+        pays = await con.fetch("SELECT email, amount_rub, credits, created_at FROM payments ORDER BY created_at DESC LIMIT 20")
+        days = await con.fetch("SELECT to_char(date_trunc('day', created_at), 'DD.MM') AS d, SUM(amount_rub) AS s FROM payments "
+                               "WHERE created_at > now() - interval '14 days' GROUP BY date_trunc('day', created_at) ORDER BY date_trunc('day', created_at)")
+    return {"ok": True,
+            "revenue": {"today": float(rev["d1"]), "d7": float(rev["d7"]), "d30": float(rev["d30"]), "n30": int(rev["n30"]), "total": float(rev["total"])},
+            "users": {k: int(usr[k]) for k in ("total", "d1", "d7", "d30", "active7", "credits")},
+            "vip": int(vip or 0), "storage": int(store or 0),
+            "categories": [{"c": r["c"], "s": int(r["s"] or 0)} for r in cats],
+            "templates": [{"t": (r["note"] or "").replace("Шаблон ", ""), "n": int(r["n"]), "s": int(r["s"] or 0)} for r in tpls],
+            "payments": [{"email": r["email"], "rub": float(r["amount_rub"]), "credits": r["credits"], "at": r["created_at"].isoformat()} for r in pays],
+            "days": [{"d": r["d"], "s": float(r["s"] or 0)} for r in days],
+            "bot": bool(TG_BOT_TOKEN), "receipts": YOOKASSA_RECEIPT, "support_online": len(support_conns)}
+
+
+@app.get("/api/admin/users")
+async def admin_users(request: Request, q: str = ""):
+    if not check_admin(request):
+        return _admin_denied()
+    q = str(q or "").strip().lower()[:80]
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT u.email, u.credits, u.created_at, u.last_login, v.until AS vip, "
+            " (SELECT COALESCE(SUM(amount_rub),0) FROM payments p WHERE p.email=u.email) AS paid "
+            "FROM users u LEFT JOIN vip_subs v ON v.email=u.email "
+            "WHERE ($1 = '' OR u.email LIKE '%' || $1 || '%') ORDER BY COALESCE(u.last_login, u.created_at) DESC LIMIT 50", q)
+    return {"ok": True, "users": [{"email": r["email"], "credits": r["credits"], "created": r["created_at"].isoformat(),
+                                   "last": r["last_login"].isoformat() if r["last_login"] else None,
+                                   "vip": r["vip"].strftime("%d.%m.%Y") if r["vip"] and r["vip"].timestamp() > time.time() else None,
+                                   "paid": float(r["paid"] or 0)} for r in rows]}
+
+
+@app.get("/api/admin/user/{email}")
+async def admin_user(email: str, request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    email = norm_email(email)
+    async with db_pool.acquire() as con:
+        u = await con.fetchrow("SELECT email, credits, created_at, last_login, ref_code FROM users WHERE email=$1", email)
+        if not u:
+            return {"ok": False, "error": "Клиент не найден"}
+        pays = await con.fetch("SELECT payment_id, amount_rub, credits, created_at FROM payments WHERE email=$1 ORDER BY created_at DESC LIMIT 50", email)
+        tx = await con.fetch("SELECT delta, balance_after, kind, note, created_at FROM transactions WHERE email=$1 ORDER BY created_at DESC LIMIT 100", email)
+        vip = await con.fetchval("SELECT until FROM vip_subs WHERE email=$1", email)
+        st = await con.fetchval("SELECT until FROM storage_subs WHERE email=$1", email)
+        works = await con.fetchval("SELECT COUNT(*) FROM works WHERE email=$1 AND expires_at > now()", email)
+        ref_by = await con.fetchrow("SELECT inviter, rewarded FROM referrals WHERE invitee=$1", email)
+        invited = await con.fetchval("SELECT COUNT(*) FROM referrals WHERE inviter=$1", email)
+    fmt = lambda d: d.strftime("%d.%m.%Y %H:%M") if d else None
+    return {"ok": True, "email": u["email"], "credits": u["credits"], "created": fmt(u["created_at"]), "last": fmt(u["last_login"]),
+            "ref_code": u["ref_code"], "invited": int(invited or 0),
+            "ref_by": {"inviter": ref_by["inviter"], "rewarded": ref_by["rewarded"]} if ref_by else None,
+            "vip": fmt(vip) if vip and vip.timestamp() > time.time() else None,
+            "storage": fmt(st) if st and st.timestamp() > time.time() else None, "works": int(works or 0),
+            "paid": sum(float(p["amount_rub"]) for p in pays),
+            "payments": [{"id": p["payment_id"], "rub": float(p["amount_rub"]), "credits": p["credits"], "at": fmt(p["created_at"])} for p in pays],
+            "history": [{"delta": t["delta"], "balance": t["balance_after"], "kind": KIND_TITLES.get(t["kind"], t["kind"]),
+                         "note": t["note"] or "", "at": fmt(t["created_at"])} for t in tx]}
+
+
+async def _admin_body(request: Request):
+    if not check_admin(request):
+        return None
+    try:
+        return await request.json()
+    except Exception:
+        return {}
+
+
+@app.post("/api/admin/credits")
+async def admin_credits(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    email = norm_email(data.get("email"))
+    try:
+        delta = int(data.get("delta") or 0)
+    except (TypeError, ValueError):
+        delta = 0
+    reason = str(data.get("reason") or "").strip()[:150]
+    if not delta or abs(delta) > 1_000_000:
+        return {"ok": False, "error": "Укажите количество кредитов (можно со знаком минус)"}
+    if not reason:
+        return {"ok": False, "error": "Укажите причину — она будет видна клиенту в истории"}
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 AND credits+$2 >= 0 RETURNING credits", email, delta)
+            if bal is None:
+                return {"ok": False, "error": "Клиент не найден или у него недостаточно кредитов для списания"}
+            await db_log(con, email, delta, bal, "admin", reason)
+    print(f"🛠 Админ: {email} {delta:+d} кр. ({reason})")
+    tg_notify(f"🛠 Админ: {email} {delta:+d} кр. — {reason}. Баланс: {bal}")
+    return {"ok": True, "credits": bal}
+
+
+@app.post("/api/admin/vip")
+async def admin_vip(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    email = norm_email(data.get("email"))
+    try:
+        days = int(data.get("days") or 0)
+    except (TypeError, ValueError):
+        days = 0
+    async with db_pool.acquire() as con:
+        if not await con.fetchval("SELECT 1 FROM users WHERE email=$1", email):
+            return {"ok": False, "error": "Клиент не найден"}
+        if days <= 0:
+            await con.execute("DELETE FROM vip_subs WHERE email=$1", email)
+            until = None
+        else:
+            until = await con.fetchval(
+                "INSERT INTO vip_subs(email, until) VALUES($1, now() + make_interval(days => $2)) "
+                "ON CONFLICT (email) DO UPDATE SET until = GREATEST(vip_subs.until, now()) + make_interval(days => $2) RETURNING until",
+                email, min(days, 3650))
+    tg_notify(f"🛠 Админ: VIP {email} — " + (f"до {until:%d.%m.%Y}" if until else "снят"))
+    return {"ok": True, "vip": until.strftime("%d.%m.%Y") if until else None}
+
+
+@app.post("/api/admin/password")
+async def admin_password(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    email = norm_email(data.get("email"))
+    new_pw = "".join(_secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10))
+    async with db_pool.acquire() as con:
+        done = await con.fetchval("UPDATE users SET password_hash=$2 WHERE email=$1 RETURNING email", email, hash_password(new_pw))
+    if not done:
+        return {"ok": False, "error": "Клиент не найден"}
+    _login_fails.pop(email, None)
+    tg_notify(f"🛠 Админ: задан новый пароль для {email}")
+    return {"ok": True, "password": new_pw}
+
+
 @app.post("/api/admin/import-users")
 async def import_users(request: Request):
     """Разовый перенос пользователей из Google-таблицы. Вызывается скриптом таблицы с секретным ключом."""
@@ -1552,8 +1891,16 @@ async def authenticate_user(request: Request):
 
     if db_ready():
         email = norm_email(email)
+        now = time.time()
+        fails = [t for t in _login_fails.get(email, []) if now - t < LOGIN_LOCK_SEC]
+        if len(fails) >= LOGIN_MAX_FAILS:
+            return {"success": False, "error": "Слишком много неверных попыток. Подождите 15 минут или восстановите пароль"}
         try:
             result = await db_auth(email, password)
+            if result.get("success"):
+                _login_fails.pop(email, None)
+            elif result.get("error") == "Неверный пароль":
+                _login_fails[email] = fails + [now]
         except Exception as e:
             print(f"❌ База: вход {email}: {e}")
             return {"success": False, "error": "Ошибка сервера авторизации"}
@@ -1645,6 +1992,18 @@ async def create_payment(request: Request):
                         else f"Покупка {credits} кредитов НейроЯга для {email}")[:128],
         "metadata": {"email": email, "credits": credits, "vip": "1" if is_vip_pack else "0"}
     }
+    if YOOKASSA_RECEIPT:  # чек по 54-ФЗ: ЮKassa отправит его клиенту на почту
+        payload["receipt"] = {
+            "customer": {"email": email},
+            "items": [{
+                "description": (f"VIP-пакет: {credits} кредитов НейроЯга" if is_vip_pack else f"Кредиты НейроЯга: {credits} шт.")[:128],
+                "quantity": "1.00",
+                "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+                "vat_code": YOOKASSA_VAT_CODE,
+                "payment_mode": "full_payment",
+                "payment_subject": "service",
+            }],
+        }
     try:
         response = await asyncio.to_thread(
             _yookassa_request, "POST", "https://api.yookassa.ru/v3/payments",
