@@ -122,7 +122,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   /* ---------- каркас ---------- */
   function main() {
     app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1><button class="ghost" id="logout">Выйти</button></div>' +
-      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button></div><div id="view"></div>';
+      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
     document.getElementById('logout').onclick = function () { sessionStorage.removeItem('ny_admin'); T = ''; login(); };
     app.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-t'); S.user = null; show(); }; });
     show();
@@ -130,7 +130,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   function show() {
     app.querySelectorAll('[data-t]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-t') === S.tab); });
     if (S.user) return userView(S.user);
-    if (S.tab === 'sum') summary(); else users();
+    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else users();
   }
   function view(h) { document.getElementById('view').innerHTML = h; }
 
@@ -165,6 +165,44 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
         '</table></div></div>';
       h += '<p class="dim" style="font-size:12.5px">Бот Telegram: ' + (r.bot ? '✅ подключён' : '❌ не настроен') + ' · Чеки 54-ФЗ: ' + (r.receipts ? '✅ передаются в ЮKassa' : '⚪ не передаются (YOOKASSA_RECEIPT)') + '</p>';
       view(h); bindUsers();
+    }).catch(function () {});
+  }
+
+  /* ---------- промокоды ---------- */
+  function promos() {
+    var h = '<div class="card"><h3>➕ Новый промокод</h3>' +
+      '<div class="row"><input class="in" id="pc" placeholder="Код, например BLOGER100" style="text-transform:uppercase">' +
+      '<select class="in" id="pk" style="max-width:230px"><option value="credits">Кредиты на баланс</option><option value="percent">Бонус % к пополнению</option></select></div>' +
+      '<div class="row" style="margin-top:8px"><input class="in" id="pv" type="number" placeholder="Сколько (кр. или %)"><input class="in" id="pm" type="number" placeholder="Сколько раз всего" value="100">' +
+      '<input class="in" id="pd" type="number" placeholder="Действует дней (0 — бессрочно)" value="30"><input class="in" id="pn" type="number" placeholder="Только для новых: дней с регистрации (0 — всем)" value="0"></div>' +
+      '<div class="row" style="margin-top:8px"><input class="in" id="pnote" placeholder="Заметка: для какого блогера, акции"><button class="btn" id="pgo">Создать</button></div>' +
+      '<p class="dim" style="font-size:12.5px;margin:8px 0 0">Каждый клиент может использовать код один раз. Бонус к пополнению — до 50%, действует 7 дней после ввода и срабатывает на ближайшей оплате.</p></div>' +
+      '<div id="plist"><p class="dim">Загружаю…</p></div>';
+    view(h);
+    document.getElementById('pgo').onclick = function () {
+      var body = { code: document.getElementById('pc').value.trim(), kind: document.getElementById('pk').value, value: +document.getElementById('pv').value,
+        max_uses: +document.getElementById('pm').value, days: +document.getElementById('pd').value, new_only_days: +document.getElementById('pn').value,
+        note: document.getElementById('pnote').value.trim() };
+      api('/api/admin/promo', body).then(function (x) { toast(x.ok ? 'Создан ' + x.code : x.error); if (x.ok) promos(); });
+    };
+    api('/api/admin/promos').then(function (r) {
+      var h2 = '<div class="card tbl"><h3>Промокоды</h3><table><tr><th>Код</th><th>Даёт</th><th>Использовано</th><th>До</th><th>Условия</th><th></th></tr>' +
+        (r.promos.map(function (p) {
+          return '<tr><td><b>' + esc(p.code) + '</b>' + (p.note ? '<br><span class="dim" style="font-size:12px">' + esc(p.note) + '</span>' : '') + '</td>' +
+            '<td>' + (p.kind === 'credits' ? '+' + n(p.value) + ' кр.' : '+' + p.value + '% к пополнению') + '</td>' +
+            '<td>' + p.used + ' / ' + n(p.max_uses) + '</td><td>' + (p.expires || 'бессрочно') + '</td>' +
+            '<td class="dim" style="font-size:12.5px">' + (p.new_only_days ? 'новым (до ' + p.new_only_days + ' дн.)' : 'всем') + '</td>' +
+            '<td><button class="ghost' + (p.active ? ' danger' : '') + '" data-tg="' + esc(p.code) + '">' + (p.active ? 'Выключить' : 'Включить') + '</button></td></tr>';
+        }).join('') || '<tr><td colspan="6" class="dim">Промокодов пока нет</td></tr>') + '</table></div>';
+      h2 += '<div class="card tbl"><h3>🎁 Подарочные сертификаты</h3><table><tr><th>Код</th><th>Купил</th><th>Номинал</th><th>Когда</th><th>Активировал</th></tr>' +
+        (r.gifts.map(function (g) {
+          return '<tr><td style="font-family:ui-monospace,Menlo,monospace">' + esc(g.code) + '</td><td>' + esc(g.buyer) + '</td><td>' + n(g.credits) + ' кр. / ' + n(g.rub) + ' ₽</td><td>' + esc(g.created) + '</td>' +
+            '<td>' + (g.used_by ? esc(g.used_by) + '<br><span class="dim" style="font-size:12px">' + esc(g.used) + '</span>' : '<span class="dim">ещё не активирован</span>') + '</td></tr>';
+        }).join('') || '<tr><td colspan="5" class="dim">Сертификатов пока не покупали</td></tr>') + '</table></div>';
+      document.getElementById('plist').innerHTML = h2;
+      document.querySelectorAll('[data-tg]').forEach(function (b) {
+        b.onclick = function () { api('/api/admin/promo/toggle', { code: b.getAttribute('data-tg') }).then(function (x) { toast(x.ok ? (x.active ? 'Включён' : 'Выключен') : x.error); promos(); }); };
+      });
     }).catch(function () {});
   }
 

@@ -109,6 +109,10 @@ PAYMENT_PACKAGES = parse_packages(PAYMENT_PACKAGES_RAW)
 VIP_PACK_RUB = 5000
 VIP_PACK_CREDITS = 5500
 VIP_DAYS = 30
+# Подарочные сертификаты: номинал ₽ → кредиты (как в обычных пакетах)
+GIFT_NOMINALS = {500: 525, 1000: 1060, 2500: 2750}
+PROMO_MAX_PERCENT = 50      # бонус к пополнению — не больше 50%
+PROMO_BONUS_DAYS = 7        # бонус к пополнению действует 7 дней после ввода кода
 # Реферальная программа: оба получают % от первой оплаты друга от REF_MIN_RUB
 REF_PERCENT = 5
 REF_MIN_RUB = 1000
@@ -250,6 +254,40 @@ CREATE TABLE IF NOT EXISTS password_resets (
     email TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     used BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE TABLE IF NOT EXISTS promo_codes (
+    code TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    value INTEGER NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used INTEGER NOT NULL DEFAULT 0,
+    new_only_days INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS promo_uses (
+    code TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (code, email)
+);
+CREATE TABLE IF NOT EXISTS pending_bonus (
+    email TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    percent INTEGER NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gift_certs (
+    code TEXT PRIMARY KEY,
+    buyer TEXT NOT NULL,
+    rub NUMERIC NOT NULL,
+    credits INTEGER NOT NULL,
+    payment_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    used_by TEXT,
+    used_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS vip_subs (
     email TEXT PRIMARY KEY,
@@ -1496,6 +1534,185 @@ async def admin_password(request: Request):
     return {"ok": True, "password": new_pw}
 
 
+# ==================== Промокоды и подарочные сертификаты ====================
+GIFT_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+_promo_fails: dict = {}
+
+
+async def _gift_create(con, buyer: str, rub: float, credits: int, payment_id: str) -> str:
+    for _ in range(20):
+        code = "GIFT-" + "".join(_secrets.choice(GIFT_ALPHABET) for _ in range(4)) + "-" + "".join(_secrets.choice(GIFT_ALPHABET) for _ in range(4))
+        done = await con.fetchval("INSERT INTO gift_certs(code, buyer, rub, credits, payment_id) VALUES($1,$2,$3,$4,$5) "
+                                  "ON CONFLICT (code) DO NOTHING RETURNING code", code, buyer, rub, credits, payment_id)
+        if done:
+            bal = await con.fetchval("SELECT credits FROM users WHERE email=$1", buyer) or 0
+            await db_log(con, buyer, 0, bal, "gift", f"Куплен сертификат {code} на {credits} кр.")
+            return code
+    raise RuntimeError("не удалось создать код сертификата")
+
+
+def _gift_email_html(code: str, credits: int) -> str:
+    return ('<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;background:#140c24;color:#f3efff;border-radius:16px">'
+            '<h2 style="margin:0 0 12px">🎁 Подарочный сертификат НейроЯги</h2>'
+            f'<p style="color:#cfc6e8">Спасибо за покупку! Сертификат на <b>{credits} кредитов</b>. Подарите этот код:</p>'
+            f'<p style="font-size:26px;font-weight:bold;letter-spacing:2px;background:#1c1233;padding:14px;border-radius:12px;text-align:center">{code}</p>'
+            '<p style="color:#cfc6e8">Получатель вводит код в личном кабинете babayagaland.ru/kabinet в поле «Промокод или сертификат» — '
+            'кредиты сразу появятся на балансе. Код срабатывает один раз.</p></div>')
+
+
+def _promo_norm(code) -> str:
+    return _re.sub(r"[^A-ZА-ЯЁ0-9-]", "", str(code or "").upper())[:32]
+
+
+@app.post("/api/promo/apply")
+async def promo_apply(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "Сервис временно недоступен"}
+    day = int(time.time() // 86400)
+    f = _promo_fails.get(email)
+    if f and f[1] == day and f[0] >= 10:
+        return {"ok": False, "error": "Слишком много попыток. Попробуйте завтра"}
+    code = _promo_norm(data.get("code"))
+
+    def fail(msg):
+        ff = _promo_fails.get(email)
+        _promo_fails[email] = [(ff[0] + 1) if ff and ff[1] == day else 1, day]
+        return {"ok": False, "error": msg}
+
+    if len(code) < 3:
+        return fail("Введите код")
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            # подарочный сертификат
+            if code.startswith("GIFT-"):
+                cert = await con.fetchrow("UPDATE gift_certs SET used_by=$2, used_at=now() WHERE code=$1 AND used_by IS NULL "
+                                          "RETURNING credits, buyer", code, email)
+                if not cert:
+                    used = await con.fetchval("SELECT 1 FROM gift_certs WHERE code=$1", code)
+                    return fail("Этот сертификат уже активирован" if used else "Сертификат не найден. Проверьте код")
+                bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits", email, int(cert["credits"]))
+                await db_log(con, email, int(cert["credits"]), bal, "gift", f"Сертификат {code}")
+                msg = f"🎁 Сертификат активирован: +{cert['credits']} кр."
+                note = f"🎁 Активирован сертификат {code} ({cert['credits']} кр.) — {email}, купил {cert['buyer']}"
+                result = {"ok": True, "message": msg, "credits": bal}
+            else:
+                p = await con.fetchrow("SELECT * FROM promo_codes WHERE code=$1", code)
+                if not p or not p["active"]:
+                    return fail("Такого промокода нет или он больше не действует")
+                if p["expires_at"] and p["expires_at"].timestamp() < time.time():
+                    return fail("Срок действия промокода закончился")
+                if p["new_only_days"]:
+                    created = await con.fetchval("SELECT created_at FROM users WHERE email=$1", email)
+                    if not created or time.time() - created.timestamp() > p["new_only_days"] * 86400:
+                        return fail("Этот промокод только для новых клиентов")
+                if await con.fetchval("SELECT 1 FROM promo_uses WHERE code=$1 AND email=$2", code, email):
+                    return fail("Вы уже использовали этот промокод")
+                took = await con.fetchval("UPDATE promo_codes SET used=used+1 WHERE code=$1 AND used < max_uses RETURNING used", code)
+                if not took:
+                    return fail("Промокод закончился — его уже использовали все")
+                await con.execute("INSERT INTO promo_uses(code, email) VALUES($1,$2)", code, email)
+                if p["kind"] == "credits":
+                    bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits", email, int(p["value"]))
+                    await db_log(con, email, int(p["value"]), bal, "promo", f"Промокод {code}")
+                    msg = f"🎉 Промокод активирован: +{p['value']} кр."
+                    result = {"ok": True, "message": msg, "credits": bal}
+                else:
+                    pct = min(int(p["value"]), PROMO_MAX_PERCENT)
+                    await con.execute("INSERT INTO pending_bonus(email, code, percent, expires_at) VALUES($1,$2,$3, now() + make_interval(days => $4)) "
+                                      "ON CONFLICT (email) DO UPDATE SET code=$2, percent=$3, expires_at=now() + make_interval(days => $4)",
+                                      email, code, pct, PROMO_BONUS_DAYS)
+                    msg = f"🎉 Промокод принят: +{pct}% кредитов к следующему пополнению (действует {PROMO_BONUS_DAYS} дней)"
+                    result = {"ok": True, "message": msg, "bonus": pct}
+                note = f"🎟 Промокод {code} — {email}: {msg}"
+    print(note)
+    tg_notify(note)
+    return result
+
+
+@app.get("/api/promo/status/{email}")
+async def promo_status(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "bonus": None, "gifts": [], "nominals": GIFT_NOMINALS}
+    async with db_pool.acquire() as con:
+        b = await con.fetchrow("SELECT code, percent, expires_at FROM pending_bonus WHERE email=$1 AND expires_at > now()", email)
+        gifts = await con.fetch("SELECT code, credits, rub, created_at, used_at FROM gift_certs WHERE buyer=$1 ORDER BY created_at DESC LIMIT 30", email)
+    return {"ok": True, "nominals": {str(k): v for k, v in GIFT_NOMINALS.items()},
+            "bonus": {"code": b["code"], "percent": b["percent"], "until": b["expires_at"].strftime("%d.%m.%Y")} if b else None,
+            "gifts": [{"code": g["code"], "credits": g["credits"], "rub": float(g["rub"]), "at": g["created_at"].strftime("%d.%m.%Y"),
+                       "used": bool(g["used_at"])} for g in gifts]}
+
+
+@app.get("/api/admin/promos")
+async def admin_promos(request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    async with db_pool.acquire() as con:
+        rows = await con.fetch("SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 200")
+        gifts = await con.fetch("SELECT code, buyer, rub, credits, created_at, used_by, used_at FROM gift_certs ORDER BY created_at DESC LIMIT 100")
+    fmt = lambda d: d.strftime("%d.%m.%Y") if d else None
+    return {"ok": True,
+            "promos": [{"code": r["code"], "kind": r["kind"], "value": r["value"], "max_uses": r["max_uses"], "used": r["used"],
+                        "new_only_days": r["new_only_days"], "expires": fmt(r["expires_at"]), "active": r["active"], "note": r["note"] or "",
+                        "created": fmt(r["created_at"])} for r in rows],
+            "gifts": [{"code": g["code"], "buyer": g["buyer"], "rub": float(g["rub"]), "credits": g["credits"], "created": fmt(g["created_at"]),
+                       "used_by": g["used_by"], "used": fmt(g["used_at"])} for g in gifts]}
+
+
+@app.post("/api/admin/promo")
+async def admin_promo_create(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    code = _promo_norm(data.get("code"))
+    kind = "percent" if data.get("kind") == "percent" else "credits"
+    try:
+        value = int(data.get("value") or 0)
+        max_uses = int(data.get("max_uses") or 1)
+        days = int(data.get("days") or 0)
+        new_only = int(data.get("new_only_days") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Проверьте числа"}
+    if len(code) < 3 or code.startswith("GIFT-"):
+        return {"ok": False, "error": "Код — от 3 символов, буквы и цифры (не начинается с GIFT-)"}
+    if kind == "credits" and not (1 <= value <= 100000):
+        return {"ok": False, "error": "Кредитов — от 1 до 100 000"}
+    if kind == "percent" and not (1 <= value <= PROMO_MAX_PERCENT):
+        return {"ok": False, "error": f"Бонус — от 1 до {PROMO_MAX_PERCENT}%"}
+    if not (1 <= max_uses <= 1_000_000):
+        return {"ok": False, "error": "Количество использований — от 1"}
+    async with db_pool.acquire() as con:
+        done = await con.fetchval(
+            "INSERT INTO promo_codes(code, kind, value, max_uses, new_only_days, expires_at, note) "
+            "VALUES($1,$2,$3,$4,$5, CASE WHEN $6 > 0 THEN now() + make_interval(days => $6) ELSE NULL END, $7) "
+            "ON CONFLICT (code) DO NOTHING RETURNING code", code, kind, value, max_uses, max(0, new_only), days, str(data.get("note") or "")[:120])
+    if not done:
+        return {"ok": False, "error": "Такой код уже есть"}
+    tg_notify(f"🛠 Админ: создан промокод {code} ({'+' + str(value) + ' кр.' if kind == 'credits' else '+' + str(value) + '% к пополнению'}, {max_uses} шт.)")
+    return {"ok": True, "code": code}
+
+
+@app.post("/api/admin/promo/toggle")
+async def admin_promo_toggle(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    async with db_pool.acquire() as con:
+        active = await con.fetchval("UPDATE promo_codes SET active = NOT active WHERE code=$1 RETURNING active", _promo_norm(data.get("code")))
+    if active is None:
+        return {"ok": False, "error": "Код не найден"}
+    return {"ok": True, "active": active}
+
+
 @app.post("/api/admin/import-users")
 async def import_users(request: Request):
     """Разовый перенос пользователей из Google-таблицы. Вызывается скриптом таблицы с секретным ключом."""
@@ -1537,7 +1754,7 @@ async def import_users(request: Request):
 
 
 KIND_TITLES = {"payment": "Пополнение", "spend": "Списание", "refund": "Возврат", "migration": "Перенос баланса",
-               "admin": "Начисление", "vip": "VIP-статус", "referral": "Бонус за друга"}
+               "admin": "Начисление", "vip": "VIP-статус", "referral": "Бонус за друга", "promo": "Промокод", "gift": "Сертификат"}
 
 
 CATEGORY_BY_NOTE = (("Шаблон", "template"), ("Чат", "chat"), ("Бизнес", "chat"), ("Картинка", "image"))
@@ -2027,8 +2244,13 @@ async def create_payment(request: Request):
     if not email or amount <= 0:
         return {"success": False, "error": "Неверные параметры"}
 
-    is_vip_pack = amount == VIP_PACK_RUB
-    if is_vip_pack:
+    is_gift = bool(data.get("gift"))
+    is_vip_pack = amount == VIP_PACK_RUB and not is_gift
+    if is_gift:
+        if int(amount) != amount or int(amount) not in GIFT_NOMINALS:
+            return {"success": False, "error": "Такого сертификата нет, обновите страницу"}
+        credits = GIFT_NOMINALS[int(amount)]
+    elif is_vip_pack:
         credits = VIP_PACK_CREDITS  # VIP-пакет: кредиты и статус определяет сервер
     elif PAYMENT_PACKAGES:
         if amount not in PAYMENT_PACKAGES:
@@ -2044,9 +2266,10 @@ async def create_payment(request: Request):
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": RETURN_URL},
-        "description": (f"VIP-пакет НейроЯга: {credits} кредитов + VIP на {VIP_DAYS} дней для {email}" if is_vip_pack
+        "description": (f"Подарочный сертификат НейроЯга на {credits} кредитов" if is_gift else
+                        f"VIP-пакет НейроЯга: {credits} кредитов + VIP на {VIP_DAYS} дней для {email}" if is_vip_pack
                         else f"Покупка {credits} кредитов НейроЯга для {email}")[:128],
-        "metadata": {"email": email, "credits": credits, "vip": "1" if is_vip_pack else "0"}
+        "metadata": {"email": email, "credits": credits, "vip": "1" if is_vip_pack else "0", "gift": "1" if is_gift else "0"}
     }
     if YOOKASSA_RECEIPT:  # чек по 54-ФЗ: ЮKassa отправит его клиенту на почту
         payload["receipt"] = {
@@ -2129,6 +2352,7 @@ async def yookassa_webhook(request: Request):
 
         if db_ready():
             amount = (payment.get("amount") or {}).get("value")
+            gift_info = None
             try:
                 async with db_pool.acquire() as con:
                     async with con.transaction():
@@ -2138,28 +2362,47 @@ async def yookassa_webhook(request: Request):
                             payment_id, norm_email(email), amount, credits_to_add)
                         if not fresh:
                             return {"status": "ok"}  # этот платёж уже зачислен
-                        bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits",
-                                                 norm_email(email), credits_to_add)
-                        if bal is None:
-                            raise RuntimeError("пользователь не найден")
-                        await db_log(con, norm_email(email), credits_to_add, bal, "payment", f"Оплата {amount} ₽")
                         try:
                             paid = float(amount or 0)
                         except (TypeError, ValueError):
                             paid = 0.0
-                        await _referral_reward(con, norm_email(email), paid, payment_id)
-                        if str(metadata.get("vip")) == "1" and paid >= VIP_PACK_RUB:
-                            until = await con.fetchval(
-                                "INSERT INTO vip_subs(email, until) VALUES($1, now() + make_interval(days => $2)) "
-                                "ON CONFLICT (email) DO UPDATE SET until = GREATEST(vip_subs.until, now()) + make_interval(days => $2) "
-                                "RETURNING until", norm_email(email), VIP_DAYS)
-                            await db_log(con, norm_email(email), 0, bal, "vip", f"VIP до {until:%d.%m.%Y}")
-                            print(f"👑 {email}: VIP до {until:%d.%m.%Y}")
-                            tg_notify(f"👑 VIP-пакет: {email}, VIP до {until:%d.%m.%Y}")
+                        if str(metadata.get("gift")) == "1" and GIFT_NOMINALS.get(int(paid)) == credits_to_add:
+                            gift_code = await _gift_create(con, norm_email(email), paid, credits_to_add, payment_id)
+                            gift_info = (norm_email(email), gift_code, credits_to_add, paid)
+                            await _referral_reward(con, norm_email(email), paid, payment_id)
+                        if gift_info is None:
+                            bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits",
+                                                     norm_email(email), credits_to_add)
+                            if bal is None:
+                                raise RuntimeError("пользователь не найден")
+                            await db_log(con, norm_email(email), credits_to_add, bal, "payment", f"Оплата {amount} ₽")
+                            pb = await con.fetchrow("DELETE FROM pending_bonus WHERE email=$1 AND expires_at > now() RETURNING percent, code",
+                                                    norm_email(email))
+                            if pb:
+                                extra = credits_to_add * min(int(pb["percent"]), PROMO_MAX_PERCENT) // 100
+                                if extra > 0:
+                                    bal = await con.fetchval("UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits",
+                                                             norm_email(email), extra)
+                                    await db_log(con, norm_email(email), extra, bal, "promo", f"Бонус +{pb['percent']}% по промокоду {pb['code']}")
+                            await _referral_reward(con, norm_email(email), paid, payment_id)
+                            if str(metadata.get("vip")) == "1" and paid >= VIP_PACK_RUB:
+                                until = await con.fetchval(
+                                    "INSERT INTO vip_subs(email, until) VALUES($1, now() + make_interval(days => $2)) "
+                                    "ON CONFLICT (email) DO UPDATE SET until = GREATEST(vip_subs.until, now()) + make_interval(days => $2) "
+                                    "RETURNING until", norm_email(email), VIP_DAYS)
+                                await db_log(con, norm_email(email), 0, bal, "vip", f"VIP до {until:%d.%m.%Y}")
+                                print(f"👑 {email}: VIP до {until:%d.%m.%Y}")
+                                tg_notify(f"👑 VIP-пакет: {email}, VIP до {until:%d.%m.%Y}")
             except Exception as e:
                 print(f"❌ База: зачисление платежа {payment_id} для {email}: {e}")
                 return JSONResponse({"status": "retry"}, status_code=500)
             processed_payments.add(payment_id)
+            if gift_info:
+                buyer, gcode, gcr, grub = gift_info
+                print(f"🎁 Куплен сертификат {gcode} на {gcr} кр. ({buyer}, платёж {payment_id})")
+                tg_notify(f"🎁 Куплен подарочный сертификат на {gcr} кр. за {amount} ₽ — {buyer}")
+                asyncio.create_task(asyncio.to_thread(_script_mail, buyer, "Ваш подарочный сертификат НейроЯги", _gift_email_html(gcode, gcr)))
+                return {"status": "ok"}
             print(f"✅ Успешно начислено {credits_to_add} кредитов пользователю {email} (платёж {payment_id})")
             tg_notify(f"💰 Оплата {amount} ₽ от {email}\nНачислено {credits_to_add} кр.")
             return {"status": "ok"}
