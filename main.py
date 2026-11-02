@@ -232,6 +232,14 @@ CREATE TABLE IF NOT EXISTS support_queue (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS support_queue_client_idx ON support_queue (client_id, id);
+CREATE TABLE IF NOT EXISTS support_msgs (
+    id BIGSERIAL PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS support_msgs_client_idx ON support_msgs (client_id, id);
 CREATE TABLE IF NOT EXISTS support_map (
     tg_msg_id BIGINT PRIMARY KEY,
     client_id TEXT NOT NULL,
@@ -869,7 +877,23 @@ try:
 except ValueError:
     TG_ADMIN_CHAT = 0
 TG_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
-SUPPORT_ID_RE = _re.compile(r"^user_[a-z0-9]{4,24}$")
+SUPPORT_ID_RE = _re.compile(r"^(user|acc)_[a-z0-9]{4,24}$")
+SUPPORT_HISTORY_MAX = 300               # сколько сообщений переписки из кабинета храним на клиента
+
+
+def support_acc_id(email: str) -> str:
+    """Номер переписки аккаунта (чат поддержки в личном кабинете)."""
+    return "acc_" + hmac.new(("support|" + (APP_SECRET or "")).encode(), norm_email(email).encode(), hashlib.sha256).hexdigest()[:20]
+
+
+async def _support_save(client_id: str, role: str, payload: str):
+    """Переписку из кабинета храним на сервере — её видно с любого устройства."""
+    if not client_id.startswith("acc_") or not db_ready():
+        return
+    async with db_pool.acquire() as con:
+        await con.execute("INSERT INTO support_msgs(client_id, role, payload) VALUES($1,$2,$3)", client_id, role, payload)
+        await con.execute("DELETE FROM support_msgs WHERE client_id=$1 AND id NOT IN "
+                          "(SELECT id FROM support_msgs WHERE client_id=$1 ORDER BY id DESC LIMIT $2)", client_id, SUPPORT_HISTORY_MAX)
 SUPPORT_MAX_BYTES = 8 * 1024 * 1024     # фото или голосовое — не больше ~6 МБ
 SUPPORT_MAX_TEXT = 3000
 SUPPORT_RATE = 20                       # сообщений в минуту от одного посетителя
@@ -917,7 +941,7 @@ def _bh_watch_error(err: str):
 
 def _support_label(client_id: str) -> str:
     c = support_conns.get(client_id) or {}
-    return f"({client_id}" + (f" · {c['email']}" if c.get("email") else "") + ")"
+    return f"({client_id}" + (f" · {c['email']}" if c.get("email") else "") + (" · 👤 из кабинета" if client_id.startswith("acc_") else "") + ")"
 
 
 async def _support_forward(client_id: str, data: str):
@@ -951,6 +975,8 @@ async def _support_forward(client_id: str, data: str):
 
 async def _support_deliver(client_id: str, payload: str) -> bool:
     """Ответ владельца → клиенту на сайте. Если клиента нет на сайте — в очередь (в базе)."""
+    if client_id.startswith("acc_"):
+        await _support_save(client_id, "admin", payload)
     c = support_conns.get(client_id)
     if c:
         try:
@@ -958,7 +984,7 @@ async def _support_deliver(client_id: str, payload: str) -> bool:
             return True
         except Exception:
             support_conns.pop(client_id, None)
-    if db_ready():
+    if db_ready() and not client_id.startswith("acc_"):  # для кабинета ответ уже в истории
         async with db_pool.acquire() as con:
             await con.execute("INSERT INTO support_queue(client_id, payload) VALUES($1,$2)", client_id, payload)
     return False
@@ -969,9 +995,16 @@ async def support_ws(websocket: WebSocket, client_id: str):
     if not SUPPORT_ID_RE.match(client_id or ""):
         await websocket.close(code=1008)
         return
+    acc_email = ""
+    if client_id.startswith("acc_"):
+        acc_email = norm_email(websocket.query_params.get("email", ""))
+        if not (acc_email and is_authorized(acc_email, websocket.query_params.get("token", ""))
+                and hmac.compare_digest(client_id, support_acc_id(acc_email))):
+            await websocket.close(code=1008)
+            return
     await websocket.accept()
     old = support_conns.get(client_id)
-    support_conns[client_id] = {"ws": websocket, "email": (old or {}).get("email", "")}
+    support_conns[client_id] = {"ws": websocket, "email": acc_email or (old or {}).get("email", "")}
     await websocket.send_text("SYSTEM_CONNECTED")
     if db_ready():  # отдаём ответы, которые пришли, пока клиента не было
         async with db_pool.acquire() as con:
@@ -991,6 +1024,8 @@ async def support_ws(websocket: WebSocket, client_id: str):
                 continue
             _support_rate[client_id] = win + [now]
             if data.startswith("SYSTEM_HELLO:"):  # посетитель вошёл на сайте — покажем его почту в Telegram
+                if acc_email:
+                    continue
                 em = norm_email(data[13:])
                 if _re.match(r"^[^@\s]{1,64}@[^@\s]{1,120}$", em or ""):
                     support_conns[client_id]["email"] = em
@@ -1009,6 +1044,7 @@ async def support_ws(websocket: WebSocket, client_id: str):
                 continue
             await websocket.send_text(f"SYSTEM_ACK:{data[:20]}")
             try:
+                await _support_save(client_id, "user", data)
                 await _support_forward(client_id, data)
             except Exception as e:
                 print(f"⚠️ Поддержка: не удалось переслать сообщение {client_id}: {e}")
@@ -1020,6 +1056,21 @@ async def support_ws(websocket: WebSocket, client_id: str):
         c = support_conns.get(client_id)
         if c and c.get("ws") is websocket:
             support_conns.pop(client_id, None)
+
+
+@app.get("/api/support/history/{email}")
+async def support_history(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    cid = support_acc_id(email)
+    msgs = []
+    if db_ready():
+        async with db_pool.acquire() as con:
+            rows = await con.fetch("SELECT role, payload, created_at FROM support_msgs WHERE client_id=$1 ORDER BY id DESC LIMIT 150", cid)
+        msgs = [{"role": r["role"], "text": r["payload"], "ts": r["created_at"].isoformat()} for r in reversed(rows)]
+    return {"ok": True, "client_id": cid, "messages": msgs,
+            "ws": f"/support/ws/{cid}", "online": bool(TG_BOT_TOKEN and TG_ADMIN_CHAT)}
 
 
 async def _tg_admin_message(m: dict):
@@ -1035,7 +1086,7 @@ async def _tg_admin_message(m: dict):
         async with db_pool.acquire() as con:
             target = await con.fetchval("SELECT client_id FROM support_map WHERE tg_msg_id=$1", int(rt["message_id"]))
     if not target:
-        mm = _re.search(r"\((user_[a-z0-9]{4,24})", (rt.get("caption") or rt.get("text") or ""))
+        mm = _re.search(r"\(((?:user|acc)_[a-z0-9]{4,24})", (rt.get("caption") or rt.get("text") or ""))
         target = mm.group(1) if mm else None
     if text.startswith("/close"):
         parts = text.split(maxsplit=1)
@@ -1075,7 +1126,12 @@ async def _tg_admin_message(m: dict):
         await reply("⚠️ Такой тип сообщений не поддерживается: отправьте текст, фото или голосовое.")
         return
     online = await _support_deliver(target, payload)
-    await reply(f"✅ Доставлено клиенту {target}" if online else f"📥 Клиент {target} сейчас не на сайте. Сообщение сохранено и придёт, когда он откроет сайт.")
+    if online:
+        await reply(f"✅ Доставлено клиенту {target}")
+    elif target.startswith("acc_"):
+        await reply(f"📥 Клиент сейчас не в кабинете. Ответ сохранён — он увидит его в разделе «Поддержка» личного кабинета.")
+    else:
+        await reply(f"📥 Клиент {target} сейчас не на сайте. Сообщение сохранено и придёт, когда он откроет сайт.")
 
 
 async def _tg_file_as_data(file_id: str, mime: str) -> str:
