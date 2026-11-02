@@ -219,6 +219,18 @@ CREATE TABLE IF NOT EXISTS referrals (
     rewarded_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS referrals_inviter_idx ON referrals (inviter);
+CREATE TABLE IF NOT EXISTS support_queue (
+    id BIGSERIAL PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS support_queue_client_idx ON support_queue (client_id, id);
+CREATE TABLE IF NOT EXISTS support_map (
+    tg_msg_id BIGINT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS vip_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -294,6 +306,8 @@ async def db_startup():
             if DB_MIGRATED:
                 await _enable_tokens(con)
         asyncio.create_task(_works_cleanup_loop())
+        if TG_BOT_TOKEN and TG_ADMIN_CHAT:
+            asyncio.create_task(_tg_poll_loop())
         print("✅ База данных подключена" + (" — пользователи в базе" if DB_MIGRATED else
                                               " — ждёт переноса пользователей из таблицы"))
     except Exception as e:
@@ -322,6 +336,7 @@ async def db_auth(email: str, password: str) -> dict:
             await con.execute("INSERT INTO users(email, password_hash, last_login) VALUES($1, $2, now())",
                               email, hash_password(password))
             print(f"🆕 Новый пользователь {email}")
+            tg_notify(f"🆕 Новый клиент: {email}")
             return {"success": True, "credits": 0, "new": True}
         if not check_password(password, row["password_hash"]):
             return {"success": False, "error": "Неверный пароль"}
@@ -833,6 +848,257 @@ async def referral_apply(request: Request):
                 return {"ok": False, "error": "Код друга уже введён"}
     print(f"🎁 {email} ввёл код {code} ({inviter})")
     return {"ok": True, "message": f"Код принят! После первой оплаты от {REF_MIN_RUB} ₽ вы оба получите {REF_PERCENT}% бонусом"}
+
+
+# ==================== Telegram: уведомления и чат поддержки ====================
+TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "").strip()
+try:
+    TG_ADMIN_CHAT = int(os.getenv("TG_ADMIN_CHAT", "0").strip() or 0)
+except ValueError:
+    TG_ADMIN_CHAT = 0
+TG_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
+SUPPORT_ID_RE = _re.compile(r"^user_[a-z0-9]{4,24}$")
+SUPPORT_MAX_BYTES = 8 * 1024 * 1024     # фото или голосовое — не больше ~6 МБ
+SUPPORT_MAX_TEXT = 3000
+SUPPORT_RATE = 20                       # сообщений в минуту от одного посетителя
+support_conns: dict = {}                # client_id -> {"ws": WebSocket, "email": str}
+_support_rate: dict = {}
+_bh_err_state = {"last_alert": 0.0, "streak": 0}
+
+
+def _tg_call(method: str, data: dict = None, files: dict = None, timeout: int = 30):
+    if not TG_BOT_TOKEN:
+        return None
+    try:
+        r = requests.post(f"{TG_API}/{method}", data=data, files=files, timeout=timeout)
+        j = r.json()
+        if not j.get("ok"):
+            print(f"⚠️ Telegram {method}: {j.get('description')}")
+        return j
+    except Exception as e:
+        print(f"⚠️ Telegram {method}: {e}")
+        return None
+
+
+def tg_notify(text: str):
+    """Уведомление владельцу в Telegram (в фоне, не задерживает ответ клиенту)."""
+    if not (TG_BOT_TOKEN and TG_ADMIN_CHAT):
+        return
+    try:
+        asyncio.get_running_loop().run_in_executor(None, lambda: _tg_call(
+            "sendMessage", {"chat_id": TG_ADMIN_CHAT, "text": text[:4000], "disable_web_page_preview": "true"}))
+    except RuntimeError:
+        pass
+
+
+def _bh_watch_error(err: str):
+    """Подряд идущие ошибки и признаки нехватки баланса у Братухи — сообщаем владельцу (не чаще раза в 30 минут)."""
+    low = err.lower()
+    money = any(w in low for w in ("баланс", "balance", "недостаточно", "insufficient", "402", "payment required", "пополн"))
+    _bh_err_state["streak"] = _bh_err_state["streak"] + 1
+    if (money or _bh_err_state["streak"] >= 5) and time.time() - _bh_err_state["last_alert"] > 1800:
+        _bh_err_state["last_alert"] = time.time()
+        _bh_err_state["streak"] = 0
+        tg_notify(("⚠️ Похоже, закончился баланс у Братухи — генерации видео и картинок не проходят.\n" if money
+                   else "⚠️ 5 ошибок генерации подряд у Братухи.\n") + f"Последняя ошибка: {err[:300]}")
+
+
+def _support_label(client_id: str) -> str:
+    c = support_conns.get(client_id) or {}
+    return f"({client_id}" + (f" · {c['email']}" if c.get("email") else "") + ")"
+
+
+async def _support_forward(client_id: str, data: str):
+    """Сообщение посетителя → владельцу в Telegram. Запоминаем, какому клиенту отвечать."""
+    label = _support_label(client_id)
+    if data.startswith("data:image"):
+        head, b64 = data.split(",", 1)
+        raw = base64.b64decode(b64)
+        res = await asyncio.to_thread(_tg_call, "sendPhoto",
+                                      {"chat_id": TG_ADMIN_CHAT, "caption": f"📷 Фото от клиента {label}\nНажмите «Ответить», чтобы написать клиенту."},
+                                      {"photo": ("photo.jpg", raw)}, 60)
+    elif data.startswith("data:audio"):
+        head, b64 = data.split(",", 1)
+        raw = base64.b64decode(b64)
+        res = await asyncio.to_thread(_tg_call, "sendVoice",
+                                      {"chat_id": TG_ADMIN_CHAT, "caption": f"🎙 Голосовое от клиента {label}\nНажмите «Ответить», чтобы написать клиенту."},
+                                      {"voice": ("voice.ogg", raw)}, 60)
+        if not (res and res.get("ok")):
+            res = await asyncio.to_thread(_tg_call, "sendDocument",
+                                          {"chat_id": TG_ADMIN_CHAT, "caption": f"🎙 Голосовое от клиента {label}"},
+                                          {"document": ("voice.webm", raw)}, 60)
+    else:
+        res = await asyncio.to_thread(_tg_call, "sendMessage",
+                                      {"chat_id": TG_ADMIN_CHAT, "text": f"💬 Клиент {label}:\n{data}\n\n👉 Нажмите «Ответить» на это сообщение, чтобы клиент получил ответ."})
+    msg_id = ((res or {}).get("result") or {}).get("message_id")
+    if msg_id and db_ready():
+        async with db_pool.acquire() as con:
+            await con.execute("INSERT INTO support_map(tg_msg_id, client_id) VALUES($1,$2) ON CONFLICT (tg_msg_id) DO NOTHING",
+                              int(msg_id), client_id)
+
+
+async def _support_deliver(client_id: str, payload: str) -> bool:
+    """Ответ владельца → клиенту на сайте. Если клиента нет на сайте — в очередь (в базе)."""
+    c = support_conns.get(client_id)
+    if c:
+        try:
+            await c["ws"].send_text(payload)
+            return True
+        except Exception:
+            support_conns.pop(client_id, None)
+    if db_ready():
+        async with db_pool.acquire() as con:
+            await con.execute("INSERT INTO support_queue(client_id, payload) VALUES($1,$2)", client_id, payload)
+    return False
+
+
+@app.websocket("/support/ws/{client_id}")
+async def support_ws(websocket: WebSocket, client_id: str):
+    if not SUPPORT_ID_RE.match(client_id or ""):
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    old = support_conns.get(client_id)
+    support_conns[client_id] = {"ws": websocket, "email": (old or {}).get("email", "")}
+    await websocket.send_text("SYSTEM_CONNECTED")
+    if db_ready():  # отдаём ответы, которые пришли, пока клиента не было
+        async with db_pool.acquire() as con:
+            rows = await con.fetch("DELETE FROM support_queue WHERE client_id=$1 RETURNING id, payload", client_id)
+        for r in sorted(rows, key=lambda x: x["id"]):
+            try:
+                await websocket.send_text(r["payload"])
+            except Exception:
+                break
+    try:
+        while True:
+            data = await websocket.receive_text()
+            now = time.time()
+            win = [t for t in _support_rate.get(client_id, []) if now - t < 60]
+            if len(win) >= SUPPORT_RATE:
+                await websocket.send_text("SYSTEM_SLOW")
+                continue
+            _support_rate[client_id] = win + [now]
+            if data.startswith("SYSTEM_HELLO:"):  # посетитель вошёл на сайте — покажем его почту в Telegram
+                em = norm_email(data[13:])
+                if _re.match(r"^[^@\s]{1,64}@[^@\s]{1,120}$", em or ""):
+                    support_conns[client_id]["email"] = em
+                continue
+            if data == "CLIENT_CLOSED_DIALOG":
+                await websocket.send_text("SYSTEM_CLOSE_DIALOG")
+                await asyncio.to_thread(_tg_call, "sendMessage", {"chat_id": TG_ADMIN_CHAT, "text": f"🔴 Клиент {_support_label(client_id)} завершил диалог."})
+                break
+            if data.startswith("data:"):
+                if len(data) > SUPPORT_MAX_BYTES or not (data.startswith("data:image") or data.startswith("data:audio")):
+                    await websocket.send_text("SYSTEM_TOO_BIG")
+                    continue
+            elif len(data) > SUPPORT_MAX_TEXT:
+                data = data[:SUPPORT_MAX_TEXT]
+            if not data.strip():
+                continue
+            await websocket.send_text(f"SYSTEM_ACK:{data[:20]}")
+            try:
+                await _support_forward(client_id, data)
+            except Exception as e:
+                print(f"⚠️ Поддержка: не удалось переслать сообщение {client_id}: {e}")
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"⚠️ Поддержка {client_id}: {e}")
+    finally:
+        c = support_conns.get(client_id)
+        if c and c.get("ws") is websocket:
+            support_conns.pop(client_id, None)
+
+
+async def _tg_admin_message(m: dict):
+    """Сообщение владельца в боте: ответ клиенту, /close или служебное."""
+    chat_id = (m.get("chat") or {}).get("id")
+    if chat_id != TG_ADMIN_CHAT:  # бот слушается только владельца
+        return
+    text = m.get("text") or ""
+    reply = lambda t: asyncio.to_thread(_tg_call, "sendMessage", {"chat_id": TG_ADMIN_CHAT, "text": t, "reply_to_message_id": m.get("message_id")})
+    target = None
+    rt = m.get("reply_to_message") or {}
+    if rt.get("message_id") and db_ready():
+        async with db_pool.acquire() as con:
+            target = await con.fetchval("SELECT client_id FROM support_map WHERE tg_msg_id=$1", int(rt["message_id"]))
+    if not target:
+        mm = _re.search(r"\((user_[a-z0-9]{4,24})", (rt.get("caption") or rt.get("text") or ""))
+        target = mm.group(1) if mm else None
+    if text.startswith("/close"):
+        parts = text.split(maxsplit=1)
+        target = parts[1].strip() if len(parts) > 1 else target
+        c = support_conns.get(target or "")
+        if c:
+            try:
+                await c["ws"].send_text("SYSTEM_CLOSE_DIALOG")
+                await c["ws"].close()
+            except Exception:
+                pass
+            support_conns.pop(target, None)
+            await reply(f"✅ Диалог с клиентом {target} закрыт.")
+        else:
+            await reply("⚠️ Клиент не на сайте. Напишите /close user_xxx или ответьте командой на его сообщение.")
+        return
+    if text.startswith("/start") or text.startswith("/help"):
+        await reply("Я бот НейроЯги.\n• Сюда приходят сообщения из чата поддержки сайта — нажмите «Ответить» на сообщение клиента, чтобы ответить.\n"
+                    "• Можно отвечать текстом, фото и голосовыми.\n• /close — закрыть диалог (ответом на сообщение клиента).\n"
+                    "• Сюда же приходят уведомления об оплатах и новых клиентах — на них отвечать не нужно.")
+        return
+    if not target:
+        await reply("ℹ️ Чтобы ответить клиенту, нажмите «Ответить» на его сообщение. Уведомления об оплатах и клиентах отвечать не нужно.")
+        return
+    payload = None
+    try:
+        if m.get("photo"):
+            payload = await _tg_file_as_data(m["photo"][-1]["file_id"], "image/jpeg")
+        elif m.get("voice"):
+            payload = await _tg_file_as_data(m["voice"]["file_id"], "audio/ogg")
+        elif text:
+            payload = text
+    except Exception as e:
+        await reply(f"⚠️ Не удалось взять файл: {e}")
+        return
+    if not payload:
+        await reply("⚠️ Такой тип сообщений не поддерживается: отправьте текст, фото или голосовое.")
+        return
+    online = await _support_deliver(target, payload)
+    await reply(f"✅ Доставлено клиенту {target}" if online else f"📥 Клиент {target} сейчас не на сайте. Сообщение сохранено и придёт, когда он откроет сайт.")
+
+
+async def _tg_file_as_data(file_id: str, mime: str) -> str:
+    info = await asyncio.to_thread(_tg_call, "getFile", {"file_id": file_id})
+    path = ((info or {}).get("result") or {}).get("file_path")
+    if not path:
+        raise RuntimeError("Telegram не отдал файл")
+    r = await asyncio.to_thread(requests.get, f"https://api.telegram.org/file/bot{TG_BOT_TOKEN}/{path}", timeout=60)
+    if r.status_code != 200 or len(r.content) > 6 * 1024 * 1024:
+        raise RuntimeError("файл недоступен или слишком большой")
+    return f"data:{mime};base64," + base64.b64encode(r.content).decode()
+
+
+async def _tg_poll_loop():
+    """Получаем сообщения бота (long polling). Работает только на этом сервере."""
+    await asyncio.to_thread(_tg_call, "deleteWebhook", {"drop_pending_updates": "false"})
+    offset = 0
+    print("🤖 Бот поддержки и уведомлений запущен")
+    while True:
+        try:
+            res = await asyncio.to_thread(_tg_call, "getUpdates", {"offset": offset, "timeout": 50,
+                                                                   "allowed_updates": '["message"]'}, None, 65)
+            if not res or not res.get("ok"):
+                await asyncio.sleep(5)
+                continue
+            for u in res.get("result", []):
+                offset = max(offset, u["update_id"] + 1)
+                if u.get("message"):
+                    try:
+                        await _tg_admin_message(u["message"])
+                    except Exception as e:
+                        print(f"⚠️ Бот: {e}")
+        except Exception as e:
+            print(f"⚠️ Бот, опрос: {e}")
+            await asyncio.sleep(5)
 
 
 @app.post("/api/admin/import-users")
@@ -1474,11 +1740,13 @@ async def yookassa_webhook(request: Request):
                                 "RETURNING until", norm_email(email), VIP_DAYS)
                             await db_log(con, norm_email(email), 0, bal, "vip", f"VIP до {until:%d.%m.%Y}")
                             print(f"👑 {email}: VIP до {until:%d.%m.%Y}")
+                            tg_notify(f"👑 VIP-пакет: {email}, VIP до {until:%d.%m.%Y}")
             except Exception as e:
                 print(f"❌ База: зачисление платежа {payment_id} для {email}: {e}")
                 return JSONResponse({"status": "retry"}, status_code=500)
             processed_payments.add(payment_id)
             print(f"✅ Успешно начислено {credits_to_add} кредитов пользователю {email} (платёж {payment_id})")
+            tg_notify(f"💰 Оплата {amount} ₽ от {email}\nНачислено {credits_to_add} кр.")
             return {"status": "ok"}
 
         if not GOOGLE_SCRIPT_URL:
@@ -2448,6 +2716,7 @@ async def _video_worker(job_id: str):
             op_id = await asyncio.to_thread(_bh_create_music, job["prompt"], job.get("quality") or "song")
             print(f"🎵 suno ({job.get('quality')}) для {job['email']}: операция {op_id}")
             urls = await _bh_wait_all(op_id, 8 * 60, 8)
+            _bh_err_state["streak"] = 0
             job.update(status="done", url=urls[0], urls=urls)
             for i, u in enumerate(urls):
                 remember_work(job["email"], "audio", (job.get("prompt") or "Песня")[:110] + (f" · вариант {i + 1}" if len(urls) > 1 else ""),
@@ -2460,6 +2729,7 @@ async def _video_worker(job_id: str):
             op_id = await asyncio.to_thread(_bh_create_avatar, image_url, audio_url, job.get("prompt"), job.get("quality"))
             print(f"🎙 {job['model']} ({job.get('quality')}, {job.get('duration')} сек) для {job['email']}: операция {op_id}")
             url = await _bh_wait(op_id, 25 * 60, 10)
+            _bh_err_state["streak"] = 0
             job.update(status="done", url=url)
             remember_work(job["email"], "video", (job.get("prompt") or "Говорящее фото")[:120], m["name"], url=url)
             print(f"✅ {job['model']} готово для {job['email']}")
@@ -2477,6 +2747,7 @@ async def _video_worker(job_id: str):
                     op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job.get("aspect"), job.get("duration"))
                 print(f"🎬 {job['model']}{' (' + mode + ')' if mode else ''} для {job['email']}: операция {op_id}")
                 url = await _bh_wait(op_id, 5 * 60 if is_image else VIDEO_TIMEOUT_SEC, 3 if is_image else 5)
+                _bh_err_state["streak"] = 0
                 job.update(status="done", url=url)
                 remember_work(job["email"], "image" if is_image else "video", (job.get("prompt") or m["name"])[:120], m["name"], url=url)
                 print(f"✅ {job['model']} готово для {job['email']}")
@@ -2490,6 +2761,7 @@ async def _video_worker(job_id: str):
         raise last_err or RuntimeError("не получилось")
     except Exception as e:
         print(f"❌ {job['model']} для {job['email']} не получилось: {e}")
+        _bh_watch_error(str(e))
         balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0),
                                        {"image": "image", "audio": "audio"}.get(VIDEO_MODELS[job["model"]].get("kind"), "video"))
         what = "Картинка" if VIDEO_MODELS[job["model"]].get("kind") == "image" else "Видео"
