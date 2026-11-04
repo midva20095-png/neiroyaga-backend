@@ -369,6 +369,15 @@ CREATE TABLE IF NOT EXISTS forum_donations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS forum_donations_from_idx ON forum_donations (from_email, created_at DESC);
+CREATE TABLE IF NOT EXISTS forum_comments (
+    id BIGSERIAL PRIMARY KEY,
+    post_id BIGINT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    author_email TEXT NOT NULL,
+    text TEXT NOT NULL,
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS forum_comments_post_idx ON forum_comments (post_id, id);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -3965,9 +3974,19 @@ async def _forum_cards(con, rows, viewer: str):
         return []
     ids = [r["id"] for r in rows]
     liked = set()
+    comments = {}
     if viewer:
         marks = await con.fetch("SELECT post_id FROM forum_likes WHERE email=$1 AND post_id = ANY($2::bigint[])", viewer, ids)
         liked = {m["post_id"] for m in marks}
+    crows = await con.fetch(
+        "SELECT c.id, c.post_id, c.text, c.created_at, u.nick FROM forum_comments c "
+        "JOIN users u ON u.email = c.author_email WHERE c.post_id = ANY($1::bigint[]) AND NOT c.hidden "
+        "ORDER BY c.id DESC LIMIT 200", ids)
+    for c in crows:
+        comments.setdefault(c["post_id"], []).append({
+            "id": c["id"], "nick": c["nick"] or "", "text": c["text"],
+            "date": c["created_at"].strftime("%d.%m %H:%M"),
+        })
     cards = []
     for r in rows:
         work = None
@@ -3984,6 +4003,8 @@ async def _forum_cards(con, rows, viewer: str):
             "liked": r["id"] in liked, "mine": bool(viewer and viewer == r["author_email"]),
             "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
             "media": _forum_media(r, work), "repeat": _forum_repeat(r),
+            "comments": list(reversed(comments.get(r["id"], [])[:5])),
+            "comment_n": len(comments.get(r["id"], [])),
         })
     return cards
 
@@ -4263,6 +4284,41 @@ async def forum_report(request: Request):
             await con.execute("UPDATE forum_posts SET hidden=TRUE WHERE id=$1", post_id)
             tg_notify(f"⚠️ Лента: работу {post_id} скрыли, жалоб: {n}")
     return {"ok": True, "reports": int(n or 0)}
+
+
+@app.post("/api/forum/comment")
+async def forum_comment(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    try:
+        post_id = int(data.get("post_id") or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    text = str(data.get("text") or "").strip()
+    if len(text) < 1 or len(text) > 300:
+        return {"ok": False, "error": "Комментарий от 1 до 300 символов"}
+    async with db_pool.acquire() as con:
+        if not await _require_nick(con, email):
+            return {"ok": False, "error": "Не удалось выдать ник"}
+        post = await con.fetchrow("SELECT id, hidden FROM forum_posts WHERE id=$1", post_id)
+        if not post or post["hidden"]:
+            return {"ok": False, "error": "Пост не найден"}
+        day = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_comments WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
+        if int(day or 0) >= 30:
+            return {"ok": False, "error": "Не больше 30 комментариев в сутки"}
+        nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+        cid = await con.fetchval(
+            "INSERT INTO forum_comments(post_id, author_email, text) VALUES($1,$2,$3) RETURNING id",
+            post_id, email, text)
+    return {"ok": True, "comment": {"id": cid, "nick": nick or "", "text": text, "date": "сейчас"}}
 
 
 @app.post("/api/forum/donate")
