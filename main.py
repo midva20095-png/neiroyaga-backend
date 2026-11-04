@@ -322,6 +322,46 @@ CREATE TABLE IF NOT EXISTS storage_subs (
 );
 CREATE INDEX IF NOT EXISTS works_email_idx ON works (email, created_at DESC);
 CREATE INDEX IF NOT EXISTS works_exp_idx ON works (expires_at);
+ALTER TABLE works ADD COLUMN IF NOT EXISTS origin TEXT;
+ALTER TABLE works ADD COLUMN IF NOT EXISTS template_id TEXT;
+ALTER TABLE works ADD COLUMN IF NOT EXISTS prompt TEXT;
+ALTER TABLE works ADD COLUMN IF NOT EXISTS model_key TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS nick_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS users_nick_lower_idx ON users (lower(nick));
+CREATE TABLE IF NOT EXISTS forum_posts (
+    id BIGSERIAL PRIMARY KEY,
+    work_id BIGINT NOT NULL UNIQUE,
+    author_email TEXT NOT NULL,
+    caption TEXT NOT NULL DEFAULT '',
+    origin TEXT NOT NULL DEFAULT 'unknown',
+    template_id TEXT,
+    share_prompt BOOLEAN NOT NULL DEFAULT FALSE,
+    prompt_text TEXT,
+    model_key TEXT,
+    kind TEXT,
+    title TEXT,
+    source TEXT,
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS forum_posts_author_idx ON forum_posts (author_email);
+CREATE INDEX IF NOT EXISTS forum_posts_feed_idx ON forum_posts (hidden, id DESC);
+CREATE TABLE IF NOT EXISTS forum_likes (
+    post_id BIGINT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (post_id, email)
+);
+CREATE TABLE IF NOT EXISTS forum_donations (
+    id BIGSERIAL PRIMARY KEY,
+    post_id BIGINT NOT NULL,
+    from_email TEXT NOT NULL,
+    to_email TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS forum_donations_from_idx ON forum_donations (from_email, created_at DESC);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -539,17 +579,27 @@ def _shrink_image(data: bytes, mime: str):
         return data, mime or "image/png"
 
 
-async def save_work(email: str, kind: str, title: str, source: str, url: str = None, data: bytes = None, mime: str = None):
+async def save_work(email: str, kind: str, title: str, source: str, url: str = None, data: bytes = None, mime: str = None,
+                    origin: str = None, template_id: str = None, prompt: str = None, model_key: str = None):
     if not db_ready() or not email:
         return
     try:
         if data:
             data, mime = await asyncio.to_thread(_shrink_image, data, mime)
+        origin_store = origin if origin in ("template", "prompt") else None
+        # Промт шаблона сюда не передаём и не храним. В колонке только свой текст клиента.
+        prompt_store = None
+        tid = None
+        if origin_store == "prompt" and prompt and str(prompt).strip():
+            prompt_store = str(prompt).strip()[:4000]
+        if origin_store == "template" and template_id:
+            tid = str(template_id).strip()[:40] or None
         async with db_pool.acquire() as con:
             wid = await con.fetchval(
-                "INSERT INTO works(email, kind, title, source, url, data, mime, expires_at) "
-                "VALUES($1,$2,$3,$4,$5,$6,$7, now() + make_interval(days => $8)) RETURNING id",
-                norm_email(email), kind, (title or "")[:160], (source or "")[:60], url, data, mime, WORKS_DAYS)
+                "INSERT INTO works(email, kind, title, source, url, data, mime, expires_at, origin, template_id, prompt, model_key) "
+                "VALUES($1,$2,$3,$4,$5,$6,$7, now() + make_interval(days => $8), $9, $10, $11, $12) RETURNING id",
+                norm_email(email), kind, (title or "")[:160], (source or "")[:60], url, data, mime, WORKS_DAYS,
+                origin_store, tid, prompt_store, (str(model_key).strip()[:60] or None) if model_key else None)
             until = await con.fetchval("SELECT until FROM storage_subs WHERE email=$1 AND until > now()", norm_email(email))
         if until and wid:
             await secure_work(norm_email(email), wid, until)
@@ -593,7 +643,9 @@ async def works_list(email: str, request: Request):
     if not db_ready():
         return {"ok": True, "works": [], "days": WORKS_DAYS}
     async with db_pool.acquire() as con:
-        rows = await con.fetch("SELECT id, kind, title, source, url, (data IS NOT NULL) AS own, mime, created_at, expires_at, skey, extended "
+        rows = await con.fetch("SELECT id, kind, title, source, url, (data IS NOT NULL) AS own, mime, created_at, expires_at, skey, extended, "
+                               "origin, template_id, prompt, model_key, "
+                               "(SELECT id FROM forum_posts fp WHERE fp.work_id = works.id AND NOT fp.hidden) AS forum_id "
                                "FROM works WHERE email=$1 AND expires_at > now() ORDER BY created_at DESC LIMIT 300", email)
     now = time.time()
     out = []
@@ -602,6 +654,12 @@ async def works_list(email: str, request: Request):
         item = {"id": r["id"], "kind": r["kind"], "title": r["title"] or "", "source": r["source"] or "",
                 "own": r["own"], "url": None if r["own"] else r["url"], "mime": r["mime"] or "", "dl": None,
                 "extended": r["extended"], "ts": r["created_at"].isoformat(), "days_left": int(left) + (1 if left % 1 else 0)}
+        origin = _work_origin(r)
+        item["origin"] = origin
+        item["template_id"] = r["template_id"] if origin == "template" else None
+        item["prompt"] = r["prompt"] if origin == "prompt" else None
+        item["can_share_prompt"] = origin == "prompt" and bool(r["prompt"])
+        item["forum_id"] = r["forum_id"]
         if r["skey"] and s3():
             try:
                 ext = r["skey"].rsplit(".", 1)[-1]
@@ -806,7 +864,8 @@ async def works_import(request: Request):
                     "AND abs(extract(epoch from created_at) - $3) < 900 LIMIT 1", email, title[:60] + "%", at)
             if dup:
                 continue
-            await save_work(email, "image", title, "Шаблоны", data=raw, mime=head[5:].split(";")[0] or "image/jpeg")
+            await save_work(email, "image", title, "Шаблоны", data=raw, mime=head[5:].split(";")[0] or "image/jpeg",
+                            origin="template")
             added += 1
         except Exception as e:
             print(f"⚠️ Перенос работы из браузера {email}: {e}")
@@ -1443,11 +1502,12 @@ async def admin_users(request: Request, q: str = ""):
     q = str(q or "").strip().lower()[:80]
     async with db_pool.acquire() as con:
         rows = await con.fetch(
-            "SELECT u.email, u.credits, u.created_at, u.last_login, v.until AS vip, "
+            "SELECT u.email, u.nick, u.credits, u.created_at, u.last_login, v.until AS vip, "
             " (SELECT COALESCE(SUM(amount_rub),0) FROM payments p WHERE p.email=u.email) AS paid "
             "FROM users u LEFT JOIN vip_subs v ON v.email=u.email "
-            "WHERE ($1 = '' OR u.email LIKE '%' || $1 || '%') ORDER BY COALESCE(u.last_login, u.created_at) DESC LIMIT 50", q)
-    return {"ok": True, "users": [{"email": r["email"], "credits": r["credits"], "created": r["created_at"].isoformat(),
+            "WHERE ($1 = '' OR u.email LIKE '%' || $1 || '%' OR lower(COALESCE(u.nick, '')) LIKE '%' || $1 || '%') "
+            "ORDER BY COALESCE(u.last_login, u.created_at) DESC LIMIT 50", q)
+    return {"ok": True, "users": [{"email": r["email"], "nick": r["nick"], "credits": r["credits"], "created": r["created_at"].isoformat(),
                                    "last": r["last_login"].isoformat() if r["last_login"] else None,
                                    "vip": r["vip"].strftime("%d.%m.%Y") if r["vip"] and r["vip"].timestamp() > time.time() else None,
                                    "paid": float(r["paid"] or 0)} for r in rows]}
@@ -1459,7 +1519,7 @@ async def admin_user(email: str, request: Request):
         return _admin_denied()
     email = norm_email(email)
     async with db_pool.acquire() as con:
-        u = await con.fetchrow("SELECT email, credits, created_at, last_login, ref_code FROM users WHERE email=$1", email)
+        u = await con.fetchrow("SELECT email, nick, credits, created_at, last_login, ref_code FROM users WHERE email=$1", email)
         if not u:
             return {"ok": False, "error": "Клиент не найден"}
         pays = await con.fetch("SELECT payment_id, amount_rub, credits, created_at FROM payments WHERE email=$1 ORDER BY created_at DESC LIMIT 50", email)
@@ -1470,7 +1530,7 @@ async def admin_user(email: str, request: Request):
         ref_by = await con.fetchrow("SELECT inviter, rewarded FROM referrals WHERE invitee=$1", email)
         invited = await con.fetchval("SELECT COUNT(*) FROM referrals WHERE inviter=$1", email)
     fmt = lambda d: d.strftime("%d.%m.%Y %H:%M") if d else None
-    return {"ok": True, "email": u["email"], "credits": u["credits"], "created": fmt(u["created_at"]), "last": fmt(u["last_login"]),
+    return {"ok": True, "email": u["email"], "nick": u["nick"], "credits": u["credits"], "created": fmt(u["created_at"]), "last": fmt(u["last_login"]),
             "ref_code": u["ref_code"], "invited": int(invited or 0),
             "ref_by": {"inviter": ref_by["inviter"], "rewarded": ref_by["rewarded"]} if ref_by else None,
             "vip": fmt(vip) if vip and vip.timestamp() > time.time() else None,
@@ -1824,7 +1884,7 @@ async def account_info(email: str, request: Request):
         res = await check_and_deduct_credits(email, 0)
         return {"ok": True, "email": email, "credits": res.get("credits", 0), "history": [], "db": False}
     async with db_pool.acquire() as con:
-        u = await con.fetchrow("SELECT credits, created_at FROM users WHERE email=$1", email)
+        u = await con.fetchrow("SELECT credits, created_at, nick FROM users WHERE email=$1", email)
         if u is None:
             return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
         rows = await con.fetch("SELECT delta, balance_after, kind, note, category, created_at FROM transactions "
@@ -1851,7 +1911,7 @@ async def account_info(email: str, request: Request):
     cats = {k: v for k, v in cats.items() if v > 0}
     bought = int(stats["bought"])
     vip = await vip_until(email)
-    return {"ok": True, "db": True, "email": email, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
+    return {"ok": True, "db": True, "email": email, "nick": u["nick"], "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
             "categories": cats, "level": _level(bought, vip), "history": history,
             "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
@@ -2132,7 +2192,10 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 if image_data:
                     try:
                         remember_work(email, "image", (prompt or "Картинка")[:120], MODEL_TITLES.get(model_key, "Картинка"),
-                                      data=base64.b64decode(image_data), mime=mime_type)
+                                      data=base64.b64decode(image_data), mime=mime_type,
+                                      origin="prompt",
+                                      prompt=None if biz_tool_id else prompt,
+                                      model_key=None if biz_tool_id else model_key)
                     except Exception:
                         pass
                     payload = {
@@ -2862,7 +2925,8 @@ async def run_template(request: Request):
 
         try:
             remember_work(email, "image", f"Шаблон «{template.get('title', template['id'])}»", "Шаблоны",
-                          data=base64.b64decode(image_data), mime=mime_type)
+                          data=base64.b64decode(image_data), mime=mime_type,
+                          origin="template", template_id=str(template["id"]))
         except Exception:
             pass
         if TEMPLATES_SCRIPT_URL:  # счётчик популярности, не ждём ответа
@@ -3506,7 +3570,7 @@ async def _video_worker(job_id: str):
             job.update(status="done", url=urls[0], urls=urls)
             for i, u in enumerate(urls):
                 remember_work(job["email"], "audio", (job.get("prompt") or "Песня")[:110] + (f" · вариант {i + 1}" if len(urls) > 1 else ""),
-                              m["name"], url=u)
+                              m["name"], url=u, origin="prompt", prompt=job.get("prompt"), model_key=job["model"])
             print(f"✅ suno готово для {job['email']}")
             return
         if m.get("audio"):
@@ -3517,7 +3581,8 @@ async def _video_worker(job_id: str):
             url = await _bh_wait(op_id, 25 * 60, 10)
             _bh_err_state["streak"] = 0
             job.update(status="done", url=url)
-            remember_work(job["email"], "video", (job.get("prompt") or "Говорящее фото")[:120], m["name"], url=url)
+            remember_work(job["email"], "video", (job.get("prompt") or "Говорящее фото")[:120], m["name"], url=url,
+                          origin="prompt", prompt=job.get("prompt"), model_key=job["model"])
             print(f"✅ {job['model']} готово для {job['email']}")
             return
         is_image = m.get("kind") == "image"
@@ -3535,7 +3600,8 @@ async def _video_worker(job_id: str):
                 url = await _bh_wait(op_id, 5 * 60 if is_image else VIDEO_TIMEOUT_SEC, 3 if is_image else 5)
                 _bh_err_state["streak"] = 0
                 job.update(status="done", url=url)
-                remember_work(job["email"], "image" if is_image else "video", (job.get("prompt") or m["name"])[:120], m["name"], url=url)
+                remember_work(job["email"], "image" if is_image else "video", (job.get("prompt") or m["name"])[:120], m["name"], url=url,
+                              origin="prompt", prompt=job.get("prompt"), model_key=job["model"])
                 print(f"✅ {job['model']} готово для {job['email']}")
                 return
             except Exception as e:
@@ -3769,6 +3835,417 @@ async def download_file(url: str, name: str = "neyroyaga"):
             r.close()
 
     return StreamingResponse(chunks(), media_type=r.headers.get("content-type", "application/octet-stream"), headers=headers)
+
+
+# ==================== Форум ====================
+# Шаблон: промт шаблона не хранится и не отдаётся. Кнопка только ведёт в шаблоны.
+# Свой промт: на форуме виден только если автор сам включил «Показать промт».
+
+FORUM_CHAT_URL = os.getenv("FORUM_CHAT_URL", "https://babayagaland.ru/aiayaga").strip()
+FORUM_TEMPLATES_URL = os.getenv("FORUM_TEMPLATES_URL", "https://babayagaland.ru/aiayaga?tab=templates").strip()
+FORUM_PAGE = 20
+DONATE_MIN = 10
+DONATE_MAX = 5000
+DONATE_DAY_LIMIT = 20
+NICK_RE = _re.compile(r"^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{2,19}$")
+NICK_RESERVED = {
+    "admin", "administrator", "moderator", "support", "neuroyaga", "neyroyaga", "yaga",
+    "нейрояга", "яга", "поддержка", "админ", "модератор", "babayaga",
+}
+
+
+def _work_origin(row) -> str:
+    origin = (row["origin"] or "") if "origin" in row.keys() else ""
+    if origin in ("template", "prompt"):
+        return origin
+    src = row["source"] or ""
+    title = row["title"] or ""
+    if src == "Шаблоны" or title.startswith("Шаблон"):
+        return "template"
+    return "unknown"
+
+
+def _nick_error(nick: str):
+    nick = str(nick or "").strip()
+    if not NICK_RE.match(nick):
+        return None, "Ник: 3–20 символов, с буквы, дальше буквы, цифры и _"
+    if nick.lower() in NICK_RESERVED:
+        return None, "Этот ник занят"
+    return nick, None
+
+
+async def _require_nick(con, email: str):
+    nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+    if not nick:
+        return None
+    return nick
+
+
+def _forum_model_name(key: str) -> str:
+    if not key:
+        return ""
+    if key in MODEL_TITLES:
+        return MODEL_TITLES[key]
+    m = VIDEO_MODELS.get(key)
+    return m["name"] if m else ""
+
+
+def _forum_repeat(post) -> dict:
+    """Что делать по кнопке. Промт шаблона сюда не попадает никогда."""
+    from urllib.parse import quote
+    if post["origin"] == "template":
+        url = FORUM_TEMPLATES_URL
+        if post["template_id"]:
+            join = "&" if "?" in url else "?"
+            url = f"{url}{join}template={quote(str(post['template_id']), safe='')}"
+        return {"type": "templates", "label": "Открыть шаблоны", "url": url}
+    if post["share_prompt"] and post["prompt_text"] and post["origin"] == "prompt":
+        return {"type": "prompt", "label": "Повторить промт", "prompt": post["prompt_text"],
+                "model_key": post["model_key"] or "", "model_name": _forum_model_name(post["model_key"] or ""),
+                "url": FORUM_CHAT_URL}
+    return None
+
+
+def _forum_media(post, work) -> dict:
+    """Ссылка на файл, пока работа жива. Исходное фото и голос клиента не отдаём — только результат."""
+    expired = work is None or work["expires_at"] is None or work["expires_at"].timestamp() <= time.time()
+    kind = (work["kind"] if work else None) or post["kind"] or ""
+    mime = (work["mime"] if work else None) or ""
+    if expired or work is None:
+        return {"kind": kind, "mime": mime, "url": None, "path": None, "expired": True}
+    if work["skey"] and s3():
+        try:
+            return {"kind": kind, "mime": mime, "url": _s3_url(work["skey"]), "path": None, "expired": False}
+        except Exception as e:
+            print(f"⚠️ Форум: ссылка на работу {work['id']}: {e}")
+    if work["url"]:
+        return {"kind": kind, "mime": mime, "url": work["url"], "path": None, "expired": False}
+    if work["has_data"]:
+        return {"kind": kind, "mime": mime or "image/jpeg", "url": None, "path": f"/api/forum/media/{post['id']}", "expired": False}
+    return {"kind": kind, "mime": mime, "url": None, "path": None, "expired": True}
+
+
+async def _forum_cards(con, rows, viewer: str):
+    if not rows:
+        return []
+    ids = [r["id"] for r in rows]
+    liked = set()
+    if viewer:
+        marks = await con.fetch("SELECT post_id FROM forum_likes WHERE email=$1 AND post_id = ANY($2::bigint[])", viewer, ids)
+        liked = {m["post_id"] for m in marks}
+    cards = []
+    for r in rows:
+        work = None
+        if r["work_expires"] is not None or r["work_kind"] is not None or r["work_url"] or r["work_skey"] or r["has_data"]:
+            work = {"id": r["work_id"], "kind": r["work_kind"], "url": r["work_url"], "skey": r["work_skey"],
+                    "mime": r["work_mime"], "expires_at": r["work_expires"], "has_data": r["has_data"]}
+            if r["work_expires"] is None and not r["has_data"] and not r["work_url"] and not r["work_skey"]:
+                work = None
+        cards.append({
+            "id": r["id"], "nick": r["nick"] or "", "caption": r["caption"] or "",
+            "title": (r["title"] or "") if (r["origin"] == "template" or (viewer and viewer == r["author_email"])) else "",
+            "source": r["source"] or "", "kind": r["kind"] or "",
+            "likes": int(r["likes"] or 0), "author_likes": int(r["author_likes"] or 0),
+            "liked": r["id"] in liked, "mine": bool(viewer and viewer == r["author_email"]),
+            "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
+            "media": _forum_media(r, work), "repeat": _forum_repeat(r),
+        })
+    return cards
+
+
+_FORUM_SELECT = """
+    SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
+           p.model_key, p.kind, p.title, p.source, p.hidden, p.created_at, u.nick,
+           (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
+           (SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p2 ON p2.id = l.post_id
+             WHERE p2.author_email = p.author_email AND NOT p2.hidden) AS author_likes,
+           w.kind AS work_kind, w.url AS work_url, w.skey AS work_skey, w.mime AS work_mime,
+           w.expires_at AS work_expires, (w.data IS NOT NULL) AS has_data
+    FROM forum_posts p
+    JOIN users u ON u.email = p.author_email
+    LEFT JOIN works w ON w.id = p.work_id
+"""
+
+
+@app.post("/api/account/nick")
+async def account_nick(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    nick, err = _nick_error(data.get("nick"))
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        async with db_pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow("SELECT nick FROM users WHERE email=$1 FOR UPDATE", email)
+                if not row:
+                    return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+                if row["nick"]:
+                    return {"ok": False, "error": "Ник уже выбран. Сменить его пока нельзя", "nick": row["nick"]}
+                taken = await con.fetchval("SELECT 1 FROM users WHERE lower(nick)=lower($1)", nick)
+                if taken:
+                    return {"ok": False, "error": "Этот ник уже занят"}
+                await con.execute("UPDATE users SET nick=$2, nick_at=now() WHERE email=$1 AND nick IS NULL", email, nick)
+    except asyncpg.UniqueViolationError:
+        return {"ok": False, "error": "Этот ник уже занят"}
+    print(f"🏷 Ник {email}: {nick}")
+    return {"ok": True, "nick": nick}
+
+
+@app.get("/api/forum")
+async def forum_feed(request: Request, before: int = 0):
+    if not db_ready():
+        return {"ok": True, "posts": []}
+    viewer = norm_email(request.query_params.get("email"))
+    if viewer and not is_authorized(viewer, token_from_request(request)):
+        viewer = ""
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            _FORUM_SELECT + " WHERE NOT p.hidden AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
+            int(before or 0), FORUM_PAGE)
+        posts = await _forum_cards(con, rows, viewer)
+    return {"ok": True, "posts": posts}
+
+
+@app.get("/api/forum/mine/{email}")
+async def forum_mine(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "posts": []}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(_FORUM_SELECT + " WHERE p.author_email=$1 ORDER BY p.id DESC LIMIT 100", email)
+        posts = await _forum_cards(con, rows, email)
+    return {"ok": True, "posts": posts}
+
+
+@app.post("/api/forum/publish")
+async def forum_publish(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    try:
+        work_id = int(data.get("work_id") or 0)
+    except (TypeError, ValueError):
+        work_id = 0
+    caption = str(data.get("caption") or "").strip()[:400]
+    want_prompt = bool(data.get("share_prompt"))
+    async with db_pool.acquire() as con:
+        nick = await _require_nick(con, email)
+        if not nick:
+            return {"ok": False, "error": "Сначала выберите ник в кабинете"}
+        work = await con.fetchrow(
+            "SELECT id, kind, title, source, origin, template_id, prompt, model_key FROM works "
+            "WHERE id=$1 AND email=$2 AND expires_at > now()", work_id, email)
+        if not work:
+            return {"ok": False, "error": "Работа не найдена или срок хранения истёк"}
+        origin = _work_origin(work)
+        share = False
+        prompt_text = None
+        template_id = None
+        model_key = None
+        if origin == "template":
+            template_id = (work["template_id"] or None)
+        elif origin == "prompt" and want_prompt and work["prompt"]:
+            share = True
+            prompt_text = work["prompt"]
+            model_key = work["model_key"]
+        elif want_prompt:
+            return {"ok": False, "error": "У этой работы нет сохранённого промта — её можно выложить только без промта"}
+        row = await con.fetchrow(
+            "INSERT INTO forum_posts(work_id, author_email, caption, origin, template_id, share_prompt, prompt_text, model_key, kind, title, source) "
+            "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) "
+            "ON CONFLICT (work_id) DO UPDATE SET caption=EXCLUDED.caption, origin=EXCLUDED.origin, template_id=EXCLUDED.template_id, "
+            "share_prompt=EXCLUDED.share_prompt, prompt_text=EXCLUDED.prompt_text, model_key=EXCLUDED.model_key, "
+            "kind=EXCLUDED.kind, title=EXCLUDED.title, source=EXCLUDED.source, hidden=FALSE "
+            "WHERE forum_posts.author_email=$2 RETURNING id",
+            work_id, email, caption, origin, template_id, share, prompt_text, model_key,
+            work["kind"], (work["title"] or "")[:160], (work["source"] or "")[:60])
+        if not row:
+            return {"ok": False, "error": "Эта работа уже на форуме"}
+    print(f"📣 Форум: {nick} выложил работу {work_id}, промт {'открыт' if share else 'скрыт'}")
+    return {"ok": True, "post_id": row["id"], "share_prompt": share, "origin": origin}
+
+
+@app.post("/api/forum/hide")
+async def forum_hide(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    try:
+        post_id = int(data.get("post_id") or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    async with db_pool.acquire() as con:
+        n = await con.execute("UPDATE forum_posts SET hidden=TRUE, prompt_text=NULL, share_prompt=FALSE WHERE id=$1 AND author_email=$2",
+                              post_id, email)
+    if n.endswith(" 0"):
+        return {"ok": False, "error": "Пост не найден"}
+    return {"ok": True}
+
+
+@app.post("/api/forum/like")
+async def forum_like(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    try:
+        post_id = int(data.get("post_id") or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    async with db_pool.acquire() as con:
+        if not await _require_nick(con, email):
+            return {"ok": False, "error": "Сначала выберите ник в кабинете"}
+        post = await con.fetchrow("SELECT author_email, hidden FROM forum_posts WHERE id=$1", post_id)
+        if not post or post["hidden"]:
+            return {"ok": False, "error": "Пост не найден"}
+        if post["author_email"] == email:
+            return {"ok": False, "error": "Свою работу лайкнуть нельзя"}
+        inserted = await con.fetchval(
+            "INSERT INTO forum_likes(post_id, email) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING post_id", post_id, email)
+        liked = True
+        if not inserted:
+            await con.execute("DELETE FROM forum_likes WHERE post_id=$1 AND email=$2", post_id, email)
+            liked = False
+        likes = await con.fetchval("SELECT COUNT(*) FROM forum_likes WHERE post_id=$1", post_id)
+    return {"ok": True, "liked": liked, "likes": int(likes or 0)}
+
+
+@app.post("/api/forum/donate")
+async def forum_donate(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    try:
+        post_id = int(data.get("post_id") or 0)
+        amount = int(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Укажите сумму в кредитах"}
+    if amount < DONATE_MIN or amount > DONATE_MAX:
+        return {"ok": False, "error": f"Донат от {DONATE_MIN} до {DONATE_MAX} кредитов"}
+    try:
+        async with db_pool.acquire() as con:
+            async with con.transaction():
+                if not await _require_nick(con, email):
+                    return {"ok": False, "error": "Сначала выберите ник в кабинете"}
+                post = await con.fetchrow("SELECT id, author_email, hidden FROM forum_posts WHERE id=$1 FOR UPDATE", post_id)
+                if not post or post["hidden"]:
+                    return {"ok": False, "error": "Пост не найден"}
+                author = post["author_email"]
+                if author == email:
+                    return {"ok": False, "error": "Себе донатить нельзя"}
+                recent = await con.fetchval(
+                    "SELECT COUNT(*) FROM forum_donations WHERE from_email=$1 AND created_at > now() - interval '1 day'", email)
+                if int(recent or 0) >= DONATE_DAY_LIMIT:
+                    return {"ok": False, "error": f"Не больше {DONATE_DAY_LIMIT} донатов в сутки"}
+                sender_nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+                author_nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", author)
+                bal = await con.fetchval(
+                    "UPDATE users SET credits=credits-$2 WHERE email=$1 AND credits>=$2 RETURNING credits", email, amount)
+                if bal is None:
+                    cur = await con.fetchval("SELECT credits FROM users WHERE email=$1", email)
+                    return {"ok": False, "error": f"Недостаточно кредитов: нужно {amount}", "credits": int(cur or 0)}
+                to_bal = await con.fetchval(
+                    "UPDATE users SET credits=credits+$2 WHERE email=$1 RETURNING credits", author, amount)
+                if to_bal is None:
+                    raise RuntimeError("автор поста не найден")
+                note_out = f"Для {author_nick or 'автора'} на форуме"
+                note_in = f"От {sender_nick or 'участника'} на форуме"
+                await db_log(con, email, -amount, bal, "donate_out", note_out, "forum")
+                await db_log(con, author, amount, to_bal, "donate_in", note_in, "forum")
+                await con.execute(
+                    "INSERT INTO forum_donations(post_id, from_email, to_email, amount) VALUES($1,$2,$3,$4)",
+                    post_id, email, author, amount)
+    except RuntimeError:
+        return {"ok": False, "error": "Не удалось отправить донат, кредиты не списаны"}
+    print(f"🎁 Донат форума: {email} → {author} {amount} кр. (пост {post_id})")
+    return {"ok": True, "credits": bal, "amount": amount}
+
+
+@app.get("/api/forum/media/{post_id}")
+async def forum_media(post_id: int):
+    if not db_ready():
+        return JSONResponse({"ok": False}, status_code=404)
+    async with db_pool.acquire() as con:
+        r = await con.fetchrow(
+            "SELECT w.data, w.mime FROM forum_posts p JOIN works w ON w.id=p.work_id "
+            "WHERE p.id=$1 AND NOT p.hidden AND w.expires_at > now() AND w.data IS NOT NULL", int(post_id))
+    if not r:
+        return JSONResponse({"ok": False, "error": "Файл не найден"}, status_code=404)
+    return Response(content=bytes(r["data"]), media_type=r["mime"] or "image/jpeg",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/api/admin/forum")
+async def admin_forum(request: Request, q: str = ""):
+    if not check_admin(request):
+        return _admin_denied()
+    if not db_ready():
+        return {"ok": True, "posts": []}
+    q = str(q or "").strip().lower()[:80]
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT p.id, p.caption, p.origin, p.share_prompt, p.hidden, p.created_at, p.author_email, u.nick, "
+            "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) AS likes "
+            "FROM forum_posts p JOIN users u ON u.email=p.author_email "
+            "WHERE ($1 = '' OR lower(u.nick) LIKE '%' || $1 || '%' OR lower(p.caption) LIKE '%' || $1 || '%' "
+            "OR p.author_email LIKE '%' || $1 || '%') "
+            "ORDER BY p.id DESC LIMIT 50", q)
+    return {"ok": True, "posts": [{
+        "id": r["id"], "nick": r["nick"], "email": r["author_email"], "caption": r["caption"] or "",
+        "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"], "likes": int(r["likes"] or 0),
+        "at": r["created_at"].strftime("%d.%m.%Y %H:%M"),
+    } for r in rows]}
+
+
+@app.post("/api/admin/forum/hide")
+async def admin_forum_hide(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    try:
+        post_id = int(data.get("id") or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    hidden = bool(data.get("hidden", True))
+    async with db_pool.acquire() as con:
+        n = await con.execute("UPDATE forum_posts SET hidden=$2 WHERE id=$1", post_id, hidden)
+    if n.endswith(" 0"):
+        return {"ok": False, "error": "Пост не найден"}
+    return {"ok": True, "hidden": hidden}
+
 
 if __name__ == "__main__":
     import uvicorn

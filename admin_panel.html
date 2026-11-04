@@ -122,7 +122,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   /* ---------- каркас ---------- */
   function main() {
     app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1><button class="ghost" id="logout">Выйти</button></div>' +
-      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
+      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="forum">📣 Форум</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
     document.getElementById('logout').onclick = function () { sessionStorage.removeItem('ny_admin'); T = ''; login(); };
     app.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-t'); S.user = null; show(); }; });
     show();
@@ -130,7 +130,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   function show() {
     app.querySelectorAll('[data-t]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-t') === S.tab); });
     if (S.user) return userView(S.user);
-    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else users();
+    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else if (S.tab === 'forum') forum(); else users();
   }
   function view(h) { document.getElementById('view').innerHTML = h; }
 
@@ -206,17 +206,44 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
     }).catch(function () {});
   }
 
+  /* ---------- форум ---------- */
+  function forum() {
+    view('<div class="card"><div class="row"><input class="in" id="fq" placeholder="Ник, почта или подпись"><button class="btn" id="fgo">Найти</button></div></div><div id="flist"><p class="dim">Загружаю…</p></div>');
+    var run = function () {
+      var q = document.getElementById('fq').value.trim();
+      api('/api/admin/forum?q=' + encodeURIComponent(q)).then(function (r) {
+        document.getElementById('flist').innerHTML = '<div class="card tbl"><table><tr><th>Когда</th><th>Ник</th><th>Подпись</th><th>Лайки</th><th></th></tr>' +
+          ((r.posts || []).map(function (p) {
+            return '<tr><td>' + esc(p.at) + '</td><td>' + esc(p.nick || '—') + '<br><span class="dim" style="font-size:12px">' + esc(p.email) + '</span></td><td>' +
+              esc(p.caption || '—') + '<br><span class="dim" style="font-size:12px">' + (p.origin === 'template' ? 'шаблон, промт скрыт' : (p.share_prompt ? 'свой промт открыт' : 'свой промт скрыт')) +
+              (p.hidden ? ' · скрыт' : '') + '</span></td><td>' + n(p.likes) + '</td><td><button class="ghost' + (p.hidden ? '' : ' danger') + '" data-hide="' + p.id + '" data-on="' + (p.hidden ? '0' : '1') + '">' +
+              (p.hidden ? 'Вернуть' : 'Скрыть') + '</button></td></tr>';
+          }).join('') || '<tr><td colspan="5" class="dim">Постов нет</td></tr>') + '</table></div>';
+        document.querySelectorAll('[data-hide]').forEach(function (b) {
+          b.onclick = function () {
+            api('/api/admin/forum/hide', { id: parseInt(b.getAttribute('data-hide'), 10), hidden: b.getAttribute('data-on') === '1' }).then(function (x) {
+              toast(x.ok ? 'Готово' : (x.error || 'Ошибка')); if (x.ok) run();
+            });
+          };
+        });
+      }).catch(function () {});
+    };
+    document.getElementById('fgo').onclick = run;
+    document.getElementById('fq').onkeydown = function (e) { if (e.key === 'Enter') run(); };
+    run();
+  }
+
   /* ---------- клиенты ---------- */
   function users() {
-    view('<div class="card"><div class="row"><input class="in" id="q" placeholder="Поиск по почте" value="' + esc(S.q) + '"><button class="btn" id="go">Найти</button></div></div><div id="list"><p class="dim">Загружаю…</p></div>');
+    view('<div class="card"><div class="row"><input class="in" id="q" placeholder="Поиск по почте или нику" value="' + esc(S.q) + '"><button class="btn" id="go">Найти</button></div></div><div id="list"><p class="dim">Загружаю…</p></div>');
     var run = function () {
       S.q = document.getElementById('q').value.trim();
       api('/api/admin/users?q=' + encodeURIComponent(S.q)).then(function (r) {
-        document.getElementById('list').innerHTML = '<div class="card tbl"><table><tr><th>Почта</th><th>Баланс</th><th>Оплатил</th><th>Статус</th><th>Последний вход</th></tr>' +
+        document.getElementById('list').innerHTML = '<div class="card tbl"><table><tr><th>Почта</th><th>Ник</th><th>Баланс</th><th>Оплатил</th><th>Статус</th><th>Последний вход</th></tr>' +
           (r.users.map(function (u) {
-            return '<tr class="click" data-u="' + esc(u.email) + '"><td>' + esc(u.email) + '</td><td>' + n(u.credits) + ' кр.</td><td>' + n(u.paid) + ' ₽</td><td>' +
+            return '<tr class="click" data-u="' + esc(u.email) + '"><td>' + esc(u.email) + '</td><td>' + esc(u.nick || '—') + '</td><td>' + n(u.credits) + ' кр.</td><td>' + n(u.paid) + ' ₽</td><td>' +
               (u.vip ? '<span class="tag vip">👑 VIP до ' + esc(u.vip) + '</span>' : '') + '</td><td>' + dt(u.last || u.created) + '</td></tr>';
-          }).join('') || '<tr><td colspan="5" class="dim">Никого не нашли</td></tr>') + '</table></div>';
+          }).join('') || '<tr><td colspan="6" class="dim">Никого не нашли</td></tr>') + '</table></div>';
         bindUsers();
       }).catch(function () {});
     };
@@ -234,7 +261,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
     api('/api/admin/user/' + encodeURIComponent(email)).then(function (r) {
       if (!r.ok) { view('<p>' + esc(r.error) + '</p><button class="ghost" id="back">← Назад</button>'); document.getElementById('back').onclick = function () { S.user = null; show(); }; return; }
       var h = '<button class="ghost" id="back" style="margin-bottom:12px">← Назад</button>';
-      h += '<div class="card"><h3 style="font-size:18px;word-break:break-all">' + esc(r.email) + ' ' + (r.vip ? '<span class="tag vip">👑 VIP до ' + esc(r.vip) + '</span>' : '') + (r.storage ? ' <span class="tag on">💾 Хранилище до ' + esc(r.storage) + '</span>' : '') + '</h3>' +
+      h += '<div class="card"><h3 style="font-size:18px;word-break:break-all">' + esc(r.email) + (r.nick ? ' · ' + esc(r.nick) : ' · ника нет') + ' ' + (r.vip ? '<span class="tag vip">👑 VIP до ' + esc(r.vip) + '</span>' : '') + (r.storage ? ' <span class="tag on">💾 Хранилище до ' + esc(r.storage) + '</span>' : '') + '</h3>' +
         '<div class="grid" style="margin:0"><div class="kpi hot"><small>Баланс</small><b>' + n(r.credits) + ' кр.</b></div><div class="kpi"><small>Оплатил всего</small><b>' + n(r.paid) + ' ₽</b></div>' +
         '<div class="kpi"><small>Регистрация</small><b style="font-size:15px">' + esc(r.created) + '</b><small>вход: ' + esc(r.last || '—') + '</small></div>' +
         '<div class="kpi"><small>Работ / рефералов</small><b>' + r.works + ' / ' + r.invited + '</b><small>код: ' + esc(r.ref_code || '—') + (r.ref_by ? ' · пригласил ' + esc(r.ref_by.inviter) : '') + '</small></div></div></div>';
