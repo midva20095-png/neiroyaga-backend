@@ -347,6 +347,13 @@ CREATE TABLE IF NOT EXISTS forum_posts (
 );
 CREATE INDEX IF NOT EXISTS forum_posts_author_idx ON forum_posts (author_email);
 CREATE INDEX IF NOT EXISTS forum_posts_feed_idx ON forum_posts (hidden, id DESC);
+ALTER TABLE forum_posts ADD COLUMN IF NOT EXISTS skey TEXT;
+CREATE TABLE IF NOT EXISTS forum_reports (
+    post_id BIGINT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (post_id, email)
+);
 CREATE TABLE IF NOT EXISTS forum_likes (
     post_id BIGINT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
@@ -1887,6 +1894,7 @@ async def account_info(email: str, request: Request):
         u = await con.fetchrow("SELECT credits, created_at, nick FROM users WHERE email=$1", email)
         if u is None:
             return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+        nick = await _ensure_nick(con, email)
         rows = await con.fetch("SELECT delta, balance_after, kind, note, category, created_at FROM transactions "
                                "WHERE email=$1 AND kind <> 'migration' ORDER BY created_at DESC LIMIT 300", email)
         stats = await con.fetchrow("SELECT COALESCE(SUM(credits),0) AS bought, COUNT(*) AS n FROM payments WHERE email=$1",
@@ -1911,7 +1919,7 @@ async def account_info(email: str, request: Request):
     cats = {k: v for k, v in cats.items() if v > 0}
     bought = int(stats["bought"])
     vip = await vip_until(email)
-    return {"ok": True, "db": True, "email": email, "nick": u["nick"], "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
+    return {"ok": True, "db": True, "email": email, "nick": nick, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
             "categories": cats, "level": _level(bought, vip), "history": history,
             "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
@@ -3852,6 +3860,8 @@ NICK_RESERVED = {
     "admin", "administrator", "moderator", "support", "neuroyaga", "neyroyaga", "yaga",
     "нейрояга", "яга", "поддержка", "админ", "модератор", "babayaga",
 }
+NICK_PREFIXES = ("Ведьмочка", "Ягуся", "Колдунья", "Травница", "Чародейка", "Искорка", "Луноликая", "Звёздочка")
+_NICK_BAD = ("хуй", "пизд", "ебан", "ебат", "бляд", "сука", "мудак", "пидор", "пидар", "залуп")
 
 
 def _work_origin(row) -> str:
@@ -3868,17 +3878,37 @@ def _work_origin(row) -> str:
 def _nick_error(nick: str):
     nick = str(nick or "").strip()
     if not NICK_RE.match(nick):
-        return None, "Ник: 3–20 символов, с буквы, дальше буквы, цифры и _"
-    if nick.lower() in NICK_RESERVED:
-        return None, "Этот ник занят"
+        return None, "Ник: от 3 до 20 знаков, только буквы, цифры и _. Пробелы нельзя"
+    low = nick.lower().replace("ё", "е")
+    if low in NICK_RESERVED or any(b in low for b in _NICK_BAD):
+        return None, "Этот ник нельзя использовать"
     return nick, None
 
 
-async def _require_nick(con, email: str):
-    nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
-    if not nick:
+async def _ensure_nick(con, email: str):
+    """Ник есть у каждого. Если пусто — Ведьмочка_4821. Почта наружу не выходит."""
+    row = await con.fetchrow("SELECT nick FROM users WHERE email=$1", email)
+    if not row:
         return None
-    return nick
+    if row["nick"]:
+        return row["nick"]
+    for _ in range(12):
+        nick = f"{_secrets.choice(NICK_PREFIXES)}_{_secrets.randbelow(9000) + 1000}"
+        if await con.fetchval("SELECT 1 FROM users WHERE lower(nick)=lower($1)", nick):
+            continue
+        got = await con.fetchval(
+            "UPDATE users SET nick=$2 WHERE email=$1 AND nick IS NULL RETURNING nick", email, nick)
+        if got:
+            print(f"🏷 Ник {email}: {got}")
+            return got
+        already = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+        if already:
+            return already
+    return None
+
+
+async def _require_nick(con, email: str):
+    return await _ensure_nick(con, email)
 
 
 def _forum_model_name(key: str) -> str:
@@ -3898,7 +3928,7 @@ def _forum_repeat(post) -> dict:
         if post["template_id"]:
             join = "&" if "?" in url else "?"
             url = f"{url}{join}template={quote(str(post['template_id']), safe='')}"
-        return {"type": "templates", "label": "Открыть шаблоны", "url": url}
+        return {"type": "templates", "label": "Сделать так же", "url": url}
     if post["share_prompt"] and post["prompt_text"] and post["origin"] == "prompt":
         return {"type": "prompt", "label": "Повторить промт", "prompt": post["prompt_text"],
                 "model_key": post["model_key"] or "", "model_name": _forum_model_name(post["model_key"] or ""),
@@ -3907,10 +3937,15 @@ def _forum_repeat(post) -> dict:
 
 
 def _forum_media(post, work) -> dict:
-    """Ссылка на файл, пока работа жива. Исходное фото и голос клиента не отдаём — только результат."""
-    expired = work is None or work["expires_at"] is None or work["expires_at"].timestamp() <= time.time()
+    """Картинка поста. Копия в хранилище ленты не пропадает вместе с работой."""
     kind = (work["kind"] if work else None) or post["kind"] or ""
     mime = (work["mime"] if work else None) or ""
+    if post["skey"] and s3():
+        try:
+            return {"kind": kind, "mime": mime, "url": _s3_url(post["skey"]), "path": None, "expired": False}
+        except Exception as e:
+            print(f"⚠️ Форум: ссылка на пост {post['id']}: {e}")
+    expired = work is None or work["expires_at"] is None or work["expires_at"].timestamp() <= time.time()
     if expired or work is None:
         return {"kind": kind, "mime": mime, "url": None, "path": None, "expired": True}
     if work["skey"] and s3():
@@ -3955,7 +3990,7 @@ async def _forum_cards(con, rows, viewer: str):
 
 _FORUM_SELECT = """
     SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
-           p.model_key, p.kind, p.title, p.source, p.hidden, p.created_at, u.nick,
+           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick,
            (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
            (SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p2 ON p2.id = l.post_id
              WHERE p2.author_email = p.author_email AND NOT p2.hidden) AS author_likes,
@@ -3984,15 +4019,15 @@ async def account_nick(request: Request):
     try:
         async with db_pool.acquire() as con:
             async with con.transaction():
-                row = await con.fetchrow("SELECT nick FROM users WHERE email=$1 FOR UPDATE", email)
+                row = await con.fetchrow("SELECT nick, nick_at FROM users WHERE email=$1 FOR UPDATE", email)
                 if not row:
                     return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-                if row["nick"]:
-                    return {"ok": False, "error": "Ник уже выбран. Сменить его пока нельзя", "nick": row["nick"]}
-                taken = await con.fetchval("SELECT 1 FROM users WHERE lower(nick)=lower($1)", nick)
+                if row["nick"] and row["nick_at"] and (time.time() - row["nick_at"].timestamp()) < 86400:
+                    return {"ok": False, "error": "Ник можно сменить раз в сутки", "nick": row["nick"]}
+                taken = await con.fetchval("SELECT 1 FROM users WHERE lower(nick)=lower($1) AND email<>$2", nick, email)
                 if taken:
                     return {"ok": False, "error": "Этот ник уже занят"}
-                await con.execute("UPDATE users SET nick=$2, nick_at=now() WHERE email=$1 AND nick IS NULL", email, nick)
+                await con.execute("UPDATE users SET nick=$2, nick_at=now() WHERE email=$1", email, nick)
     except asyncpg.UniqueViolationError:
         return {"ok": False, "error": "Этот ник уже занят"}
     print(f"🏷 Ник {email}: {nick}")
@@ -4000,18 +4035,45 @@ async def account_nick(request: Request):
 
 
 @app.get("/api/forum")
-async def forum_feed(request: Request, before: int = 0):
+async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
     if not db_ready():
         return {"ok": True, "posts": []}
     viewer = norm_email(request.query_params.get("email"))
     if viewer and not is_authorized(viewer, token_from_request(request)):
         viewer = ""
     async with db_pool.acquire() as con:
-        rows = await con.fetch(
-            _FORUM_SELECT + " WHERE NOT p.hidden AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
-            int(before or 0), FORUM_PAGE)
+        if sort == "popular":
+            rows = await con.fetch(
+                _FORUM_SELECT + " WHERE NOT p.hidden ORDER BY "
+                "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id AND l.created_at > now() - interval '7 days') DESC, p.id DESC LIMIT 40")
+        else:
+            rows = await con.fetch(
+                _FORUM_SELECT + " WHERE NOT p.hidden AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
+                int(before or 0), FORUM_PAGE)
         posts = await _forum_cards(con, rows, viewer)
+        top = await con.fetch(
+            "SELECT u.nick, COUNT(*) AS likes FROM forum_likes l "
+            "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
+            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND u.nick IS NOT NULL "
+            "GROUP BY u.nick ORDER BY likes DESC LIMIT 3")
+    medals = {r["nick"]: m for r, m in zip(top, ("🥇", "🥈", "🥉"))}
+    for c in posts:
+        c["badge"] = medals.get(c["nick"], "")
     return {"ok": True, "posts": posts}
+
+
+@app.get("/api/forum/top")
+async def forum_top():
+    if not db_ready():
+        return {"ok": True, "authors": []}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT u.nick, COUNT(*) AS likes FROM forum_likes l "
+            "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
+            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND u.nick IS NOT NULL "
+            "GROUP BY u.nick ORDER BY likes DESC LIMIT 20")
+    authors = [{"nick": r["nick"], "likes": int(r["likes"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else ""} for i, r in enumerate(rows)]
+    return {"ok": True, "authors": authors}
 
 
 @app.get("/api/forum/mine/{email}")
@@ -4025,6 +4087,34 @@ async def forum_mine(email: str, request: Request):
         rows = await con.fetch(_FORUM_SELECT + " WHERE p.author_email=$1 ORDER BY p.id DESC LIMIT 100", email)
         posts = await _forum_cards(con, rows, email)
     return {"ok": True, "posts": posts}
+
+
+async def _forum_keep(con, post_id: int, work_id: int):
+    """Копия файла в своё хранилище, чтобы лента не пропадала через 10 дней."""
+    if not s3():
+        return
+    work = await con.fetchrow("SELECT kind, url, skey, mime, data FROM works WHERE id=$1", work_id)
+    if not work:
+        return
+    ext = "mp4" if work["kind"] == "video" else "mp3" if work["kind"] == "audio" else "jpg"
+    key = f"forum/{post_id}.{ext}"
+    try:
+        if work["data"]:
+            await asyncio.to_thread(_s3_put_bytes, bytes(work["data"]), key, work["mime"] or "application/octet-stream")
+        elif work["skey"]:
+            src = work["skey"]
+
+            def _copy():
+                s3().copy_object(Bucket=S3_BUCKET, Key=key, CopySource={"Bucket": S3_BUCKET, "Key": src})
+
+            await asyncio.to_thread(_copy)
+        elif work["url"]:
+            await asyncio.to_thread(_s3_copy_from_url, work["url"], key, work["mime"] or "application/octet-stream")
+        else:
+            return
+        await con.execute("UPDATE forum_posts SET skey=$2 WHERE id=$1", post_id, key)
+    except Exception as e:
+        print(f"⚠️ Форум: не скопировал файл {work_id}: {e}")
 
 
 @app.post("/api/forum/publish")
@@ -4042,12 +4132,18 @@ async def forum_publish(request: Request):
         work_id = int(data.get("work_id") or 0)
     except (TypeError, ValueError):
         work_id = 0
-    caption = str(data.get("caption") or "").strip()[:400]
+    caption = str(data.get("caption") or "").strip()[:150]
     want_prompt = bool(data.get("share_prompt"))
     async with db_pool.acquire() as con:
-        nick = await _require_nick(con, email)
+        nick = await _ensure_nick(con, email)
         if not nick:
-            return {"ok": False, "error": "Сначала выберите ник в кабинете"}
+            return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
+        already = await con.fetchval("SELECT id FROM forum_posts WHERE work_id=$1", work_id)
+        if not already:
+            posted = await con.fetchval(
+                "SELECT COUNT(*) FROM forum_posts WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
+            if int(posted or 0) >= 5:
+                return {"ok": False, "error": "В сутки можно выложить не больше 5 работ"}
         work = await con.fetchrow(
             "SELECT id, kind, title, source, origin, template_id, prompt, model_key FROM works "
             "WHERE id=$1 AND email=$2 AND expires_at > now()", work_id, email)
@@ -4077,6 +4173,8 @@ async def forum_publish(request: Request):
             work["kind"], (work["title"] or "")[:160], (work["source"] or "")[:60])
         if not row:
             return {"ok": False, "error": "Эта работа уже на форуме"}
+        await _forum_keep(con, row["id"], work_id)
+    tg_notify(f"📣 Лента: {nick} выложил работу\n{caption or '—'}")
     print(f"📣 Форум: {nick} выложил работу {work_id}, промт {'открыт' if share else 'скрыт'}")
     return {"ok": True, "post_id": row["id"], "share_prompt": share, "origin": origin}
 
@@ -4120,8 +4218,8 @@ async def forum_like(request: Request):
     except (TypeError, ValueError):
         post_id = 0
     async with db_pool.acquire() as con:
-        if not await _require_nick(con, email):
-            return {"ok": False, "error": "Сначала выберите ник в кабинете"}
+        if not await _ensure_nick(con, email):
+            return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
         post = await con.fetchrow("SELECT author_email, hidden FROM forum_posts WHERE id=$1", post_id)
         if not post or post["hidden"]:
             return {"ok": False, "error": "Пост не найден"}
@@ -4135,6 +4233,36 @@ async def forum_like(request: Request):
             liked = False
         likes = await con.fetchval("SELECT COUNT(*) FROM forum_likes WHERE post_id=$1", post_id)
     return {"ok": True, "liked": liked, "likes": int(likes or 0)}
+
+
+@app.post("/api/forum/report")
+async def forum_report(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    try:
+        post_id = int(data.get("post_id") or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    async with db_pool.acquire() as con:
+        post = await con.fetchrow("SELECT author_email, hidden FROM forum_posts WHERE id=$1", post_id)
+        if not post or post["hidden"]:
+            return {"ok": False, "error": "Пост не найден"}
+        if post["author_email"] == email:
+            return {"ok": False, "error": "На свою работу жаловаться не нужно"}
+        await con.execute(
+            "INSERT INTO forum_reports(post_id, email) VALUES($1,$2) ON CONFLICT DO NOTHING", post_id, email)
+        n = await con.fetchval("SELECT COUNT(*) FROM forum_reports WHERE post_id=$1", post_id)
+        if int(n or 0) >= 3:
+            await con.execute("UPDATE forum_posts SET hidden=TRUE WHERE id=$1", post_id)
+            tg_notify(f"⚠️ Лента: работу {post_id} скрыли, жалоб: {n}")
+    return {"ok": True, "reports": int(n or 0)}
 
 
 @app.post("/api/forum/donate")
@@ -4159,7 +4287,7 @@ async def forum_donate(request: Request):
         async with db_pool.acquire() as con:
             async with con.transaction():
                 if not await _require_nick(con, email):
-                    return {"ok": False, "error": "Сначала выберите ник в кабинете"}
+                    return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
                 post = await con.fetchrow("SELECT id, author_email, hidden FROM forum_posts WHERE id=$1 FOR UPDATE", post_id)
                 if not post or post["hidden"]:
                     return {"ok": False, "error": "Пост не найден"}
