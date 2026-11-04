@@ -328,6 +328,7 @@ ALTER TABLE works ADD COLUMN IF NOT EXISTS prompt TEXT;
 ALTER TABLE works ADD COLUMN IF NOT EXISTS model_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS nick_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE UNIQUE INDEX IF NOT EXISTS users_nick_lower_idx ON users (lower(nick));
 CREATE TABLE IF NOT EXISTS forum_posts (
     id BIGSERIAL PRIMARY KEY,
@@ -1518,13 +1519,13 @@ async def admin_users(request: Request, q: str = ""):
     q = str(q or "").strip().lower()[:80]
     async with db_pool.acquire() as con:
         rows = await con.fetch(
-            "SELECT u.email, u.nick, u.credits, u.created_at, u.last_login, v.until AS vip, "
+            "SELECT u.email, u.nick, u.credits, u.created_at, u.last_login, u.blocked, v.until AS vip, "
             " (SELECT COALESCE(SUM(amount_rub),0) FROM payments p WHERE p.email=u.email) AS paid "
             "FROM users u LEFT JOIN vip_subs v ON v.email=u.email "
             "WHERE ($1 = '' OR u.email LIKE '%' || $1 || '%' OR lower(COALESCE(u.nick, '')) LIKE '%' || $1 || '%') "
             "ORDER BY COALESCE(u.last_login, u.created_at) DESC LIMIT 50", q)
     return {"ok": True, "users": [{"email": r["email"], "nick": r["nick"], "credits": r["credits"], "created": r["created_at"].isoformat(),
-                                   "last": r["last_login"].isoformat() if r["last_login"] else None,
+                                   "last": r["last_login"].isoformat() if r["last_login"] else None, "blocked": bool(r["blocked"]),
                                    "vip": r["vip"].strftime("%d.%m.%Y") if r["vip"] and r["vip"].timestamp() > time.time() else None,
                                    "paid": float(r["paid"] or 0)} for r in rows]}
 
@@ -1535,7 +1536,7 @@ async def admin_user(email: str, request: Request):
         return _admin_denied()
     email = norm_email(email)
     async with db_pool.acquire() as con:
-        u = await con.fetchrow("SELECT email, nick, credits, created_at, last_login, ref_code FROM users WHERE email=$1", email)
+        u = await con.fetchrow("SELECT email, nick, credits, created_at, last_login, ref_code, blocked FROM users WHERE email=$1", email)
         if not u:
             return {"ok": False, "error": "Клиент не найден"}
         pays = await con.fetch("SELECT payment_id, amount_rub, credits, created_at FROM payments WHERE email=$1 ORDER BY created_at DESC LIMIT 50", email)
@@ -1547,6 +1548,7 @@ async def admin_user(email: str, request: Request):
         invited = await con.fetchval("SELECT COUNT(*) FROM referrals WHERE inviter=$1", email)
     fmt = lambda d: d.strftime("%d.%m.%Y %H:%M") if d else None
     return {"ok": True, "email": u["email"], "nick": u["nick"], "credits": u["credits"], "created": fmt(u["created_at"]), "last": fmt(u["last_login"]),
+            "blocked": bool(u["blocked"]),
             "ref_code": u["ref_code"], "invited": int(invited or 0),
             "ref_by": {"inviter": ref_by["inviter"], "rewarded": ref_by["rewarded"]} if ref_by else None,
             "vip": fmt(vip) if vip and vip.timestamp() > time.time() else None,
@@ -3920,6 +3922,13 @@ async def _require_nick(con, email: str):
     return await _ensure_nick(con, email)
 
 
+async def _is_blocked(con, email: str) -> bool:
+    return bool(await con.fetchval("SELECT blocked FROM users WHERE email=$1", email))
+
+
+BLOCK_MSG = "Вы в чёрном списке ленты. Писать и публиковать нельзя."
+
+
 def _forum_model_name(key: str) -> str:
     if not key:
         return ""
@@ -3981,7 +3990,7 @@ async def _forum_cards(con, rows, viewer: str):
     crows = await con.fetch(
         "SELECT c.id, c.post_id, c.text, c.created_at, u.nick FROM forum_comments c "
         "JOIN users u ON u.email = c.author_email WHERE c.post_id = ANY($1::bigint[]) AND NOT c.hidden "
-        "ORDER BY c.id DESC LIMIT 200", ids)
+        "AND NOT COALESCE(u.blocked, FALSE) ORDER BY c.id DESC LIMIT 200", ids)
     for c in crows:
         comments.setdefault(c["post_id"], []).append({
             "id": c["id"], "nick": c["nick"] or "", "text": c["text"],
@@ -4065,17 +4074,17 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
     async with db_pool.acquire() as con:
         if sort == "popular":
             rows = await con.fetch(
-                _FORUM_SELECT + " WHERE NOT p.hidden ORDER BY "
+                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) ORDER BY "
                 "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id AND l.created_at > now() - interval '7 days') DESC, p.id DESC LIMIT 40")
         else:
             rows = await con.fetch(
-                _FORUM_SELECT + " WHERE NOT p.hidden AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
+                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
                 int(before or 0), FORUM_PAGE)
         posts = await _forum_cards(con, rows, viewer)
         top = await con.fetch(
             "SELECT u.nick, COUNT(*) AS likes FROM forum_likes l "
             "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
-            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND u.nick IS NOT NULL "
+            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
             "GROUP BY u.nick ORDER BY likes DESC LIMIT 3")
     medals = {r["nick"]: m for r, m in zip(top, ("🥇", "🥈", "🥉"))}
     for c in posts:
@@ -4091,7 +4100,7 @@ async def forum_top():
         rows = await con.fetch(
             "SELECT u.nick, COUNT(*) AS likes FROM forum_likes l "
             "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
-            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND u.nick IS NOT NULL "
+            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
             "GROUP BY u.nick ORDER BY likes DESC LIMIT 20")
     authors = [{"nick": r["nick"], "likes": int(r["likes"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else ""} for i, r in enumerate(rows)]
     return {"ok": True, "authors": authors}
@@ -4156,6 +4165,8 @@ async def forum_publish(request: Request):
     caption = str(data.get("caption") or "").strip()[:150]
     want_prompt = bool(data.get("share_prompt"))
     async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
         nick = await _ensure_nick(con, email)
         if not nick:
             return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
@@ -4239,6 +4250,8 @@ async def forum_like(request: Request):
     except (TypeError, ValueError):
         post_id = 0
     async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
         if not await _ensure_nick(con, email):
             return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
         post = await con.fetchrow("SELECT author_email, hidden FROM forum_posts WHERE id=$1", post_id)
@@ -4272,6 +4285,8 @@ async def forum_report(request: Request):
     except (TypeError, ValueError):
         post_id = 0
     async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
         post = await con.fetchrow("SELECT author_email, hidden FROM forum_posts WHERE id=$1", post_id)
         if not post or post["hidden"]:
             return {"ok": False, "error": "Пост не найден"}
@@ -4305,6 +4320,8 @@ async def forum_comment(request: Request):
     if len(text) < 1 or len(text) > 300:
         return {"ok": False, "error": "Комментарий от 1 до 300 символов"}
     async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
         if not await _require_nick(con, email):
             return {"ok": False, "error": "Не удалось выдать ник"}
         post = await con.fetchrow("SELECT id, hidden FROM forum_posts WHERE id=$1", post_id)
@@ -4342,6 +4359,8 @@ async def forum_donate(request: Request):
     try:
         async with db_pool.acquire() as con:
             async with con.transaction():
+                if await _is_blocked(con, email):
+                    return {"ok": False, "error": BLOCK_MSG}
                 if not await _require_nick(con, email):
                     return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
                 post = await con.fetchrow("SELECT id, author_email, hidden FROM forum_posts WHERE id=$1 FOR UPDATE", post_id)
@@ -4397,21 +4416,35 @@ async def admin_forum(request: Request, q: str = ""):
     if not check_admin(request):
         return _admin_denied()
     if not db_ready():
-        return {"ok": True, "posts": []}
+        return {"ok": True, "posts": [], "comments": []}
     q = str(q or "").strip().lower()[:80]
     async with db_pool.acquire() as con:
         rows = await con.fetch(
             "SELECT p.id, p.caption, p.origin, p.share_prompt, p.hidden, p.created_at, p.author_email, u.nick, "
-            "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) AS likes "
+            "COALESCE(u.blocked, FALSE) AS blocked, "
+            "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) AS likes, "
+            "(SELECT COUNT(*) FROM forum_comments c WHERE c.post_id=p.id AND NOT c.hidden) AS comments "
             "FROM forum_posts p JOIN users u ON u.email=p.author_email "
             "WHERE ($1 = '' OR lower(u.nick) LIKE '%' || $1 || '%' OR lower(p.caption) LIKE '%' || $1 || '%' "
             "OR p.author_email LIKE '%' || $1 || '%') "
             "ORDER BY p.id DESC LIMIT 50", q)
+        crows = await con.fetch(
+            "SELECT c.id, c.post_id, c.text, c.hidden, c.created_at, c.author_email, u.nick, "
+            "COALESCE(u.blocked, FALSE) AS blocked "
+            "FROM forum_comments c JOIN users u ON u.email=c.author_email "
+            "WHERE ($1 = '' OR lower(COALESCE(u.nick,'')) LIKE '%' || $1 || '%' OR c.author_email LIKE '%' || $1 || '%' "
+            "OR lower(c.text) LIKE '%' || $1 || '%') "
+            "ORDER BY c.id DESC LIMIT 80", q)
     return {"ok": True, "posts": [{
         "id": r["id"], "nick": r["nick"], "email": r["author_email"], "caption": r["caption"] or "",
         "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"], "likes": int(r["likes"] or 0),
+        "comments": int(r["comments"] or 0), "blocked": bool(r["blocked"]),
         "at": r["created_at"].strftime("%d.%m.%Y %H:%M"),
-    } for r in rows]}
+    } for r in rows], "comments": [{
+        "id": c["id"], "post_id": c["post_id"], "nick": c["nick"] or "", "email": c["author_email"],
+        "text": c["text"], "hidden": c["hidden"], "blocked": bool(c["blocked"]),
+        "at": c["created_at"].strftime("%d.%m.%Y %H:%M"),
+    } for c in crows]}
 
 
 @app.post("/api/admin/forum/hide")
@@ -4429,6 +4462,43 @@ async def admin_forum_hide(request: Request):
     if n.endswith(" 0"):
         return {"ok": False, "error": "Пост не найден"}
     return {"ok": True, "hidden": hidden}
+
+
+@app.post("/api/admin/forum/comment/hide")
+async def admin_comment_hide(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    try:
+        cid = int(data.get("id") or 0)
+    except (TypeError, ValueError):
+        cid = 0
+    hidden = bool(data.get("hidden", True))
+    async with db_pool.acquire() as con:
+        n = await con.execute("UPDATE forum_comments SET hidden=$2 WHERE id=$1", cid, hidden)
+    if n.endswith(" 0"):
+        return {"ok": False, "error": "Комментарий не найден"}
+    return {"ok": True, "hidden": hidden}
+
+
+@app.post("/api/admin/block")
+async def admin_block(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    email = norm_email(data.get("email"))
+    blocked = bool(data.get("blocked", True))
+    if not email:
+        return {"ok": False, "error": "Нет почты"}
+    async with db_pool.acquire() as con:
+        done = await con.fetchval("UPDATE users SET blocked=$2 WHERE email=$1 RETURNING email", email, blocked)
+        if not done:
+            return {"ok": False, "error": "Клиент не найден"}
+        if blocked:
+            await con.execute("UPDATE forum_posts SET hidden=TRUE WHERE author_email=$1", email)
+            await con.execute("UPDATE forum_comments SET hidden=TRUE WHERE author_email=$1", email)
+    tg_notify(("🚫 ЧС: " if blocked else "✅ Из ЧС: ") + email)
+    return {"ok": True, "blocked": blocked, "email": email}
 
 
 if __name__ == "__main__":
