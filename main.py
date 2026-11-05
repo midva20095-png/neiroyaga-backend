@@ -4314,11 +4314,11 @@ async def forum_top():
         return {"ok": True, "authors": []}
     async with db_pool.acquire() as con:
         rows = await con.fetch(
-            "SELECT u.nick, COUNT(*) AS likes FROM forum_likes l "
+            "SELECT u.nick, u.avatar_key, COUNT(*) AS likes FROM forum_likes l "
             "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
             "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
-            "GROUP BY u.nick ORDER BY likes DESC LIMIT 20")
-    authors = [{"nick": r["nick"], "likes": int(r["likes"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else ""} for i, r in enumerate(rows)]
+            "GROUP BY u.nick, u.avatar_key ORDER BY likes DESC LIMIT 20")
+    authors = [{"nick": r["nick"], "likes": int(r["likes"]), "avatar": _look_url(r["avatar_key"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else ""} for i, r in enumerate(rows)]
     return {"ok": True, "authors": authors}
 
 
