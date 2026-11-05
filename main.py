@@ -4684,6 +4684,7 @@ async def forum_donate(request: Request):
                 await con.execute(
                     "INSERT INTO forum_donations(post_id, from_email, to_email, amount) VALUES($1,$2,$3,$4)",
                     post_id, email, author, amount)
+                await _note(con, author, "donate", sender_nick or "", post_id, str(amount) + " кр.")
     except RuntimeError:
         return {"ok": False, "error": "Не удалось отправить донат, кредиты не списаны"}
     print(f"🎁 Донат форума: {email} → {author} {amount} кр. (пост {post_id})")
@@ -4989,7 +4990,7 @@ async def notify_list(email: str, request: Request):
             "SELECT id, kind, from_nick, post_id, text, seen, created_at FROM forum_notes "
             "WHERE email=$1 ORDER BY id DESC LIMIT 40", email)
         unread = await con.fetchval("SELECT COUNT(*) FROM forum_notes WHERE email=$1 AND NOT seen", email)
-    titles = {"like": "лайкнул работу", "comment": "комментарий", "reply": "ответ", "follow": "подписался", "dm": "сообщение"}
+    titles = {"like": "лайкнул пост", "comment": "написал комментарий", "reply": "ответил вам", "follow": "подписался", "dm": "написал в личку", "friend": "заявка в друзья", "donate": "отправил донат"}
     return {"ok": True, "unread": int(unread or 0), "items": [{
         "id": r["id"], "kind": r["kind"], "nick": r["from_nick"] or "", "post_id": r["post_id"],
         "text": r["text"] or "", "seen": r["seen"], "title": titles.get(r["kind"], r["kind"]),
