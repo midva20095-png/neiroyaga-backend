@@ -396,6 +396,15 @@ CREATE INDEX IF NOT EXISTS forum_comments_post_idx ON forum_comments (post_id, i
 ALTER TABLE forum_comments ADD COLUMN IF NOT EXISTS parent_id BIGINT;
 ALTER TABLE forum_posts ADD COLUMN IF NOT EXISTS likes_boost INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE forum_posts ADD COLUMN IF NOT EXISTS views_boost INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE forum_posts ALTER COLUMN work_id DROP NOT NULL;
+CREATE TABLE IF NOT EXISTS forum_friends (
+    a_email TEXT NOT NULL,
+    b_email TEXT NOT NULL,
+    status TEXT NOT NULL,
+    from_email TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (a_email, b_email)
+);
 CREATE TABLE IF NOT EXISTS forum_follows (
     follower TEXT NOT NULL,
     author TEXT NOT NULL,
@@ -4031,6 +4040,18 @@ def _dm_pair(a: str, b: str):
     return a, b
 
 
+async def _friend_state(con, me: str, other: str) -> str:
+    if not me or me == other:
+        return "none"
+    a, b = _dm_pair(me, other)
+    row = await con.fetchrow("SELECT status, from_email FROM forum_friends WHERE a_email=$1 AND b_email=$2", a, b)
+    if not row:
+        return "none"
+    if row["status"] == "accepted":
+        return "friend"
+    return "out" if row["from_email"] == me else "in"
+
+
 BLOCK_MSG = "Вы в чёрном списке ленты. Писать и публиковать нельзя."
 
 
@@ -4063,6 +4084,8 @@ def _forum_media(post, work) -> dict:
     """Картинка поста. Копия в хранилище ленты не пропадает вместе с работой."""
     kind = (work["kind"] if work else None) or post["kind"] or ""
     mime = (work["mime"] if work else None) or ""
+    if (post["origin"] or "") == "text" or kind == "text":
+        return {"kind": "text", "mime": "", "url": None, "path": None, "expired": False}
     if post["skey"] and s3():
         try:
             return {"kind": kind, "mime": mime, "url": _s3_url(post["skey"]), "path": None, "expired": False}
@@ -4368,7 +4391,7 @@ async def forum_publish(request: Request):
             posted = await con.fetchval(
                 "SELECT COUNT(*) FROM forum_posts WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
             if int(posted or 0) >= 5:
-                return {"ok": False, "error": "В сутки можно выложить не больше 5 работ"}
+                return {"ok": False, "error": "В сутки можно выложить не больше 5 постов"}
         work = await con.fetchrow(
             "SELECT id, kind, title, source, origin, template_id, prompt, model_key FROM works "
             "WHERE id=$1 AND email=$2 AND expires_at > now()", work_id, email)
@@ -4402,6 +4425,58 @@ async def forum_publish(request: Request):
     tg_notify(f"📣 Лента: {nick} выложил работу\n{caption or '—'}")
     print(f"📣 Форум: {nick} выложил работу {work_id}, промт {'открыт' if share else 'скрыт'}")
     return {"ok": True, "post_id": row["id"], "share_prompt": share, "origin": origin}
+
+
+@app.post("/api/forum/text")
+async def forum_text(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    text = str(data.get("text") or "").strip()
+    if len(text) < 1 or len(text) > 1000:
+        return {"ok": False, "error": "Текст поста — от 1 до 1000 символов"}
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        nick = await _ensure_nick(con, email)
+        if not nick:
+            return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
+        posted = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_posts WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
+        if int(posted or 0) >= 5:
+            return {"ok": False, "error": "В сутки можно выложить не больше 5 постов"}
+        post_id = await con.fetchval(
+            "INSERT INTO forum_posts(work_id, author_email, caption, origin, kind) VALUES(NULL,$1,$2,'text','text') RETURNING id",
+            email, text)
+    tg_notify(f"📣 Лента: {nick} написал пост\n{text[:180]}")
+    return {"ok": True, "post_id": post_id}
+
+
+@app.get("/api/forum/search")
+async def forum_search(request: Request):
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    raw = str(request.query_params.get("q") or "").strip()[:40]
+    q = raw.lower().replace("%", "").replace("_", "").strip()
+    if len(q) < 2:
+        return {"ok": True, "users": [], "posts": []}
+    viewer = _viewer(request)
+    like = "%" + q + "%"
+    async with db_pool.acquire() as con:
+        users = await con.fetch(
+            "SELECT nick, avatar_key FROM users WHERE nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) "
+            "AND lower(nick) LIKE $1 ORDER BY nick LIMIT 12", like)
+        rows = await con.fetch(
+            _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) "
+            "AND (lower(u.nick) LIKE $1 OR lower(p.caption) LIKE $1) ORDER BY p.id DESC LIMIT 20", like)
+        posts = await _forum_cards(con, rows, viewer)
+    return {"ok": True, "users": [{"nick": u["nick"], "avatar": _look_url(u["avatar_key"])} for u in users], "posts": posts}
 
 
 @app.post("/api/forum/hide")
@@ -4742,18 +4817,106 @@ async def forum_profile(nick: str, request: Request):
         followers = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE author=$1", user["email"])
         following = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE follower=$1", user["email"])
         likes = await con.fetchval(
-            "SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            "WHERE p.author_email=$1 AND NOT p.hidden", user["email"])
+            "SELECT COALESCE(SUM((SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) + COALESCE(p.likes_boost,0)),0) "
+            "FROM forum_posts p WHERE p.author_email=$1 AND NOT p.hidden", user["email"])
         followed = False
-        if viewer:
+        friend = "none"
+        if viewer and viewer != user["email"]:
             followed = bool(await con.fetchval(
                 "SELECT 1 FROM forum_follows WHERE follower=$1 AND author=$2", viewer, user["email"]))
+            friend = await _friend_state(con, viewer, user["email"])
+        elif viewer:
+            followed = False
         rows = await con.fetch(
             _FORUM_SELECT + " WHERE NOT p.hidden AND p.author_email=$1 ORDER BY p.id DESC LIMIT 24", user["email"])
         posts = await _forum_cards(con, rows, viewer)
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
-            "likes": int(likes or 0), "followed": followed, "mine": viewer == user["email"],
+            "likes": int(likes or 0), "followed": followed, "friend": friend, "mine": viewer == user["email"],
             "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "posts": posts}
+
+
+@app.get("/api/forum/friends/{email}")
+async def forum_friends(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "friends": [], "incoming": [], "outgoing": []}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT CASE WHEN a_email=$1 THEN b_email ELSE a_email END AS other, status, from_email "
+            "FROM forum_friends WHERE a_email=$1 OR b_email=$1", email)
+        emails = [r["other"] for r in rows]
+        nicks = {}
+        if emails:
+            for u in await con.fetch("SELECT email, nick FROM users WHERE email = ANY($1::text[]) AND NOT COALESCE(blocked, FALSE)", emails):
+                nicks[u["email"]] = u["nick"] or ""
+    friends, incoming, outgoing = [], [], []
+    for r in rows:
+        nick = nicks.get(r["other"]) or ""
+        if not nick:
+            continue
+        item = {"nick": nick}
+        if r["status"] == "accepted":
+            friends.append(item)
+        elif r["from_email"] == email:
+            outgoing.append(item)
+        else:
+            incoming.append(item)
+    return {"ok": True, "friends": friends, "incoming": incoming, "outgoing": outgoing}
+
+
+@app.post("/api/forum/friend")
+async def forum_friend(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    action = str(data.get("action") or "ask")
+    if action not in ("ask", "cancel", "accept", "decline", "remove"):
+        return {"ok": False, "error": "Неизвестное действие"}
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        user = await con.fetchrow("SELECT email, nick, blocked FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user or user["blocked"]:
+            return {"ok": False, "error": "Профиль не найден"}
+        if user["email"] == email:
+            return {"ok": False, "error": "Себе заявку отправить нельзя"}
+        a, b = _dm_pair(email, user["email"])
+        row = await con.fetchrow("SELECT status, from_email FROM forum_friends WHERE a_email=$1 AND b_email=$2", a, b)
+        state = "none"
+        if row:
+            state = "friend" if row["status"] == "accepted" else ("out" if row["from_email"] == email else "in")
+        me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+        if action == "ask":
+            if state == "friend":
+                return {"ok": True, "friend": "friend"}
+            if state == "out":
+                return {"ok": True, "friend": "out"}
+            if state == "in":
+                action = "accept"
+            else:
+                await con.execute(
+                    "INSERT INTO forum_friends(a_email, b_email, status, from_email) VALUES($1,$2,'pending',$3)",
+                    a, b, email)
+                await _note(con, user["email"], "friend", me or "", None, "заявка в друзья")
+                return {"ok": True, "friend": "out"}
+        if action == "cancel" and state == "out":
+            await con.execute("DELETE FROM forum_friends WHERE a_email=$1 AND b_email=$2", a, b)
+            return {"ok": True, "friend": "none"}
+        if action == "accept" and state == "in":
+            await con.execute("UPDATE forum_friends SET status='accepted' WHERE a_email=$1 AND b_email=$2", a, b)
+            await _note(con, user["email"], "friend", me or "", None, "заявка принята")
+            return {"ok": True, "friend": "friend"}
+        if action in ("decline", "remove") and state in ("in", "friend", "out"):
+            await con.execute("DELETE FROM forum_friends WHERE a_email=$1 AND b_email=$2", a, b)
+            return {"ok": True, "friend": "none"}
+        return {"ok": False, "error": "Эту заявку уже нельзя изменить"}
 
 
 @app.post("/api/forum/follow")
@@ -4922,10 +5085,10 @@ async def dm_send(request: Request):
         if user["email"] == email:
             return {"ok": False, "error": "Себе писать нельзя"}
         linked = await con.fetchval(
-            "SELECT 1 FROM forum_follows WHERE (follower=$1 AND author=$2) OR (follower=$2 AND author=$1)",
-            email, user["email"])
+            "SELECT 1 FROM forum_friends WHERE a_email=$1 AND b_email=$2 AND status='accepted'",
+            *_dm_pair(email, user["email"]))
         if not linked:
-            return {"ok": False, "error": "Писать можно тем, на кого вы подписаны или кто подписан на вас"}
+            return {"ok": False, "error": "Написать можно после того, как вас примут в друзья"}
         a, b = _dm_pair(email, user["email"])
         has = await con.fetchval("SELECT 1 FROM dm_messages WHERE a_email=$1 AND b_email=$2 LIMIT 1", a, b)
         if not has:
