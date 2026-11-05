@@ -219,15 +219,17 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
     var run = function () {
       var q = document.getElementById('fq').value.trim();
       api('/api/admin/forum?q=' + encodeURIComponent(q)).then(function (r) {
-        var posts = '<div class="card tbl"><h3>Посты</h3><table><tr><th>Когда</th><th>Ник</th><th>Подпись</th><th>Лайки</th><th>Комм.</th><th></th></tr>' +
+        var posts = '<div class="card tbl"><h3>Посты</h3><table><tr><th>Когда</th><th>Ник</th><th>Подпись</th><th>Лайки</th><th>Просмотры</th><th>Комм.</th><th></th></tr>' +
           ((r.posts || []).map(function (p) {
             return '<tr><td>' + esc(p.at) + '</td><td>' + esc(p.nick || '—') + (p.blocked ? ' <span class="tag" style="background:rgba(255,80,120,.2);color:#ff9fb8">ЧС</span>' : '') +
               '<br><span class="dim" style="font-size:12px">' + esc(p.email) + '</span></td><td>' +
               esc(p.caption || '—') + '<br><span class="dim" style="font-size:12px">' + (p.origin === 'template' ? 'шаблон, промт скрыт' : (p.share_prompt ? 'свой промт открыт' : 'свой промт скрыт')) +
-              (p.hidden ? ' · скрыт' : '') + '</span></td><td>' + n(p.likes) + '</td><td>' + n(p.comments || 0) + '</td><td>' +
+              (p.hidden ? ' · скрыт' : '') + '</span></td><td>' + n((p.likes || 0) + (p.likes_boost || 0)) + '<br><span class="dim" style="font-size:12px">+' + n(p.likes_boost || 0) + '</span></td><td>' +
+              n((p.views || 0) + (p.views_boost || 0)) + '<br><span class="dim" style="font-size:12px">+' + n(p.views_boost || 0) + '</span></td><td>' + n(p.comments || 0) + '</td><td>' +
+              '<div class="row"><input class="in" data-bl="' + p.id + '" type="number" placeholder="+лайки" style="max-width:90px"><input class="in" data-bv="' + p.id + '" type="number" placeholder="+просм." style="max-width:90px"><button class="ghost" data-boost="' + p.id + '">Накрутить</button></div>' +
               '<button class="ghost' + (p.hidden ? '' : ' danger') + '" data-hide="' + p.id + '" data-on="' + (p.hidden ? '0' : '1') + '">' + (p.hidden ? 'Вернуть' : 'Скрыть') + '</button> ' +
               '<button class="ghost' + (p.blocked ? '' : ' danger') + '" data-ban="' + esc(p.email) + '" data-blocked="' + (p.blocked ? '1' : '0') + '">' + (p.blocked ? 'Из ЧС' : 'В ЧС') + '</button></td></tr>';
-          }).join('') || '<tr><td colspan="6" class="dim">Постов нет</td></tr>') + '</table></div>';
+          }).join('') || '<tr><td colspan="7" class="dim">Постов нет</td></tr>') + '</table></div>';
         var comments = '<div class="card tbl"><h3>Комментарии</h3><table><tr><th>Когда</th><th>Кто</th><th>Текст</th><th>Пост</th><th></th></tr>' +
           ((r.comments || []).map(function (c) {
             return '<tr><td>' + esc(c.at) + '</td><td>' + esc(c.nick || '—') + (c.blocked ? ' <span class="tag" style="background:rgba(255,80,120,.2);color:#ff9fb8">ЧС</span>' : '') +
@@ -237,6 +239,17 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
               '<button class="ghost' + (c.blocked ? '' : ' danger') + '" data-ban="' + esc(c.email) + '" data-blocked="' + (c.blocked ? '1' : '0') + '">' + (c.blocked ? 'Из ЧС' : 'В ЧС') + '</button></td></tr>';
           }).join('') || '<tr><td colspan="5" class="dim">Комментариев нет</td></tr>') + '</table></div>';
         document.getElementById('flist').innerHTML = posts + comments;
+        document.querySelectorAll('[data-boost]').forEach(function (b) {
+          b.onclick = function () {
+            var id = b.getAttribute('data-boost');
+            var likes = parseInt((document.querySelector('[data-bl="' + id + '"]') || {}).value, 10) || 0;
+            var views = parseInt((document.querySelector('[data-bv="' + id + '"]') || {}).value, 10) || 0;
+            if (!likes && !views) { toast('Укажите лайки или просмотры'); return; }
+            api('/api/admin/forum/boost', { id: +id, likes: likes, views: views }).then(function (x) {
+              toast(x.ok ? 'Накрутка сохранена' : (x.error || 'Ошибка')); if (x.ok) run();
+            });
+          };
+        });
         document.querySelectorAll('[data-hide]').forEach(function (b) {
           b.onclick = function () {
             api('/api/admin/forum/hide', { id: parseInt(b.getAttribute('data-hide'), 10), hidden: b.getAttribute('data-on') === '1' }).then(function (x) {

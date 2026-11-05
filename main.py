@@ -379,6 +379,43 @@ CREATE TABLE IF NOT EXISTS forum_comments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS forum_comments_post_idx ON forum_comments (post_id, id);
+ALTER TABLE forum_comments ADD COLUMN IF NOT EXISTS parent_id BIGINT;
+ALTER TABLE forum_posts ADD COLUMN IF NOT EXISTS likes_boost INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE forum_posts ADD COLUMN IF NOT EXISTS views_boost INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS forum_follows (
+    follower TEXT NOT NULL,
+    author TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (follower, author)
+);
+CREATE INDEX IF NOT EXISTS forum_follows_author_idx ON forum_follows (author);
+CREATE TABLE IF NOT EXISTS forum_views (
+    post_id BIGINT NOT NULL,
+    viewer TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (post_id, viewer)
+);
+CREATE TABLE IF NOT EXISTS forum_notes (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    from_nick TEXT,
+    post_id BIGINT,
+    text TEXT,
+    seen BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS forum_notes_email_idx ON forum_notes (email, id DESC);
+CREATE TABLE IF NOT EXISTS dm_messages (
+    id BIGSERIAL PRIMARY KEY,
+    a_email TEXT NOT NULL,
+    b_email TEXT NOT NULL,
+    from_email TEXT NOT NULL,
+    text TEXT NOT NULL,
+    seen BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS dm_messages_pair_idx ON dm_messages (a_email, b_email, id);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -3926,6 +3963,19 @@ async def _is_blocked(con, email: str) -> bool:
     return bool(await con.fetchval("SELECT blocked FROM users WHERE email=$1", email))
 
 
+async def _note(con, email: str, kind: str, from_nick: str, post_id, text: str):
+    if not email:
+        return
+    await con.execute(
+        "INSERT INTO forum_notes(email, kind, from_nick, post_id, text) VALUES($1,$2,$3,$4,$5)",
+        email, kind, (from_nick or "")[:40], post_id, (text or "")[:180])
+
+
+def _dm_pair(a: str, b: str):
+    a, b = sorted([norm_email(a), norm_email(b)])
+    return a, b
+
+
 BLOCK_MSG = "Вы в чёрном списке ленты. Писать и публиковать нельзя."
 
 
@@ -3983,17 +4033,24 @@ async def _forum_cards(con, rows, viewer: str):
         return []
     ids = [r["id"] for r in rows]
     liked = set()
+    followed = set()
     comments = {}
     if viewer:
         marks = await con.fetch("SELECT post_id FROM forum_likes WHERE email=$1 AND post_id = ANY($2::bigint[])", viewer, ids)
         liked = {m["post_id"] for m in marks}
+        frows = await con.fetch("SELECT author FROM forum_follows WHERE follower=$1", viewer)
+        followed = {f["author"] for f in frows}
     crows = await con.fetch(
-        "SELECT c.id, c.post_id, c.text, c.created_at, u.nick FROM forum_comments c "
-        "JOIN users u ON u.email = c.author_email WHERE c.post_id = ANY($1::bigint[]) AND NOT c.hidden "
-        "AND NOT COALESCE(u.blocked, FALSE) ORDER BY c.id DESC LIMIT 200", ids)
+        "SELECT c.id, c.post_id, c.parent_id, c.text, c.created_at, u.nick, pu.nick AS reply_to "
+        "FROM forum_comments c JOIN users u ON u.email = c.author_email "
+        "LEFT JOIN forum_comments pnt ON pnt.id = c.parent_id "
+        "LEFT JOIN users pu ON pu.email = pnt.author_email "
+        "WHERE c.post_id = ANY($1::bigint[]) AND NOT c.hidden AND NOT COALESCE(u.blocked, FALSE) "
+        "ORDER BY c.id DESC LIMIT 400", ids)
     for c in crows:
         comments.setdefault(c["post_id"], []).append({
             "id": c["id"], "nick": c["nick"] or "", "text": c["text"],
+            "parent_id": c["parent_id"], "reply_to": c["reply_to"] or "",
             "date": c["created_at"].strftime("%d.%m %H:%M"),
         })
     cards = []
@@ -4008,11 +4065,14 @@ async def _forum_cards(con, rows, viewer: str):
             "id": r["id"], "nick": r["nick"] or "", "caption": r["caption"] or "",
             "title": (r["title"] or "") if (r["origin"] == "template" or (viewer and viewer == r["author_email"])) else "",
             "source": r["source"] or "", "kind": r["kind"] or "",
-            "likes": int(r["likes"] or 0), "author_likes": int(r["author_likes"] or 0),
-            "liked": r["id"] in liked, "mine": bool(viewer and viewer == r["author_email"]),
+            "likes": int(r["likes"] or 0) + int(r["likes_boost"] or 0),
+            "views": int(r["views"] or 0) + int(r["views_boost"] or 0),
+            "author_likes": int(r["author_likes"] or 0),
+            "liked": r["id"] in liked, "followed": r["author_email"] in followed,
+            "mine": bool(viewer and viewer == r["author_email"]),
             "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
             "media": _forum_media(r, work), "repeat": _forum_repeat(r),
-            "comments": list(reversed(comments.get(r["id"], [])[:5])),
+            "comments": list(reversed(comments.get(r["id"], [])[:40])),
             "comment_n": len(comments.get(r["id"], [])),
         })
     return cards
@@ -4022,6 +4082,9 @@ _FORUM_SELECT = """
     SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
            p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick,
            (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
+           COALESCE(p.likes_boost, 0) AS likes_boost,
+           COALESCE(p.views_boost, 0) AS views_boost,
+           (SELECT COUNT(*) FROM forum_views v WHERE v.post_id = p.id) AS views,
            (SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p2 ON p2.id = l.post_id
              WHERE p2.author_email = p.author_email AND NOT p2.hidden) AS author_likes,
            w.kind AS work_kind, w.url AS work_url, w.skey AS work_skey, w.mime AS work_mime,
@@ -4072,7 +4135,14 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
     if viewer and not is_authorized(viewer, token_from_request(request)):
         viewer = ""
     async with db_pool.acquire() as con:
-        if sort == "popular":
+        if sort == "subs":
+            if not viewer:
+                return {"ok": True, "posts": [], "need_login": True}
+            rows = await con.fetch(
+                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) "
+                "AND p.author_email IN (SELECT author FROM forum_follows WHERE follower=$1) "
+                "ORDER BY p.id DESC LIMIT 40", viewer)
+        elif sort == "popular":
             rows = await con.fetch(
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) ORDER BY "
                 "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id AND l.created_at > now() - interval '7 days') DESC, p.id DESC LIMIT 40")
@@ -4265,8 +4335,12 @@ async def forum_like(request: Request):
         if not inserted:
             await con.execute("DELETE FROM forum_likes WHERE post_id=$1 AND email=$2", post_id, email)
             liked = False
-        likes = await con.fetchval("SELECT COUNT(*) FROM forum_likes WHERE post_id=$1", post_id)
-    return {"ok": True, "liked": liked, "likes": int(likes or 0)}
+        if inserted:
+            nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+            await _note(con, post["author_email"], "like", nick or "", post_id, "лайк")
+        real = await con.fetchval("SELECT COUNT(*) FROM forum_likes WHERE post_id=$1", post_id)
+        boost = await con.fetchval("SELECT COALESCE(likes_boost,0) FROM forum_posts WHERE id=$1", post_id)
+    return {"ok": True, "liked": liked, "likes": int(real or 0) + int(boost or 0)}
 
 
 @app.post("/api/forum/report")
@@ -4324,18 +4398,39 @@ async def forum_comment(request: Request):
             return {"ok": False, "error": BLOCK_MSG}
         if not await _require_nick(con, email):
             return {"ok": False, "error": "Не удалось выдать ник"}
-        post = await con.fetchrow("SELECT id, hidden FROM forum_posts WHERE id=$1", post_id)
+        post = await con.fetchrow("SELECT id, hidden, author_email FROM forum_posts WHERE id=$1", post_id)
         if not post or post["hidden"]:
             return {"ok": False, "error": "Пост не найден"}
+        try:
+            parent_id = int(data.get("parent_id") or 0)
+        except (TypeError, ValueError):
+            parent_id = 0
+        reply_to = ""
+        parent_author = None
+        if parent_id:
+            parent = await con.fetchrow(
+                "SELECT c.id, c.post_id, c.parent_id, c.author_email, u.nick FROM forum_comments c "
+                "JOIN users u ON u.email=c.author_email WHERE c.id=$1 AND NOT c.hidden", parent_id)
+            if not parent or parent["post_id"] != post_id:
+                return {"ok": False, "error": "Комментарий для ответа не найден"}
+            reply_to = parent["nick"] or ""
+            parent_author = parent["author_email"]
+            if parent["parent_id"]:
+                parent_id = int(parent["parent_id"])
         day = await con.fetchval(
             "SELECT COUNT(*) FROM forum_comments WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
         if int(day or 0) >= 30:
             return {"ok": False, "error": "Не больше 30 комментариев в сутки"}
         nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
         cid = await con.fetchval(
-            "INSERT INTO forum_comments(post_id, author_email, text) VALUES($1,$2,$3) RETURNING id",
-            post_id, email, text)
-    return {"ok": True, "comment": {"id": cid, "nick": nick or "", "text": text, "date": "сейчас"}}
+            "INSERT INTO forum_comments(post_id, author_email, text, parent_id) VALUES($1,$2,$3,$4) RETURNING id",
+            post_id, email, text, parent_id or None)
+        if post["author_email"] != email:
+            await _note(con, post["author_email"], "comment", nick or "", post_id, text)
+        if parent_author and parent_author not in (email, post["author_email"]):
+            await _note(con, parent_author, "reply", nick or "", post_id, text)
+    return {"ok": True, "comment": {"id": cid, "nick": nick or "", "text": text, "date": "сейчас",
+                                    "parent_id": parent_id or None, "reply_to": reply_to}}
 
 
 @app.post("/api/forum/donate")
@@ -4421,8 +4516,9 @@ async def admin_forum(request: Request, q: str = ""):
     async with db_pool.acquire() as con:
         rows = await con.fetch(
             "SELECT p.id, p.caption, p.origin, p.share_prompt, p.hidden, p.created_at, p.author_email, u.nick, "
-            "COALESCE(u.blocked, FALSE) AS blocked, "
+            "COALESCE(u.blocked, FALSE) AS blocked, COALESCE(p.likes_boost,0) AS likes_boost, COALESCE(p.views_boost,0) AS views_boost, "
             "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) AS likes, "
+            "(SELECT COUNT(*) FROM forum_views v WHERE v.post_id=p.id) AS views, "
             "(SELECT COUNT(*) FROM forum_comments c WHERE c.post_id=p.id AND NOT c.hidden) AS comments "
             "FROM forum_posts p JOIN users u ON u.email=p.author_email "
             "WHERE ($1 = '' OR lower(u.nick) LIKE '%' || $1 || '%' OR lower(p.caption) LIKE '%' || $1 || '%' "
@@ -4437,7 +4533,9 @@ async def admin_forum(request: Request, q: str = ""):
             "ORDER BY c.id DESC LIMIT 80", q)
     return {"ok": True, "posts": [{
         "id": r["id"], "nick": r["nick"], "email": r["author_email"], "caption": r["caption"] or "",
-        "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"], "likes": int(r["likes"] or 0),
+        "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"],
+        "likes": int(r["likes"] or 0), "likes_boost": int(r["likes_boost"] or 0),
+        "views": int(r["views"] or 0), "views_boost": int(r["views_boost"] or 0),
         "comments": int(r["comments"] or 0), "blocked": bool(r["blocked"]),
         "at": r["created_at"].strftime("%d.%m.%Y %H:%M"),
     } for r in rows], "comments": [{
@@ -4499,6 +4597,248 @@ async def admin_block(request: Request):
             await con.execute("UPDATE forum_comments SET hidden=TRUE WHERE author_email=$1", email)
     tg_notify(("🚫 ЧС: " if blocked else "✅ Из ЧС: ") + email)
     return {"ok": True, "blocked": blocked, "email": email}
+
+
+def _viewer(request: Request):
+    email = norm_email(request.query_params.get("email"))
+    if email and is_authorized(email, token_from_request(request)):
+        return email
+    return ""
+
+
+@app.get("/api/forum/profile/{nick}")
+async def forum_profile(nick: str, request: Request):
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    nick = str(nick or "").strip()[:20]
+    viewer = _viewer(request)
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow("SELECT email, nick FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        if not user:
+            return {"ok": False, "error": "Профиль не найден"}
+        followers = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE author=$1", user["email"])
+        following = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE follower=$1", user["email"])
+        likes = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            "WHERE p.author_email=$1 AND NOT p.hidden", user["email"])
+        followed = False
+        if viewer:
+            followed = bool(await con.fetchval(
+                "SELECT 1 FROM forum_follows WHERE follower=$1 AND author=$2", viewer, user["email"]))
+        rows = await con.fetch(
+            _FORUM_SELECT + " WHERE NOT p.hidden AND p.author_email=$1 ORDER BY p.id DESC LIMIT 24", user["email"])
+        posts = await _forum_cards(con, rows, viewer)
+    return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
+            "likes": int(likes or 0), "followed": followed, "mine": viewer == user["email"], "posts": posts}
+
+
+@app.post("/api/forum/follow")
+async def forum_follow(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        user = await con.fetchrow("SELECT email, nick, blocked FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user or user["blocked"]:
+            return {"ok": False, "error": "Профиль не найден"}
+        if user["email"] == email:
+            return {"ok": False, "error": "На себя подписаться нельзя"}
+        existed = await con.fetchval("DELETE FROM forum_follows WHERE follower=$1 AND author=$2 RETURNING author", email, user["email"])
+        followed = False
+        if not existed:
+            await con.execute("INSERT INTO forum_follows(follower, author) VALUES($1,$2)", email, user["email"])
+            followed = True
+            me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+            await _note(con, user["email"], "follow", me or "", None, "подписка")
+        followers = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE author=$1", user["email"])
+    return {"ok": True, "followed": followed, "followers": int(followers or 0)}
+
+
+@app.post("/api/forum/view")
+async def forum_view(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": True}
+    if not db_ready():
+        return {"ok": True}
+    email = norm_email(data.get("email"))
+    if email and not is_authorized(email, token_from_request(request, data)):
+        email = ""
+    key = email or ("g:" + str(data.get("vid") or "")[:48])
+    if len(key) < 4:
+        return {"ok": True}
+    ids = []
+    for raw in (data.get("ids") or [])[:30]:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            pass
+    if not ids:
+        return {"ok": True}
+    async with db_pool.acquire() as con:
+        await con.executemany(
+            "INSERT INTO forum_views(post_id, viewer) VALUES($1,$2) ON CONFLICT DO NOTHING",
+            [(i, key) for i in ids])
+    return {"ok": True}
+
+
+@app.get("/api/notify/{email}")
+async def notify_list(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "items": [], "unread": 0}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT id, kind, from_nick, post_id, text, seen, created_at FROM forum_notes "
+            "WHERE email=$1 ORDER BY id DESC LIMIT 40", email)
+        unread = await con.fetchval("SELECT COUNT(*) FROM forum_notes WHERE email=$1 AND NOT seen", email)
+    titles = {"like": "лайкнул работу", "comment": "комментарий", "reply": "ответ", "follow": "подписался", "dm": "сообщение"}
+    return {"ok": True, "unread": int(unread or 0), "items": [{
+        "id": r["id"], "kind": r["kind"], "nick": r["from_nick"] or "", "post_id": r["post_id"],
+        "text": r["text"] or "", "seen": r["seen"], "title": titles.get(r["kind"], r["kind"]),
+        "at": r["created_at"].strftime("%d.%m %H:%M"),
+    } for r in rows]}
+
+
+@app.post("/api/notify/read")
+async def notify_read(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    async with db_pool.acquire() as con:
+        await con.execute("UPDATE forum_notes SET seen=TRUE WHERE email=$1 AND NOT seen", email)
+    return {"ok": True}
+
+
+@app.get("/api/dm/inbox/{email}")
+async def dm_list(email: str, request: Request):
+    email = norm_email(email)
+    if not is_authorized(email, token_from_request(request)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "threads": []}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT m.id, m.a_email, m.b_email, m.from_email, m.text, m.seen, m.created_at, "
+            "ua.nick AS nick_a, ub.nick AS nick_b FROM dm_messages m "
+            "JOIN users ua ON ua.email=m.a_email JOIN users ub ON ub.email=m.b_email "
+            "WHERE m.a_email=$1 OR m.b_email=$1 ORDER BY m.id DESC LIMIT 300", email)
+    threads = {}
+    for r in rows:
+        other = r["b_email"] if r["a_email"] == email else r["a_email"]
+        if other in threads:
+            if not r["seen"] and r["from_email"] != email:
+                threads[other]["unread"] += 1
+            continue
+        threads[other] = {
+            "nick": r["nick_b"] if r["a_email"] == email else r["nick_a"],
+            "text": r["text"], "at": r["created_at"].strftime("%d.%m %H:%M"),
+            "mine": r["from_email"] == email,
+            "unread": 0 if r["seen"] or r["from_email"] == email else 1,
+        }
+    return {"ok": True, "threads": [{"nick": v["nick"], **{k: v[k] for k in ("text", "at", "mine", "unread")}} for v in threads.values()]}
+
+
+@app.get("/api/dm/chat/{nick}")
+async def dm_with(nick: str, request: Request):
+    email = _viewer(request)
+    if not email:
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(nick or "").strip()[:20]
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow("SELECT email, nick, blocked FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user or user["blocked"]:
+            return {"ok": False, "error": "Собеседник не найден"}
+        a, b = _dm_pair(email, user["email"])
+        await con.execute(
+            "UPDATE dm_messages SET seen=TRUE WHERE a_email=$1 AND b_email=$2 AND from_email<>$3 AND NOT seen",
+            a, b, email)
+        rows = await con.fetch(
+            "SELECT id, from_email, text, created_at FROM dm_messages WHERE a_email=$1 AND b_email=$2 ORDER BY id ASC LIMIT 200",
+            a, b)
+    return {"ok": True, "nick": user["nick"], "messages": [{
+        "id": r["id"], "mine": r["from_email"] == email, "text": r["text"],
+        "at": r["created_at"].strftime("%d.%m %H:%M"),
+    } for r in rows]}
+
+
+@app.post("/api/dm")
+async def dm_send(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    text = str(data.get("text") or "").strip()
+    if len(text) < 1 or len(text) > 1000:
+        return {"ok": False, "error": "Сообщение от 1 до 1000 символов"}
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        user = await con.fetchrow("SELECT email, nick, blocked FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user or user["blocked"]:
+            return {"ok": False, "error": "Собеседник не найден"}
+        if user["email"] == email:
+            return {"ok": False, "error": "Себе писать нельзя"}
+        linked = await con.fetchval(
+            "SELECT 1 FROM forum_follows WHERE (follower=$1 AND author=$2) OR (follower=$2 AND author=$1)",
+            email, user["email"])
+        if not linked:
+            return {"ok": False, "error": "Писать можно тем, на кого вы подписаны или кто подписан на вас"}
+        a, b = _dm_pair(email, user["email"])
+        has = await con.fetchval("SELECT 1 FROM dm_messages WHERE a_email=$1 AND b_email=$2 LIMIT 1", a, b)
+        if not has:
+            started = await con.fetchval(
+                "SELECT COUNT(*) FROM (SELECT a_email, b_email FROM dm_messages WHERE from_email=$1 "
+                "GROUP BY a_email, b_email HAVING MIN(created_at) > now() - interval '1 day') s", email)
+            if int(started or 0) >= 20:
+                return {"ok": False, "error": "Не больше 20 новых диалогов в сутки"}
+        me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+        await con.execute(
+            "INSERT INTO dm_messages(a_email, b_email, from_email, text) VALUES($1,$2,$3,$4)",
+            a, b, email, text)
+        await _note(con, user["email"], "dm", me or "", None, text)
+    return {"ok": True}
+
+
+@app.post("/api/admin/forum/boost")
+async def admin_forum_boost(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    try:
+        post_id = int(data.get("id") or 0)
+        likes = int(data.get("likes") or 0)
+        views = int(data.get("views") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Нужны числа"}
+    if abs(likes) > 100000 or abs(views) > 1000000:
+        return {"ok": False, "error": "Слишком большое число"}
+    async with db_pool.acquire() as con:
+        row = await con.fetchrow(
+            "UPDATE forum_posts SET likes_boost=GREATEST(0, COALESCE(likes_boost,0)+$2), "
+            "views_boost=GREATEST(0, COALESCE(views_boost,0)+$3) WHERE id=$1 "
+            "RETURNING likes_boost, views_boost", post_id, likes, views)
+    if not row:
+        return {"ok": False, "error": "Пост не найден"}
+    return {"ok": True, "likes_boost": row["likes_boost"], "views_boost": row["views_boost"]}
 
 
 if __name__ == "__main__":
