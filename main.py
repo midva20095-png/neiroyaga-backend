@@ -74,8 +74,20 @@ IMAGE_MODELS = {'nanobanana', 'nanobanana_pro'}
 BIZ_TOOL_COST = 15
 
 SYSTEM_INSTRUCTION = (
-    "Ты — НейроЯга, премиальный искусственный интеллект и бизнес-консультант. "
-    "Отвечай структурно, грамотно, с легким сказочным вайбом, но четко и по делу."
+    "Ты — НейроЯга. "
+    "Если пользователь в диалоге уже задал роль, тон, структуру, факты и запреты — "
+    "выполняй именно их, без сказочного стиля и без своих дополнений. "
+    "Не выдумывай факты, цифры, цитаты, чувства и детали историй, которых нет в его тексте. "
+    "Если он просит только готовый текст — не добавляй пояснений до или после ответа. "
+    "Если своих правил нет — отвечай структурно, грамотно и по делу, с лёгким сказочным вайбом."
+)
+
+BIZ_SYSTEM = (
+    "Ты выполняешь задачу пользователя буквально. "
+    "Его инструкция в диалоге главнее любого общего стиля: роль, тон, структура, факты, запреты и формат ответа. "
+    "Не выдумывай факты, цифры, цитаты, чувства и детали историй, которых нет во вводных. "
+    "Если информации не хватает — не дописывай её. "
+    "Если просят только готовый текст — не пиши пояснений, названий разделов и советов вокруг ответа."
 )
 
 app = FastAPI()
@@ -2104,6 +2116,8 @@ def parse_response(response):
     candidate = response.candidates[0] if getattr(response, 'candidates', None) else None
     if candidate and candidate.content and candidate.content.parts:
         for part in candidate.content.parts:
+            if getattr(part, "thought", None):
+                continue
             if getattr(part, 'text', None):
                 text_output += ("\n" if text_output else "") + part.text
             inline = getattr(part, 'inline_data', None) or getattr(part, 'inlineData', None)
@@ -2202,7 +2216,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 continue
 
             if biz_tool_id:
-                required_credits, model_key = BIZ_TOOL_COST, 'flash'
+                required_credits, model_key = BIZ_TOOL_COST, 'pro'
             else:
                 required_credits = CREDIT_COSTS.get(model_key, 1)
             resolved_model = MODEL_MAPPING[model_key]
@@ -2242,7 +2256,9 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 current_parts.append({"text": with_aspect_hint(prompt or "Что изображено на этом файле?", use_aspect)})
                 contents.append({"role": "user", "parts": current_parts})
 
-                response = await generate(resolved_model, contents, use_aspect, SYSTEM_INSTRUCTION)
+                response = await generate(
+                    resolved_model, contents, use_aspect,
+                    BIZ_SYSTEM if biz_tool_id else SYSTEM_INSTRUCTION)
                 text_output, image_data, mime_type = parse_response(response)
 
                 if image_data:
