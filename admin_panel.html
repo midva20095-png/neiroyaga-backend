@@ -310,6 +310,8 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
         '<div class="row" style="margin-top:8px"><button class="btn" id="cgo">Применить</button><span class="dim" style="font-size:12.5px">Причина появится в истории клиента</span></div></div>' +
         '<div class="card"><h3>👑 VIP, 🔑 пароль и 🚫 чёрный список</h3><div class="row"><button class="ghost" data-vip="30">VIP +30 дней</button><button class="ghost" data-vip="365">VIP +1 год</button><button class="ghost danger" data-vip="0">Снять VIP</button></div>' +
         '<div class="row" style="margin-top:10px"><button class="ghost" id="pw">Задать новый пароль</button><button class="ghost' + (r.blocked ? '' : ' danger') + '" id="ban">' + (r.blocked ? 'Убрать из ЧС' : 'В чёрный список') + '</button></div><div id="pwbox"></div></div></div>';
+      h += '<div class="card"><h3>🏷 Метка и место в ленте</h3><p class="dim" style="margin-top:0">Подпись показывается под аватаром. Закреплённый аккаунт всегда первый в кружках ленты.</p><div class="row"><input class="in" id="mk" maxlength="48" placeholder="Например: НейроЯга AI Поддержка" value="' + esc(r.mark || '') + '"></div>' +
+        '<div class="row" style="margin-top:8px"><label class="dim"><input type="checkbox" id="pin"' + (r.pin ? ' checked' : '') + '> Всегда на виду в ленте</label><button class="btn" id="mgo">Сохранить</button></div></div>';
       h += '<div class="card"><h3>Платежи</h3><div class="tbl"><table><tr><th>Когда</th><th>Сумма</th><th>Кредитов</th><th>ID платежа</th></tr>' +
         (r.payments.map(function (p) { return '<tr><td>' + esc(p.at) + '</td><td class="p">' + n(p.rub) + ' ₽</td><td>' + n(p.credits) + '</td><td class="dim" style="font-size:12px">' + esc(p.id) + '</td></tr>'; }).join('') || '<tr><td colspan="4" class="dim">Платежей нет</td></tr>') + '</table></div></div>';
       h += '<div class="card"><h3>История операций (последние 100)</h3><div class="tbl"><table><tr><th>Когда</th><th>Операция</th><th>Сумма</th><th>Остаток</th></tr>' +
@@ -342,6 +344,12 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
         if (!confirm(on ? 'В чёрный список?\nПосты и комментарии скроются. Писать и публиковать нельзя. Генерации останутся.' : 'Убрать из чёрного списка? Скрытые посты сами не вернутся — их нужно вернуть вручную.')) return;
         api('/api/admin/block', { email: email, blocked: on }).then(function (x) {
           toast(x.ok ? (x.blocked ? 'В чёрном списке' : 'Убран из списка') : (x.error || 'Ошибка'));
+          if (x.ok) userView(email);
+        });
+      };
+      document.getElementById('mgo').onclick = function () {
+        api('/api/admin/mark', { email: email, mark: document.getElementById('mk').value.trim(), pin: document.getElementById('pin').checked }).then(function (x) {
+          toast(x.ok ? 'Метка сохранена' : (x.error || 'Ошибка'));
           if (x.ok) userView(email);
         });
       };
