@@ -341,6 +341,8 @@ ALTER TABLE works ADD COLUMN IF NOT EXISTS model_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS nick_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_key TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_key TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS users_nick_lower_idx ON users (lower(nick));
 CREATE TABLE IF NOT EXISTS forum_posts (
     id BIGSERIAL PRIMARY KEY,
@@ -620,6 +622,42 @@ def _s3_url(key: str, download_name: str = None, ttl: int = 86400) -> str:
     if download_name:
         params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
     return s3().generate_presigned_url("get_object", Params=params, ExpiresIn=ttl)
+
+
+def _look_key(email: str, kind: str) -> str:
+    digest = hashlib.sha256(norm_email(email).encode()).hexdigest()[:20]
+    return f"profiles/{digest}/{kind}.jpg"
+
+
+def _look_url(key: str) -> str:
+    if not key or not s3():
+        return ""
+    try:
+        return _s3_url(key)
+    except Exception:
+        return ""
+
+
+def _fit_look(data: bytes, kind: str) -> bytes:
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(data))
+    im = im.convert("RGB")
+    if kind == "avatar":
+        side = min(im.size)
+        left = (im.width - side) // 2
+        top = (im.height - side) // 2
+        im = im.crop((left, top, left + side, top + side)).resize((512, 512))
+    else:
+        tw, th = 1600, 520
+        scale = max(tw / im.width, th / im.height)
+        im = im.resize((max(tw, int(im.width * scale)), max(th, int(im.height * scale))))
+        left = max(0, (im.width - tw) // 2)
+        top = max(0, (im.height - th) // 2)
+        im = im.crop((left, top, left + tw, top + th))
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=86, optimize=True)
+    return out.getvalue()
 
 
 def _s3_delete(keys):
@@ -1951,7 +1989,7 @@ async def account_info(email: str, request: Request):
         res = await check_and_deduct_credits(email, 0)
         return {"ok": True, "email": email, "credits": res.get("credits", 0), "history": [], "db": False}
     async with db_pool.acquire() as con:
-        u = await con.fetchrow("SELECT credits, created_at, nick FROM users WHERE email=$1", email)
+        u = await con.fetchrow("SELECT credits, created_at, nick, avatar_key, cover_key FROM users WHERE email=$1", email)
         if u is None:
             return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
         nick = await _ensure_nick(con, email)
@@ -1980,6 +2018,7 @@ async def account_info(email: str, request: Request):
     bought = int(stats["bought"])
     vip = await vip_until(email)
     return {"ok": True, "db": True, "email": email, "nick": nick, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
+            "avatar": _look_url(u["avatar_key"]), "cover": _look_url(u["cover_key"]),
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
             "categories": cats, "level": _level(bought, vip), "history": history,
             "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
@@ -4088,6 +4127,7 @@ async def _forum_cards(con, rows, viewer: str):
             "mine": bool(viewer and viewer == r["author_email"]),
             "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
             "media": _forum_media(r, work), "repeat": _forum_repeat(r),
+            "avatar": _look_url(r["avatar_key"]),
             "comments": list(reversed(comments.get(r["id"], [])[:40])),
             "comment_n": len(comments.get(r["id"], [])),
         })
@@ -4096,7 +4136,7 @@ async def _forum_cards(con, rows, viewer: str):
 
 _FORUM_SELECT = """
     SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
-           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick,
+           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick, u.avatar_key,
            (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
            COALESCE(p.likes_boost, 0) AS likes_boost,
            COALESCE(p.views_boost, 0) AS views_boost,
@@ -4109,6 +4149,73 @@ _FORUM_SELECT = """
     JOIN users u ON u.email = p.author_email
     LEFT JOIN works w ON w.id = p.work_id
 """
+
+
+LOOK_MAX = 6 * 1024 * 1024
+
+
+def _decode_look(data: str):
+    data = str(data or "").strip()
+    if "," in data and data.startswith("data:"):
+        data = data.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data)
+    except Exception:
+        raise ValueError("Не удалось прочитать картинку")
+    if not raw or len(raw) > LOOK_MAX:
+        raise ValueError("Картинка больше 6 МБ")
+    if raw[:3] == b"\xff\xd8\xff" or raw[:8] == b"\x89PNG\r\n\x1a\n" or (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
+        return raw
+    raise ValueError("Нужна картинка JPG, PNG или WEBP")
+
+
+@app.post("/api/account/look")
+async def account_look(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    kind = str(data.get("kind") or "")
+    if kind not in ("avatar", "cover"):
+        return {"ok": False, "error": "Неизвестный тип"}
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    if not s3():
+        return {"ok": False, "error": "Хранилище недоступно"}
+    col = "avatar_key" if kind == "avatar" else "cover_key"
+    clear = bool(data.get("clear"))
+    async with db_pool.acquire() as con:
+        old = await con.fetchval(f"SELECT {col} FROM users WHERE email=$1", email)
+        if old is None and not await con.fetchval("SELECT 1 FROM users WHERE email=$1", email):
+            return {"ok": False, "error": "Нужно войти заново"}
+        if clear:
+            await con.execute(f"UPDATE users SET {col}=NULL WHERE email=$1", email)
+        else:
+            try:
+                raw = _decode_look(data.get("data") or "")
+                jpg = await asyncio.to_thread(_fit_look, raw, kind)
+            except ValueError as e:
+                return {"ok": False, "error": str(e)}
+            except Exception:
+                return {"ok": False, "error": "Не удалось прочитать картинку"}
+            key = _look_key(email, kind)
+            try:
+                await asyncio.to_thread(_s3_put_bytes, jpg, key, "image/jpeg")
+            except Exception as e:
+                print(f"⚠️ Профиль: не сохранил {kind} {email}: {e}")
+                return {"ok": False, "error": "Не удалось сохранить картинку"}
+            await con.execute(f"UPDATE users SET {col}=$2 WHERE email=$1", email, key)
+            old = None
+    if clear and old:
+        try:
+            await asyncio.to_thread(_s3_delete, [old])
+        except Exception:
+            pass
+    url = "" if clear else _look_url(_look_key(email, kind))
+    return {"ok": True, "kind": kind, "url": url}
 
 
 @app.post("/api/account/nick")
@@ -4629,7 +4736,7 @@ async def forum_profile(nick: str, request: Request):
     nick = str(nick or "").strip()[:20]
     viewer = _viewer(request)
     async with db_pool.acquire() as con:
-        user = await con.fetchrow("SELECT email, nick FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        user = await con.fetchrow("SELECT email, nick, avatar_key, cover_key FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
         if not user:
             return {"ok": False, "error": "Профиль не найден"}
         followers = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE author=$1", user["email"])
@@ -4645,7 +4752,8 @@ async def forum_profile(nick: str, request: Request):
             _FORUM_SELECT + " WHERE NOT p.hidden AND p.author_email=$1 ORDER BY p.id DESC LIMIT 24", user["email"])
         posts = await _forum_cards(con, rows, viewer)
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
-            "likes": int(likes or 0), "followed": followed, "mine": viewer == user["email"], "posts": posts}
+            "likes": int(likes or 0), "followed": followed, "mine": viewer == user["email"],
+            "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "posts": posts}
 
 
 @app.post("/api/forum/follow")
