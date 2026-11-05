@@ -343,7 +343,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS nick_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_key TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mark TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS feed_pin BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE users SET mark='НейроЯга AI Поддержка', feed_pin=TRUE
+ WHERE lower(email)='midva2009@mail.ru' AND mark IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_nick_lower_idx ON users (lower(nick));
+UPDATE users AS u SET nick='НейроЯга_AI'
+ WHERE lower(u.email)='midva2009@mail.ru'
+   AND (u.nick IS NULL OR lower(u.nick)='midva2009')
+   AND NOT EXISTS (
+        SELECT 1 FROM users o WHERE lower(o.nick)=lower('НейроЯга_AI') AND o.email <> u.email
+   );
 CREATE TABLE IF NOT EXISTS forum_posts (
     id BIGSERIAL PRIMARY KEY,
     work_id BIGINT NOT NULL UNIQUE,
@@ -1632,7 +1642,7 @@ async def admin_user(email: str, request: Request):
         return _admin_denied()
     email = norm_email(email)
     async with db_pool.acquire() as con:
-        u = await con.fetchrow("SELECT email, nick, credits, created_at, last_login, ref_code, blocked FROM users WHERE email=$1", email)
+        u = await con.fetchrow("SELECT email, nick, credits, created_at, last_login, ref_code, blocked, mark, feed_pin FROM users WHERE email=$1", email)
         if not u:
             return {"ok": False, "error": "Клиент не найден"}
         pays = await con.fetch("SELECT payment_id, amount_rub, credits, created_at FROM payments WHERE email=$1 ORDER BY created_at DESC LIMIT 50", email)
@@ -1644,7 +1654,7 @@ async def admin_user(email: str, request: Request):
         invited = await con.fetchval("SELECT COUNT(*) FROM referrals WHERE inviter=$1", email)
     fmt = lambda d: d.strftime("%d.%m.%Y %H:%M") if d else None
     return {"ok": True, "email": u["email"], "nick": u["nick"], "credits": u["credits"], "created": fmt(u["created_at"]), "last": fmt(u["last_login"]),
-            "blocked": bool(u["blocked"]),
+            "blocked": bool(u["blocked"]), "mark": u["mark"] or "", "pin": bool(u["feed_pin"]),
             "ref_code": u["ref_code"], "invited": int(invited or 0),
             "ref_by": {"inviter": ref_by["inviter"], "rewarded": ref_by["rewarded"]} if ref_by else None,
             "vip": fmt(vip) if vip and vip.timestamp() > time.time() else None,
@@ -1713,6 +1723,24 @@ async def admin_vip(request: Request):
                 email, min(days, 3650))
     tg_notify(f"🛠 Админ: VIP {email} — " + (f"до {until:%d.%m.%Y}" if until else "снят"))
     return {"ok": True, "vip": until.strftime("%d.%m.%Y") if until else None}
+
+
+@app.post("/api/admin/mark")
+async def admin_mark(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    email = norm_email(data.get("email"))
+    mark = str(data.get("mark") or "").strip()[:48]
+    pin = bool(data.get("pin"))
+    async with db_pool.acquire() as con:
+        done = await con.fetchval(
+            "UPDATE users SET mark=$2, feed_pin=$3 WHERE email=$1 RETURNING email",
+            email, mark, pin)
+    if not done:
+        return {"ok": False, "error": "Клиент не найден"}
+    print(f"🏷 Админ: {email} метка «{mark or '—'}», закреп {'да' if pin else 'нет'}")
+    return {"ok": True, "mark": mark, "pin": pin}
 
 
 @app.post("/api/admin/password")
@@ -4150,7 +4178,7 @@ async def _forum_cards(con, rows, viewer: str):
             "mine": bool(viewer and viewer == r["author_email"]),
             "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
             "media": _forum_media(r, work), "repeat": _forum_repeat(r),
-            "avatar": _look_url(r["avatar_key"]),
+            "avatar": _look_url(r["avatar_key"]), "mark": r["mark"] or "",
             "comments": list(reversed(comments.get(r["id"], [])[:40])),
             "comment_n": len(comments.get(r["id"], [])),
         })
@@ -4159,7 +4187,7 @@ async def _forum_cards(con, rows, viewer: str):
 
 _FORUM_SELECT = """
     SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
-           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick, u.avatar_key,
+           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick, u.avatar_key, u.mark,
            (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
            COALESCE(p.likes_boost, 0) AS likes_boost,
            COALESCE(p.views_boost, 0) AS views_boost,
@@ -4313,12 +4341,27 @@ async def forum_top():
     if not db_ready():
         return {"ok": True, "authors": []}
     async with db_pool.acquire() as con:
+        pinned = await con.fetch(
+            "SELECT nick, avatar_key, mark FROM users "
+            "WHERE feed_pin AND nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) ORDER BY nick LIMIT 8")
         rows = await con.fetch(
-            "SELECT u.nick, u.avatar_key, COUNT(*) AS likes FROM forum_likes l "
+            "SELECT u.nick, u.avatar_key, u.mark, COUNT(*) AS likes FROM forum_likes l "
             "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
             "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
-            "GROUP BY u.nick, u.avatar_key ORDER BY likes DESC LIMIT 20")
-    authors = [{"nick": r["nick"], "likes": int(r["likes"]), "avatar": _look_url(r["avatar_key"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else ""} for i, r in enumerate(rows)]
+            "GROUP BY u.nick, u.avatar_key, u.mark ORDER BY likes DESC LIMIT 20")
+    likes = {r["nick"]: int(r["likes"]) for r in rows}
+    seen = set()
+    authors = []
+    for r in pinned:
+        seen.add(r["nick"])
+        authors.append({"nick": r["nick"], "likes": likes.get(r["nick"], 0), "avatar": _look_url(r["avatar_key"]),
+                        "mark": r["mark"] or "", "badge": "✦", "pin": True})
+    for i, r in enumerate(rows):
+        if r["nick"] in seen or len(authors) >= 12:
+            continue
+        seen.add(r["nick"])
+        authors.append({"nick": r["nick"], "likes": int(r["likes"]), "avatar": _look_url(r["avatar_key"]),
+                        "mark": r["mark"] or "", "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else "", "pin": False})
     return {"ok": True, "authors": authors}
 
 
@@ -4812,7 +4855,7 @@ async def forum_profile(nick: str, request: Request):
     nick = str(nick or "").strip()[:20]
     viewer = _viewer(request)
     async with db_pool.acquire() as con:
-        user = await con.fetchrow("SELECT email, nick, avatar_key, cover_key FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        user = await con.fetchrow("SELECT email, nick, avatar_key, cover_key, mark FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
         if not user:
             return {"ok": False, "error": "Профиль не найден"}
         followers = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE author=$1", user["email"])
@@ -4833,7 +4876,7 @@ async def forum_profile(nick: str, request: Request):
         posts = await _forum_cards(con, rows, viewer)
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
             "likes": int(likes or 0), "followed": followed, "friend": friend, "mine": viewer == user["email"],
-            "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "posts": posts}
+            "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "mark": user["mark"] or "", "posts": posts}
 
 
 @app.get("/api/forum/friends/{email}")
