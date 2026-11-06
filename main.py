@@ -4607,6 +4607,88 @@ async def forum_album_delete(request: Request):
     return {"ok": True}
 
 
+def _person(r) -> dict:
+    return {"nick": r["nick"], "avatar": _look_url(r["avatar_key"]), "mark": r["mark"] or "", "vip": bool(r["vip"])}
+
+
+_PERSON_SQL = (
+    "u.nick, u.avatar_key, u.mark, "
+    "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip"
+)
+
+
+async def _side_pack(con, email: str, kind: str, limit: int, q: str = ""):
+    like = "%" + q + "%" if q else ""
+    filt = " AND lower(u.nick) LIKE $2" if q else ""
+    if kind == "following":
+        total = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_follows f JOIN users u ON u.email=f.author "
+            "WHERE f.follower=$1 AND u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE)" + filt,
+            *([email, like] if q else [email]))
+        rows = await con.fetch(
+            "SELECT " + _PERSON_SQL + " FROM forum_follows f JOIN users u ON u.email=f.author "
+            "WHERE f.follower=$1 AND u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE)" + filt +
+            " ORDER BY f.created_at DESC LIMIT " + str(int(limit)),
+            *([email, like] if q else [email]))
+    elif kind == "friends":
+        total = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_friends f JOIN users u ON u.email = CASE WHEN f.a_email=$1 THEN f.b_email ELSE f.a_email END "
+            "WHERE (f.a_email=$1 OR f.b_email=$1) AND f.status='accepted' AND u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE)" + filt,
+            *([email, like] if q else [email]))
+        rows = await con.fetch(
+            "SELECT " + _PERSON_SQL + " FROM forum_friends f JOIN users u ON u.email = CASE WHEN f.a_email=$1 THEN f.b_email ELSE f.a_email END "
+            "WHERE (f.a_email=$1 OR f.b_email=$1) AND f.status='accepted' AND u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE)" + filt +
+            " ORDER BY u.nick LIMIT " + str(int(limit)),
+            *([email, like] if q else [email]))
+    else:
+        total = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_follows f JOIN users u ON u.email=f.follower "
+            "WHERE f.author=$1 AND u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE)" + filt,
+            *([email, like] if q else [email]))
+        rows = await con.fetch(
+            "SELECT " + _PERSON_SQL + " FROM forum_follows f JOIN users u ON u.email=f.follower "
+            "WHERE f.author=$1 AND u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE)" + filt +
+            " ORDER BY f.created_at DESC LIMIT " + str(int(limit)),
+            *([email, like] if q else [email]))
+    return {"total": int(total or 0), "people": [_person(r) for r in rows]}
+
+
+@app.get("/api/forum/side/{nick}")
+async def forum_side(nick: str):
+    if not db_ready():
+        return {"ok": True, "followers": {"total": 0, "people": []}, "following": {"total": 0, "people": []}, "friends": {"total": 0, "people": []}}
+    nick = str(nick or "").strip()[:20]
+    async with db_pool.acquire() as con:
+        email = await con.fetchval(
+            "SELECT email FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        if not email:
+            return {"ok": False, "error": "Профиль не найден"}
+        followers = await _side_pack(con, email, "followers", 5)
+        following = await _side_pack(con, email, "following", 5)
+        friends = await _side_pack(con, email, "friends", 5)
+    return {"ok": True, "nick": nick, "followers": followers, "following": following, "friends": friends}
+
+
+@app.get("/api/forum/people/{nick}")
+async def forum_people(nick: str, request: Request):
+    if not db_ready():
+        return {"ok": True, "total": 0, "people": []}
+    nick = str(nick or "").strip()[:20]
+    kind = str(request.query_params.get("kind") or "followers")
+    if kind not in ("followers", "following", "friends"):
+        kind = "followers"
+    q = str(request.query_params.get("q") or "").strip().lower().replace("%", "").replace("_", "")[:20]
+    async with db_pool.acquire() as con:
+        email = await con.fetchval(
+            "SELECT email FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        if not email:
+            return {"ok": False, "error": "Профиль не найден"}
+        pack = await _side_pack(con, email, kind, 30, q)
+    pack["ok"] = True
+    pack["kind"] = kind
+    return pack
+
+
 @app.get("/api/forum/mine/{email}")
 async def forum_mine(email: str, request: Request):
     email = norm_email(email)
