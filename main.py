@@ -256,6 +256,10 @@ CREATE TABLE IF NOT EXISTS support_msgs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS support_msgs_client_idx ON support_msgs (client_id, id);
+CREATE TABLE IF NOT EXISTS support_seen (
+    email TEXT PRIMARY KEY,
+    msg_id BIGINT NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS support_map (
     tg_msg_id BIGINT PRIMARY KEY,
     client_id TEXT NOT NULL,
@@ -5522,17 +5526,36 @@ async def notify_list(email: str, request: Request):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
     if not db_ready():
         return {"ok": True, "items": [], "unread": 0}
+    titles = {"like": "лайкнул пост", "comment": "написал комментарий", "reply": "ответил вам",
+              "follow": "подписался", "dm": "написал в личку", "friend": "заявка в друзья",
+              "donate": "отправил донат", "support": "ответ поддержки"}
+    items = []
     async with db_pool.acquire() as con:
         rows = await con.fetch(
             "SELECT id, kind, from_nick, post_id, text, seen, created_at FROM forum_notes "
             "WHERE email=$1 ORDER BY id DESC LIMIT 40", email)
         unread = await con.fetchval("SELECT COUNT(*) FROM forum_notes WHERE email=$1 AND NOT seen", email)
-    titles = {"like": "лайкнул пост", "comment": "написал комментарий", "reply": "ответил вам", "follow": "подписался", "dm": "написал в личку", "friend": "заявка в друзья", "donate": "отправил донат"}
-    return {"ok": True, "unread": int(unread or 0), "items": [{
-        "id": r["id"], "kind": r["kind"], "nick": r["from_nick"] or "", "post_id": r["post_id"],
-        "text": r["text"] or "", "seen": r["seen"], "title": titles.get(r["kind"], r["kind"]),
-        "at": r["created_at"].strftime("%d.%m %H:%M"),
-    } for r in rows]}
+        cid = support_acc_id(email)
+        seen_id = int(await con.fetchval("SELECT msg_id FROM support_seen WHERE email=$1", email) or 0)
+        srows = await con.fetch(
+            "SELECT id, payload, created_at FROM support_msgs "
+            "WHERE client_id=$1 AND role='admin' AND id>$2 ORDER BY id DESC LIMIT 8", cid, seen_id)
+        sunread = await con.fetchval(
+            "SELECT COUNT(*) FROM support_msgs WHERE client_id=$1 AND role='admin' AND id>$2", cid, seen_id)
+    for r in rows:
+        items.append({"id": r["id"], "kind": r["kind"], "nick": r["from_nick"] or "", "post_id": r["post_id"],
+                      "text": r["text"] or "", "seen": r["seen"], "title": titles.get(r["kind"], r["kind"]),
+                      "at": r["created_at"].strftime("%d.%m %H:%M"), "ts": r["created_at"]})
+    for s in srows:
+        raw = s["payload"] or ""
+        preview = "Фото" if raw.startswith("data:image") else "Голосовое" if raw.startswith("data:audio") else raw.replace("\n", " ")[:140]
+        items.append({"id": s["id"], "kind": "support", "nick": "Поддержка", "post_id": s["id"],
+                      "text": preview, "seen": False, "title": titles["support"],
+                      "at": s["created_at"].strftime("%d.%m %H:%M"), "ts": s["created_at"]})
+    items.sort(key=lambda x: x["ts"], reverse=True)
+    for it in items:
+        it.pop("ts", None)
+    return {"ok": True, "unread": int(unread or 0) + int(sunread or 0), "items": items[:40]}
 
 
 @app.post("/api/notify/read")
@@ -5549,7 +5572,26 @@ async def notify_read(request: Request):
     return {"ok": True}
 
 
-@app.get("/api/dm/inbox/{email}")
+@app.post("/api/notify/support-seen")
+async def notify_support_seen(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": True}
+    cid = support_acc_id(email)
+    async with db_pool.acquire() as con:
+        last = await con.fetchval("SELECT MAX(id) FROM support_msgs WHERE client_id=$1 AND role='admin'", cid)
+        if last:
+            await con.execute(
+                "INSERT INTO support_seen(email, msg_id) VALUES($1,$2) "
+                "ON CONFLICT (email) DO UPDATE SET msg_id=GREATEST(support_seen.msg_id, EXCLUDED.msg_id)",
+                email, int(last))
+    return {"ok": True}
 async def dm_list(email: str, request: Request):
     email = norm_email(email)
     if not is_authorized(email, token_from_request(request)):
