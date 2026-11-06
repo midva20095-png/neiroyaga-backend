@@ -462,6 +462,13 @@ CREATE TABLE IF NOT EXISTS forum_story_seen (
     email TEXT NOT NULL,
     PRIMARY KEY (story_id, email)
 );
+CREATE TABLE IF NOT EXISTS profile_photos (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    skey TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS profile_photos_email_idx ON profile_photos (email, id DESC);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -680,6 +687,8 @@ def _fit_look(data: bytes, kind: str) -> bytes:
         left = (im.width - side) // 2
         top = (im.height - side) // 2
         im = im.crop((left, top, left + side, top + side)).resize((512, 512))
+    elif kind == "album":
+        im.thumbnail((960, 960))
     else:
         tw, th = (1080, 1920) if kind == "story" else (1600, 520)
         scale = max(tw / im.width, th / im.height)
@@ -4512,6 +4521,89 @@ async def forum_story_seen(request: Request):
         async with db_pool.acquire() as con:
             await con.execute(
                 "INSERT INTO forum_story_seen(story_id, email) VALUES($1,$2) ON CONFLICT DO NOTHING", sid, email)
+    return {"ok": True}
+
+
+@app.get("/api/forum/album/{nick}")
+async def forum_album(nick: str, request: Request):
+    if not db_ready():
+        return {"ok": True, "photos": []}
+    nick = str(nick or "").strip()[:20]
+    viewer = _viewer(request)
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow(
+            "SELECT email, EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip "
+            "FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        if not user:
+            return {"ok": False, "error": "Профиль не найден"}
+        rows = await con.fetch(
+            "SELECT id, skey FROM profile_photos WHERE email=$1 ORDER BY id DESC LIMIT 40", user["email"])
+    cap = 40 if user["vip"] else 12
+    return {"ok": True, "mine": viewer == user["email"], "vip": bool(user["vip"]), "cap": cap,
+            "photos": [{"id": r["id"], "url": _look_url(r["skey"])} for r in rows]}
+
+
+@app.post("/api/forum/album")
+async def forum_album_add(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    if not s3():
+        return {"ok": False, "error": "Хранилище фото сейчас недоступно"}
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        cap = await _day_cap(con, email, 12, 40)
+        have = await con.fetchval("SELECT COUNT(*) FROM profile_photos WHERE email=$1", email)
+        if int(have or 0) >= cap:
+            return {"ok": False, "error": f"В альбоме не больше {cap} фото" + ("" if cap == 40 else ". У VIP — 40")}
+        try:
+            jpg = await asyncio.to_thread(_fit_look, _decode_look(data.get("data")), "album")
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        except Exception:
+            return {"ok": False, "error": "Не удалось прочитать картинку"}
+        pid = await con.fetchval("INSERT INTO profile_photos(email, skey) VALUES($1,'') RETURNING id", email)
+        key = f"albums/{pid}.jpg"
+        try:
+            await asyncio.to_thread(_s3_put_bytes, jpg, key, "image/jpeg")
+        except Exception as e:
+            await con.execute("DELETE FROM profile_photos WHERE id=$1", pid)
+            print(f"⚠️ Альбом: не сохранил фото {email}: {e}")
+            return {"ok": False, "error": "Не удалось сохранить фото"}
+        await con.execute("UPDATE profile_photos SET skey=$2 WHERE id=$1", pid, key)
+    return {"ok": True, "id": pid}
+
+
+@app.post("/api/forum/album/delete")
+async def forum_album_delete(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    try:
+        pid = int(data.get("id") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    if not db_ready() or not pid:
+        return {"ok": False, "error": "Фото не найдено"}
+    async with db_pool.acquire() as con:
+        key = await con.fetchval("DELETE FROM profile_photos WHERE id=$1 AND email=$2 RETURNING skey", pid, email)
+    if not key:
+        return {"ok": False, "error": "Фото не найдено"}
+    try:
+        await asyncio.to_thread(_s3_delete, [key])
+    except Exception:
+        pass
     return {"ok": True}
 
 
