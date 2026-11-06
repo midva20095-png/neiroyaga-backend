@@ -4372,7 +4372,7 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
                 "ORDER BY p.id DESC LIMIT 40", viewer)
         elif sort == "popular":
             rows = await con.fetch(
-                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) ORDER BY "
+                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) ORDER BY "
                 "((SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) + COALESCE(p.likes_boost,0)) DESC, p.id DESC LIMIT 40")
         else:
             rows = await con.fetch(
@@ -4385,7 +4385,7 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
             "+ COALESCE((SELECT SUM(COALESCE(likes_boost,0)) FROM forum_posts p "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS likes "
-            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) "
+            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
             "ORDER BY likes DESC LIMIT 3")
     medals = {r["nick"]: m for r, m in zip(top, ("🥇", "🥈", "🥉"))}
     for c in posts:
@@ -4400,6 +4400,10 @@ async def forum_top():
     async with db_pool.acquire() as con:
         pinned = await con.fetch(
             "SELECT nick, avatar_key, mark, "
+            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=users.email AND NOT p.hidden), 0) "
+            "+ COALESCE((SELECT SUM(COALESCE(likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=users.email AND NOT p.hidden), 0) AS likes, "
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip FROM users "
             "WHERE feed_pin AND nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) ORDER BY nick LIMIT 8")
         rows = await con.fetch(
@@ -4409,7 +4413,7 @@ async def forum_top():
             "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS boost_likes, "
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
-            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) "
+            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
             "AND (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
             "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
@@ -4418,20 +4422,20 @@ async def forum_top():
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
             "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0)) DESC LIMIT 20")
-    score = {r["nick"]: int(r["real_likes"] or 0) + int(r["boost_likes"] or 0) for r in rows}
     seen = set()
     authors = []
     for r in pinned:
         seen.add(r["nick"])
-        authors.append({"nick": r["nick"], "likes": score.get(r["nick"], 0), "avatar": _look_url(r["avatar_key"]),
+        authors.append({"nick": r["nick"], "likes": int(r["likes"] or 0), "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True})
     for i, r in enumerate(rows):
-        if r["nick"] in seen or len(authors) >= 20:
+        if r["nick"] in seen or sum(1 for a in authors if not a["pin"]) >= 20:
             continue
         seen.add(r["nick"])
+        place = sum(1 for a in authors if not a["pin"])
         authors.append({"nick": r["nick"], "likes": int(r["real_likes"] or 0) + int(r["boost_likes"] or 0),
                         "avatar": _look_url(r["avatar_key"]),
-                        "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else "", "pin": False})
+                        "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": ("🥇", "🥈", "🥉")[place] if place < 3 else "", "pin": False})
     return {"ok": True, "authors": authors}
 
 
@@ -5332,7 +5336,7 @@ async def admin_forum(request: Request, q: str = ""):
             " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at > now() - interval '7 days'), 0) AS real_week, "
             "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
             " WHERE p.author_email=u.email AND NOT p.hidden AND p.created_at > now() - interval '7 days'), 0) AS boost_week "
-            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) "
+            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
             "AND (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
             "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
