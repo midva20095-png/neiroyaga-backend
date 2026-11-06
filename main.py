@@ -449,6 +449,19 @@ CREATE TABLE IF NOT EXISTS dm_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS dm_messages_pair_idx ON dm_messages (a_email, b_email, id);
+CREATE TABLE IF NOT EXISTS forum_stories (
+    id BIGSERIAL PRIMARY KEY,
+    author_email TEXT NOT NULL,
+    text TEXT NOT NULL DEFAULT '',
+    skey TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS forum_stories_author_idx ON forum_stories (author_email, created_at DESC);
+CREATE TABLE IF NOT EXISTS forum_story_seen (
+    story_id BIGINT NOT NULL,
+    email TEXT NOT NULL,
+    PRIMARY KEY (story_id, email)
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -668,7 +681,7 @@ def _fit_look(data: bytes, kind: str) -> bytes:
         top = (im.height - side) // 2
         im = im.crop((left, top, left + side, top + side)).resize((512, 512))
     else:
-        tw, th = 1600, 520
+        tw, th = (1080, 1920) if kind == "story" else (1600, 520)
         scale = max(tw / im.width, th / im.height)
         im = im.resize((max(tw, int(im.width * scale)), max(th, int(im.height * scale))))
         left = max(0, (im.width - tw) // 2)
@@ -4055,6 +4068,14 @@ async def _is_blocked(con, email: str) -> bool:
     return bool(await con.fetchval("SELECT blocked FROM users WHERE email=$1", email))
 
 
+async def _is_vip(con, email: str) -> bool:
+    return bool(await con.fetchval("SELECT 1 FROM vip_subs WHERE email=$1 AND until > now()", email))
+
+
+async def _day_cap(con, email: str, normal: int, vip_cap: int) -> int:
+    return vip_cap if await _is_vip(con, email) else normal
+
+
 async def _note(con, email: str, kind: str, from_nick: str, post_id, text: str):
     if not email:
         return
@@ -4178,7 +4199,7 @@ async def _forum_cards(con, rows, viewer: str):
             "mine": bool(viewer and viewer == r["author_email"]),
             "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
             "media": _forum_media(r, work), "repeat": _forum_repeat(r),
-            "avatar": _look_url(r["avatar_key"]), "mark": r["mark"] or "",
+            "avatar": _look_url(r["avatar_key"]), "mark": r["mark"] or "", "vip": bool(r["vip"]),
             "comments": list(reversed(comments.get(r["id"], [])[:40])),
             "comment_n": len(comments.get(r["id"], [])),
         })
@@ -4188,6 +4209,7 @@ async def _forum_cards(con, rows, viewer: str):
 _FORUM_SELECT = """
     SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
            p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick, u.avatar_key, u.mark,
+           EXISTS(SELECT 1 FROM vip_subs v WHERE v.email = u.email AND v.until > now()) AS vip,
            (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
            COALESCE(p.likes_boost, 0) AS likes_boost,
            COALESCE(p.views_boost, 0) AS views_boost,
@@ -4342,27 +4364,155 @@ async def forum_top():
         return {"ok": True, "authors": []}
     async with db_pool.acquire() as con:
         pinned = await con.fetch(
-            "SELECT nick, avatar_key, mark FROM users "
+            "SELECT nick, avatar_key, mark, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip FROM users "
             "WHERE feed_pin AND nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) ORDER BY nick LIMIT 8")
         rows = await con.fetch(
-            "SELECT u.nick, u.avatar_key, u.mark, COUNT(*) AS likes FROM forum_likes l "
+            "SELECT u.nick, u.avatar_key, u.mark, u.email, COUNT(*) AS likes, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip FROM forum_likes l "
             "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
             "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
-            "GROUP BY u.nick, u.avatar_key, u.mark ORDER BY likes DESC LIMIT 20")
+            "GROUP BY u.nick, u.avatar_key, u.mark, u.email ORDER BY likes DESC LIMIT 20")
     likes = {r["nick"]: int(r["likes"]) for r in rows}
     seen = set()
     authors = []
     for r in pinned:
         seen.add(r["nick"])
         authors.append({"nick": r["nick"], "likes": likes.get(r["nick"], 0), "avatar": _look_url(r["avatar_key"]),
-                        "mark": r["mark"] or "", "badge": "✦", "pin": True})
+                        "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True})
     for i, r in enumerate(rows):
         if r["nick"] in seen or len(authors) >= 12:
             continue
         seen.add(r["nick"])
         authors.append({"nick": r["nick"], "likes": int(r["likes"]), "avatar": _look_url(r["avatar_key"]),
-                        "mark": r["mark"] or "", "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else "", "pin": False})
+                        "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else "", "pin": False})
     return {"ok": True, "authors": authors}
+
+
+def _story_item(r, fresh: int) -> dict:
+    return {"nick": r["nick"], "avatar": _look_url(r["avatar_key"]), "mark": r["mark"] or "",
+            "vip": bool(r["vip"]), "n": int(r["n"] or 0), "fresh": int(fresh or 0) > 0, "pin": bool(r["feed_pin"])}
+
+
+@app.get("/api/forum/stories")
+async def forum_stories(request: Request):
+    if not db_ready():
+        return {"ok": True, "mine": None, "rows": []}
+    viewer = _viewer(request)
+    async with db_pool.acquire() as con:
+        await con.execute("DELETE FROM forum_stories WHERE created_at < now() - interval '24 hours'")
+        rows = await con.fetch(
+            "SELECT u.email, u.nick, u.avatar_key, u.mark, u.feed_pin, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip, "
+            "COUNT(s.id) AS n, "
+            "COUNT(s.id) FILTER (WHERE $1 = '' OR ss.email IS NULL) AS fresh "
+            "FROM users u "
+            "LEFT JOIN forum_stories s ON s.author_email=u.email AND s.created_at > now() - interval '24 hours' "
+            "LEFT JOIN forum_story_seen ss ON ss.story_id=s.id AND ss.email=$1 "
+            "WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND (u.feed_pin OR s.id IS NOT NULL) "
+            "GROUP BY u.email, u.nick, u.avatar_key, u.mark, u.feed_pin "
+            "ORDER BY (COUNT(s.id) FILTER (WHERE $1 = '' OR ss.email IS NULL) > 0) DESC, u.feed_pin DESC, "
+            "MAX(s.created_at) DESC NULLS LAST LIMIT 24", viewer or "")
+    mine, people = None, []
+    for r in rows:
+        item = _story_item(r, r["fresh"])
+        if viewer and r["email"] == viewer:
+            mine = item
+        elif item["n"]:
+            people.append(item)
+    return {"ok": True, "mine": mine, "rows": people}
+
+
+@app.get("/api/forum/stories/{nick}")
+async def forum_story_open(nick: str):
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    nick = str(nick or "").strip()[:20]
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow(
+            "SELECT email, nick, avatar_key, mark, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip "
+            "FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        if not user:
+            return {"ok": False, "error": "Профиль не найден"}
+        rows = await con.fetch(
+            "SELECT id, text, skey, created_at FROM forum_stories "
+            "WHERE author_email=$1 AND created_at > now() - interval '24 hours' ORDER BY id", user["email"])
+    return {"ok": True, "nick": user["nick"], "avatar": _look_url(user["avatar_key"]), "mark": user["mark"] or "",
+            "vip": bool(user["vip"]), "frames": [{
+                "id": r["id"], "text": r["text"] or "", "image": _look_url(r["skey"]),
+                "at": r["created_at"].strftime("%H:%M"),
+            } for r in rows]}
+
+
+@app.post("/api/forum/story")
+async def forum_story_add(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    text = str(data.get("text") or "").strip()[:300]
+    raw_img = str(data.get("data") or "").strip()
+    if not text and not raw_img:
+        return {"ok": False, "error": "Добавьте текст или фото"}
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        nick = await _ensure_nick(con, email)
+        if not nick:
+            return {"ok": False, "error": "Не удалось выдать ник"}
+        cap = await _day_cap(con, email, 5, 20)
+        have = await con.fetchval(
+            "SELECT COUNT(*) FROM forum_stories WHERE author_email=$1 AND created_at > now() - interval '24 hours'", email)
+        if int(have or 0) >= cap:
+            return {"ok": False, "error": f"В сутки не больше {cap} историй"}
+        jpg = None
+        if raw_img:
+            if not s3():
+                return {"ok": False, "error": "Фото сейчас недоступно, можно опубликовать текст"}
+            try:
+                jpg = await asyncio.to_thread(_fit_look, _decode_look(raw_img), "story")
+            except ValueError as e:
+                return {"ok": False, "error": str(e)}
+            except Exception:
+                return {"ok": False, "error": "Не удалось прочитать картинку"}
+        sid = await con.fetchval(
+            "INSERT INTO forum_stories(author_email, text) VALUES($1,$2) RETURNING id", email, text)
+        if jpg:
+            key = f"stories/{sid}.jpg"
+            try:
+                await asyncio.to_thread(_s3_put_bytes, jpg, key, "image/jpeg")
+            except Exception as e:
+                await con.execute("DELETE FROM forum_stories WHERE id=$1", sid)
+                print(f"⚠️ История: не сохранил фото {email}: {e}")
+                return {"ok": False, "error": "Не удалось сохранить фото"}
+            await con.execute("UPDATE forum_stories SET skey=$2 WHERE id=$1", sid, key)
+    return {"ok": True, "id": sid}
+
+
+@app.post("/api/forum/story/seen")
+async def forum_story_seen(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return {"ok": False}
+    try:
+        sid = int(data.get("id") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False}
+    if db_ready() and sid:
+        async with db_pool.acquire() as con:
+            await con.execute(
+                "INSERT INTO forum_story_seen(story_id, email) VALUES($1,$2) ON CONFLICT DO NOTHING", sid, email)
+    return {"ok": True}
 
 
 @app.get("/api/forum/mine/{email}")
@@ -4433,8 +4583,9 @@ async def forum_publish(request: Request):
         if not already:
             posted = await con.fetchval(
                 "SELECT COUNT(*) FROM forum_posts WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
-            if int(posted or 0) >= 5:
-                return {"ok": False, "error": "В сутки можно выложить не больше 5 постов"}
+            cap = await _day_cap(con, email, 5, 20)
+            if int(posted or 0) >= cap:
+                return {"ok": False, "error": f"В сутки можно выложить не больше {cap} постов"}
         work = await con.fetchrow(
             "SELECT id, kind, title, source, origin, template_id, prompt, model_key FROM works "
             "WHERE id=$1 AND email=$2 AND expires_at > now()", work_id, email)
@@ -4492,8 +4643,9 @@ async def forum_text(request: Request):
             return {"ok": False, "error": "Не удалось выдать ник. Обновите страницу и попробуйте ещё раз"}
         posted = await con.fetchval(
             "SELECT COUNT(*) FROM forum_posts WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
-        if int(posted or 0) >= 5:
-            return {"ok": False, "error": "В сутки можно выложить не больше 5 постов"}
+        cap = await _day_cap(con, email, 5, 20)
+        if int(posted or 0) >= cap:
+            return {"ok": False, "error": f"В сутки можно выложить не больше {cap} постов"}
         post_id = await con.fetchval(
             "INSERT INTO forum_posts(work_id, author_email, caption, origin, kind) VALUES(NULL,$1,$2,'text','text') RETURNING id",
             email, text)
@@ -4513,13 +4665,14 @@ async def forum_search(request: Request):
     like = "%" + q + "%"
     async with db_pool.acquire() as con:
         users = await con.fetch(
-            "SELECT nick, avatar_key FROM users WHERE nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) "
+            "SELECT nick, avatar_key, EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip "
+            "FROM users WHERE nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) "
             "AND lower(nick) LIKE $1 ORDER BY nick LIMIT 12", like)
         rows = await con.fetch(
             _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) "
             "AND (lower(u.nick) LIKE $1 OR lower(p.caption) LIKE $1) ORDER BY p.id DESC LIMIT 20", like)
         posts = await _forum_cards(con, rows, viewer)
-    return {"ok": True, "users": [{"nick": u["nick"], "avatar": _look_url(u["avatar_key"])} for u in users], "posts": posts}
+    return {"ok": True, "users": [{"nick": u["nick"], "avatar": _look_url(u["avatar_key"]), "vip": bool(u["vip"])} for u in users], "posts": posts}
 
 
 @app.post("/api/forum/hide")
@@ -4660,7 +4813,7 @@ async def forum_comment(request: Request):
                 parent_id = int(parent["parent_id"])
         day = await con.fetchval(
             "SELECT COUNT(*) FROM forum_comments WHERE author_email=$1 AND created_at > now() - interval '1 day'", email)
-        if int(day or 0) >= 30:
+        if not await _is_vip(con, email) and int(day or 0) >= 30:
             return {"ok": False, "error": "Не больше 30 комментариев в сутки"}
         nick = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
         cid = await con.fetchval(
@@ -4855,7 +5008,10 @@ async def forum_profile(nick: str, request: Request):
     nick = str(nick or "").strip()[:20]
     viewer = _viewer(request)
     async with db_pool.acquire() as con:
-        user = await con.fetchrow("SELECT email, nick, avatar_key, cover_key, mark FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
+        user = await con.fetchrow(
+            "SELECT email, nick, avatar_key, cover_key, mark, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip "
+            "FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
         if not user:
             return {"ok": False, "error": "Профиль не найден"}
         followers = await con.fetchval("SELECT COUNT(*) FROM forum_follows WHERE author=$1", user["email"])
@@ -4876,7 +5032,8 @@ async def forum_profile(nick: str, request: Request):
         posts = await _forum_cards(con, rows, viewer)
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
             "likes": int(likes or 0), "followed": followed, "friend": friend, "mine": viewer == user["email"],
-            "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "mark": user["mark"] or "", "posts": posts}
+            "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "mark": user["mark"] or "",
+            "vip": bool(user["vip"]), "posts": posts}
 
 
 @app.get("/api/forum/friends/{email}")
@@ -5099,8 +5256,9 @@ async def dm_with(nick: str, request: Request):
             "UPDATE dm_messages SET seen=TRUE WHERE a_email=$1 AND b_email=$2 AND from_email<>$3 AND NOT seen",
             a, b, email)
         rows = await con.fetch(
-            "SELECT id, from_email, text, created_at FROM dm_messages WHERE a_email=$1 AND b_email=$2 ORDER BY id ASC LIMIT 200",
-            a, b)
+            "SELECT id, from_email, text, created_at FROM dm_messages WHERE a_email=$1 AND b_email=$2 ORDER BY id DESC LIMIT $3",
+            a, b, 2000 if await _is_vip(con, email) else 200)
+        rows = list(reversed(rows))
     return {"ok": True, "nick": user["nick"], "messages": [{
         "id": r["id"], "mine": r["from_email"] == email, "text": r["text"],
         "at": r["created_at"].strftime("%d.%m %H:%M"),
@@ -5135,7 +5293,7 @@ async def dm_send(request: Request):
             return {"ok": False, "error": "Написать можно после того, как вас примут в друзья"}
         a, b = _dm_pair(email, user["email"])
         has = await con.fetchval("SELECT 1 FROM dm_messages WHERE a_email=$1 AND b_email=$2 LIMIT 1", a, b)
-        if not has:
+        if not has and not await _is_vip(con, email):
             started = await con.fetchval(
                 "SELECT COUNT(*) FROM (SELECT a_email, b_email FROM dm_messages WHERE from_email=$1 "
                 "GROUP BY a_email, b_email HAVING MIN(created_at) > now() - interval '1 day') s", email)
