@@ -247,7 +247,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
             return '<tr><td>' + esc(p.at) + '</td><td>' + esc(p.nick || '—') + (p.blocked ? ' <span class="tag" style="background:rgba(255,80,120,.2);color:#ff9fb8">ЧС</span>' : '') +
               '<br><span class="dim" style="font-size:12px">' + esc(p.email) + '</span></td><td>' +
               esc(p.caption || '—') + '<br><span class="dim" style="font-size:12px">' + (p.origin === 'template' ? 'шаблон, промт скрыт' : (p.share_prompt ? 'свой промт открыт' : 'свой промт скрыт')) +
-              (p.hidden ? ' · скрыт' : '') + '</span></td><td>' + n((p.likes || 0) + (p.likes_boost || 0)) + '<br><span class="dim" style="font-size:12px">+' + n(p.likes_boost || 0) + '</span></td><td>' +
+              (p.hidden ? ' · скрыт' : '') + '</span></td><td>честные ' + n(p.likes || 0) + '<br><span class="dim" style="font-size:12px">накрутка +' + n(p.likes_boost || 0) + '<br>в ленте ' + n((p.likes || 0) + (p.likes_boost || 0)) + '</span></td><td>' +
               n((p.views || 0) + (p.views_boost || 0)) + '<br><span class="dim" style="font-size:12px">+' + n(p.views_boost || 0) + '</span></td><td>' + n(p.comments || 0) + '</td><td>' +
               '<div class="row"><input class="in" data-bl="' + p.id + '" type="number" placeholder="+лайки" style="max-width:90px"><input class="in" data-bv="' + p.id + '" type="number" placeholder="+просм." style="max-width:90px"><button class="ghost" data-boost="' + p.id + '">Накрутить</button></div>' +
               '<button class="ghost' + (p.hidden ? '' : ' danger') + '" data-hide="' + p.id + '" data-on="' + (p.hidden ? '0' : '1') + '">' + (p.hidden ? 'Вернуть' : 'Скрыть') + '</button> ' +
@@ -261,7 +261,15 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
               '<button class="ghost' + (c.hidden ? '' : ' danger') + '" data-chide="' + c.id + '" data-on="' + (c.hidden ? '0' : '1') + '">' + (c.hidden ? 'Вернуть' : 'Скрыть') + '</button> ' +
               '<button class="ghost' + (c.blocked ? '' : ' danger') + '" data-ban="' + esc(c.email) + '" data-blocked="' + (c.blocked ? '1' : '0') + '">' + (c.blocked ? 'Из ЧС' : 'В ЧС') + '</button></td></tr>';
           }).join('') || '<tr><td colspan="5" class="dim">Комментариев нет</td></tr>') + '</table></div>';
-        document.getElementById('flist').innerHTML = posts + comments;
+        var leaders = '<div class="card tbl"><h3>Рейтинг, как в ленте</h3><p class="dim">Честные — настоящие нажатия. Накрутка — то, что добавлено здесь. В ленте люди видят сумму, она совпадает с лайками на постах.</p><table><tr><th>#</th><th>Ник</th><th>Честные</th><th>Накрутка</th><th>В ленте</th><th>Честные за 7 дней</th></tr>' +
+          ((r.leaders || []).map(function (a, i) {
+            return '<tr><td>' + (i + 1) + '</td><td>' + esc(a.nick) + '<br><span class="dim" style="font-size:12px">' + esc(a.email) + '</span></td><td>' + n(a.real) + '</td><td>' + n(a.boost) + '</td><td>' + n(a.shown) + '</td><td>' + n(a.week_real) + '</td></tr>';
+          }).join('') || '<tr><td colspan="6" class="dim">Пока некого считать</td></tr>') + '</table></div>';
+        var boosted = '<div class="card tbl"><h3>Накрученные лайки</h3><table><tr><th>Пост</th><th>Ник</th><th>Честные</th><th>Накрутка</th><th>В ленте</th></tr>' +
+          ((r.boosted || []).map(function (p) {
+            return '<tr><td>#' + p.id + '<br><span class="dim" style="font-size:12px">' + esc(p.caption || '—') + '</span></td><td>' + esc(p.nick || '—') + '</td><td>' + n(p.real) + '</td><td>+' + n(p.boost) + (p.views_boost ? '<br><span class="dim" style="font-size:12px">просмотры +' + n(p.views_boost) + '</span>' : '') + '</td><td>' + n((p.real || 0) + (p.boost || 0)) + '</td></tr>';
+          }).join('') || '<tr><td colspan="5" class="dim">Накрутки ещё нет</td></tr>') + '</table></div>';
+        document.getElementById('flist').innerHTML = leaders + boosted + posts + comments;
         document.querySelectorAll('[data-boost]').forEach(function (b) {
           b.onclick = function () {
             var id = b.getAttribute('data-boost');

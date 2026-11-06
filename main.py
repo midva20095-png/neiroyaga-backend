@@ -4371,17 +4371,20 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
         elif sort == "popular":
             rows = await con.fetch(
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) ORDER BY "
-                "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id AND l.created_at > now() - interval '7 days') DESC, p.id DESC LIMIT 40")
+                "((SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) + COALESCE(p.likes_boost,0)) DESC, p.id DESC LIMIT 40")
         else:
             rows = await con.fetch(
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
                 int(before or 0), FORUM_PAGE)
         posts = await _forum_cards(con, rows, viewer)
         top = await con.fetch(
-            "SELECT u.nick, COUNT(*) AS likes FROM forum_likes l "
-            "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
-            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
-            "GROUP BY u.nick ORDER BY likes DESC LIMIT 3")
+            "SELECT u.nick, "
+            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
+            "+ COALESCE((SELECT SUM(COALESCE(likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS likes "
+            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) "
+            "ORDER BY likes DESC LIMIT 3")
     medals = {r["nick"]: m for r, m in zip(top, ("🥇", "🥈", "🥉"))}
     for c in posts:
         c["badge"] = medals.get(c["nick"], "")
@@ -4398,23 +4401,34 @@ async def forum_top():
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip FROM users "
             "WHERE feed_pin AND nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) ORDER BY nick LIMIT 8")
         rows = await con.fetch(
-            "SELECT u.nick, u.avatar_key, u.mark, u.email, COUNT(*) AS likes, "
-            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip FROM forum_likes l "
-            "JOIN forum_posts p ON p.id = l.post_id JOIN users u ON u.email = p.author_email "
-            "WHERE l.created_at > now() - interval '7 days' AND NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND u.nick IS NOT NULL "
-            "GROUP BY u.nick, u.avatar_key, u.mark, u.email ORDER BY likes DESC LIMIT 20")
-    likes = {r["nick"]: int(r["likes"]) for r in rows}
+            "SELECT u.nick, u.avatar_key, u.mark, u.email, "
+            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS real_likes, "
+            "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS boost_likes, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
+            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) "
+            "AND (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
+            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0)) > 0 "
+            "ORDER BY (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
+            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0)) DESC LIMIT 20")
+    score = {r["nick"]: int(r["real_likes"] or 0) + int(r["boost_likes"] or 0) for r in rows}
     seen = set()
     authors = []
     for r in pinned:
         seen.add(r["nick"])
-        authors.append({"nick": r["nick"], "likes": likes.get(r["nick"], 0), "avatar": _look_url(r["avatar_key"]),
+        authors.append({"nick": r["nick"], "likes": score.get(r["nick"], 0), "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True})
     for i, r in enumerate(rows):
         if r["nick"] in seen or len(authors) >= 20:
             continue
         seen.add(r["nick"])
-        authors.append({"nick": r["nick"], "likes": int(r["likes"]), "avatar": _look_url(r["avatar_key"]),
+        authors.append({"nick": r["nick"], "likes": int(r["real_likes"] or 0) + int(r["boost_likes"] or 0),
+                        "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": ("🥇", "🥈", "🥉")[i] if i < 3 else "", "pin": False})
     return {"ok": True, "authors": authors}
 
@@ -5267,6 +5281,33 @@ async def admin_forum(request: Request, q: str = ""):
             "WHERE ($1 = '' OR lower(COALESCE(u.nick,'')) LIKE '%' || $1 || '%' OR c.author_email LIKE '%' || $1 || '%' "
             "OR lower(c.text) LIKE '%' || $1 || '%') "
             "ORDER BY c.id DESC LIMIT 80", q)
+        leaders = await con.fetch(
+            "SELECT u.nick, u.email, "
+            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS real_likes, "
+            "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS boost_likes, "
+            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at > now() - interval '7 days'), 0) AS real_week, "
+            "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden AND p.created_at > now() - interval '7 days'), 0) AS boost_week "
+            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) "
+            "AND (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
+            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden), 0)) > 0 "
+            "ORDER BY (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at > now() - interval '7 days'), 0) "
+            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
+            " WHERE p.author_email=u.email AND NOT p.hidden AND p.created_at > now() - interval '7 days'), 0)) DESC "
+            "LIMIT 20")
+        boosted = await con.fetch(
+            "SELECT p.id, u.nick, p.author_email, left(COALESCE(p.caption,''), 80) AS caption, "
+            "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) AS real_likes, "
+            "COALESCE(p.likes_boost,0) AS likes_boost, COALESCE(p.views_boost,0) AS views_boost "
+            "FROM forum_posts p JOIN users u ON u.email=p.author_email "
+            "WHERE COALESCE(p.likes_boost,0) > 0 OR COALESCE(p.views_boost,0) > 0 "
+            "ORDER BY p.likes_boost DESC, p.id DESC LIMIT 40")
     return {"ok": True, "posts": [{
         "id": r["id"], "nick": r["nick"], "email": r["author_email"], "caption": r["caption"] or "",
         "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"],
@@ -5278,7 +5319,15 @@ async def admin_forum(request: Request, q: str = ""):
         "id": c["id"], "post_id": c["post_id"], "nick": c["nick"] or "", "email": c["author_email"],
         "text": c["text"], "hidden": c["hidden"], "blocked": bool(c["blocked"]),
         "at": c["created_at"].strftime("%d.%m.%Y %H:%M"),
-    } for c in crows]}
+    } for c in crows], "leaders": [{
+        "nick": x["nick"], "email": x["email"],
+        "real": int(x["real_likes"] or 0), "boost": int(x["boost_likes"] or 0),
+        "week_real": int(x["real_week"] or 0),
+        "shown": int(x["real_likes"] or 0) + int(x["boost_likes"] or 0),
+    } for x in leaders], "boosted": [{
+        "id": b["id"], "nick": b["nick"] or "", "email": b["author_email"], "caption": b["caption"] or "",
+        "real": int(b["real_likes"] or 0), "boost": int(b["likes_boost"] or 0), "views_boost": int(b["views_boost"] or 0),
+    } for b in boosted]}
 
 
 @app.post("/api/admin/forum/hide")
