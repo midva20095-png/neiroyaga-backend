@@ -481,6 +481,11 @@ CREATE TABLE IF NOT EXISTS hall_bans (
     email TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'text';
+CREATE TABLE IF NOT EXISTS hall_seen (
+    email TEXT PRIMARY KEY,
+    seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -4701,6 +4706,13 @@ async def forum_people(nick: str, request: Request):
     return pack
 
 
+HALL_STICKERS = set("🎉 🔥 ❤️ 😂 👍 👑 ✨ 🎁 💯 🚀 😭 😡 👏 🙏 💪 🌹 💎 ⭐ 🍀 🍕 ☕ 🐱 🐶 👻 🤖 💀 😎 🥰 🤩 💜 ⚡ 🏆 🎵 📷 🌈 🍓 💋 🤗 🤔 😴 👋 💃 🕺 🥳".split())
+
+
+def _hall_person(r) -> dict:
+    return {"nick": r["nick"] or "", "mark": r["mark"] or "", "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"])}
+
+
 @app.get("/api/hall")
 async def hall_list(request: Request):
     email = norm_email(request.query_params.get("email"))
@@ -4713,17 +4725,36 @@ async def hall_list(request: Request):
     except (TypeError, ValueError):
         before = 0
     async with db_pool.acquire() as con:
+        await con.execute(
+            "INSERT INTO hall_seen(email, seen_at) VALUES($1, now()) "
+            "ON CONFLICT (email) DO UPDATE SET seen_at=now()", email)
         rows = await con.fetch(
-            "SELECT m.id, m.text, m.created_at, m.email, u.nick, u.avatar_key, u.mark, "
+            "SELECT m.id, m.text, m.kind, m.created_at, m.email, u.nick, u.avatar_key, u.mark, "
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
             "FROM hall_messages m JOIN users u ON u.email=m.email "
             "WHERE NOT m.hidden AND ($1 = 0 OR m.id < $1) "
             "ORDER BY m.id DESC LIMIT 40", before)
+        online = await con.fetch(
+            "SELECT u.nick, u.avatar_key, u.mark, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
+            "FROM hall_seen s JOIN users u ON u.email=s.email "
+            "WHERE s.seen_at > now() - interval '50 seconds' AND u.nick IS NOT NULL "
+            "ORDER BY s.seen_at DESC LIMIT 24")
+        members = await con.fetch(
+            "SELECT u.nick, u.avatar_key, u.mark, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip, "
+            "s.seen_at > now() - interval '50 seconds' AS on "
+            "FROM hall_seen s JOIN users u ON u.email=s.email "
+            "WHERE u.nick IS NOT NULL ORDER BY s.seen_at DESC LIMIT 40")
+        members_n = await con.fetchval("SELECT COUNT(*) FROM hall_seen s JOIN users u ON u.email=s.email WHERE u.nick IS NOT NULL")
     rows = list(reversed(rows))
-    return {"ok": True, "messages": [{
-        "id": r["id"], "text": r["text"], "nick": r["nick"] or "", "mark": r["mark"] or "",
+    return {"ok": True, "members_n": int(members_n or 0),
+            "online": [_hall_person(r) for r in online],
+            "members": [dict(_hall_person(r), on=bool(r["on"])) for r in members],
+            "messages": [{
+        "id": r["id"], "text": r["text"], "kind": r["kind"] or "text", "nick": r["nick"] or "", "mark": r["mark"] or "",
         "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"]), "mine": r["email"] == email,
-        "at": r["created_at"].strftime("%d.%m %H:%M"),
+        "at": r["created_at"].strftime("%H:%M"),
     } for r in rows]}
 
 
@@ -4737,7 +4768,12 @@ async def hall_post(request: Request):
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Войдите, чтобы писать в общий чат"}, status_code=401)
     text = str(data.get("text") or "").replace("\x00", "").strip()[:400]
-    if not text:
+    kind = "sticker" if str(data.get("kind") or "") == "sticker" else "text"
+    if kind == "sticker":
+        plain = text.replace("\ufe0f", "")
+        if text not in HALL_STICKERS and plain not in {s.replace("\ufe0f", "") for s in HALL_STICKERS}:
+            return {"ok": False, "error": "Такого стикера нет"}
+    elif not text:
         return {"ok": False, "error": "Пустое сообщение"}
     if not db_ready():
         return {"ok": False, "error": "База недоступна"}
@@ -4755,7 +4791,7 @@ async def hall_post(request: Request):
             "SELECT COUNT(*) FROM hall_messages WHERE email=$1 AND created_at > now() - interval '1 day'", email)
         if int(day or 0) >= cap:
             return {"ok": False, "error": "Лимит сообщений в общем чате на сегодня"}
-        mid = await con.fetchval("INSERT INTO hall_messages(email, text) VALUES($1,$2) RETURNING id", email, text)
+        mid = await con.fetchval("INSERT INTO hall_messages(email, text, kind) VALUES($1,$2,$3) RETURNING id", email, text, kind)
     return {"ok": True, "id": mid}
 
 
