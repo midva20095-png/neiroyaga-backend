@@ -4406,7 +4406,7 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
                 "((SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) + COALESCE(p.likes_boost,0)) DESC, p.id DESC LIMIT 40")
         else:
             rows = await con.fetch(
-                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
+                _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
                 int(before or 0), FORUM_PAGE)
         posts = await _forum_cards(con, rows, viewer)
         top = await con.fetch(
