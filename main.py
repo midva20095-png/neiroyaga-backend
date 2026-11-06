@@ -5592,6 +5592,8 @@ async def notify_support_seen(request: Request):
                 "ON CONFLICT (email) DO UPDATE SET msg_id=GREATEST(support_seen.msg_id, EXCLUDED.msg_id)",
                 email, int(last))
     return {"ok": True}
+
+@app.get("/api/dm/inbox/{email}")
 async def dm_list(email: str, request: Request):
     email = norm_email(email)
     if not is_authorized(email, token_from_request(request)):
@@ -5600,10 +5602,12 @@ async def dm_list(email: str, request: Request):
         return {"ok": True, "threads": []}
     async with db_pool.acquire() as con:
         rows = await con.fetch(
-            "SELECT m.id, m.a_email, m.b_email, m.from_email, m.text, m.seen, m.created_at, "
+            "SELECT m.id, lower(m.a_email) AS a_email, lower(m.b_email) AS b_email, "
+            "lower(m.from_email) AS from_email, m.text, m.seen, m.created_at, "
             "ua.nick AS nick_a, ub.nick AS nick_b FROM dm_messages m "
-            "JOIN users ua ON ua.email=m.a_email JOIN users ub ON ub.email=m.b_email "
-            "WHERE m.a_email=$1 OR m.b_email=$1 ORDER BY m.id DESC LIMIT 300", email)
+            "LEFT JOIN users ua ON lower(ua.email)=lower(m.a_email) "
+            "LEFT JOIN users ub ON lower(ub.email)=lower(m.b_email) "
+            "WHERE lower(m.a_email)=$1 OR lower(m.b_email)=$1 ORDER BY m.id DESC LIMIT 300", email)
     threads = {}
     for r in rows:
         other = r["b_email"] if r["a_email"] == email else r["a_email"]
@@ -5612,7 +5616,7 @@ async def dm_list(email: str, request: Request):
                 threads[other]["unread"] += 1
             continue
         threads[other] = {
-            "nick": r["nick_b"] if r["a_email"] == email else r["nick_a"],
+            "nick": (r["nick_b"] if r["a_email"] == email else r["nick_a"]) or "без ника",
             "text": r["text"], "at": r["created_at"].strftime("%d.%m %H:%M"),
             "mine": r["from_email"] == email,
             "unread": 0 if r["seen"] or r["from_email"] == email else 1,
