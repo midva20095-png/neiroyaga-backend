@@ -5469,7 +5469,7 @@ async def forum_profile(nick: str, request: Request):
     viewer = _viewer(request)
     async with db_pool.acquire() as con:
         user = await con.fetchrow(
-            "SELECT email, nick, avatar_key, cover_key, mark, font, "
+            "SELECT email, nick, avatar_key, cover_key, mark, font, feed_pin, "
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip "
             "FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
         if not user:
@@ -5493,7 +5493,7 @@ async def forum_profile(nick: str, request: Request):
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
             "likes": int(likes or 0), "followed": followed, "friend": friend, "mine": viewer == user["email"],
             "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "mark": user["mark"] or "",
-            "vip": bool(user["vip"]), "font": (user["font"] or "") if user["vip"] and (user["font"] or "") in FONT_OK else "", "posts": posts}
+            "vip": bool(user["vip"]), "pin": bool(user["feed_pin"]), "font": (user["font"] or "") if user["vip"] and (user["font"] or "") in FONT_OK else "", "posts": posts}
 
 
 @app.get("/api/forum/friends/{email}")
@@ -5783,7 +5783,7 @@ async def dm_send(request: Request):
     async with db_pool.acquire() as con:
         if await _is_blocked(con, email):
             return {"ok": False, "error": BLOCK_MSG}
-        user = await con.fetchrow("SELECT email, nick, blocked FROM users WHERE lower(nick)=lower($1)", nick)
+        user = await con.fetchrow("SELECT email, nick, blocked, feed_pin FROM users WHERE lower(nick)=lower($1)", nick)
         if not user or user["blocked"]:
             return {"ok": False, "error": "Собеседник не найден"}
         if user["email"] == email:
@@ -5791,7 +5791,8 @@ async def dm_send(request: Request):
         linked = await con.fetchval(
             "SELECT 1 FROM forum_friends WHERE a_email=$1 AND b_email=$2 AND status='accepted'",
             *_dm_pair(email, user["email"]))
-        if not linked:
+        support = bool(user["feed_pin"])
+        if not linked and not support:
             return {"ok": False, "error": "Написать можно после того, как вас примут в друзья"}
         a, b = _dm_pair(email, user["email"])
         has = await con.fetchval("SELECT 1 FROM dm_messages WHERE a_email=$1 AND b_email=$2 LIMIT 1", a, b)
