@@ -121,6 +121,7 @@ PAYMENT_PACKAGES = parse_packages(PAYMENT_PACKAGES_RAW)
 VIP_PACK_RUB = 5000
 VIP_PACK_CREDITS = 5500
 VIP_DAYS = 30
+FONT_OK = {"", "neon", "serif", "mono", "glow"}
 # Подарочные сертификаты: номинал ₽ → кредиты (как в обычных пакетах)
 GIFT_NOMINALS = {500: 525, 1000: 1060, 2500: 2750}
 PROMO_MAX_PERCENT = 50      # бонус к пополнению — не больше 50%
@@ -349,6 +350,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mark TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS feed_pin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS font TEXT NOT NULL DEFAULT '';
 UPDATE users SET mark='НейроЯга AI Поддержка', feed_pin=TRUE
  WHERE lower(email)='midva2009@mail.ru' AND mark IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_nick_lower_idx ON users (lower(nick));
@@ -2071,7 +2073,7 @@ async def account_info(email: str, request: Request):
         res = await check_and_deduct_credits(email, 0)
         return {"ok": True, "email": email, "credits": res.get("credits", 0), "history": [], "db": False}
     async with db_pool.acquire() as con:
-        u = await con.fetchrow("SELECT credits, created_at, nick, avatar_key, cover_key FROM users WHERE email=$1", email)
+        u = await con.fetchrow("SELECT credits, created_at, nick, avatar_key, cover_key, font FROM users WHERE email=$1", email)
         if u is None:
             return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
         nick = await _ensure_nick(con, email)
@@ -2104,7 +2106,8 @@ async def account_info(email: str, request: Request):
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
             "categories": cats, "level": _level(bought, vip), "history": history,
             "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
-                    "pack": {"rub": VIP_PACK_RUB, "credits": VIP_PACK_CREDITS, "days": VIP_DAYS}}}
+                    "pack": {"rub": VIP_PACK_RUB, "credits": VIP_PACK_CREDITS, "days": VIP_DAYS}},
+            "font": (u["font"] or "") if vip and (u["font"] or "") in FONT_OK else ""}
 
 
 @app.post("/api/account/password")
@@ -4232,6 +4235,7 @@ async def _forum_cards(con, rows, viewer: str):
             "ts": r["created_at"].isoformat(), "date": r["created_at"].strftime("%d.%m.%Y %H:%M"),
             "media": _forum_media(r, work), "repeat": _forum_repeat(r),
             "avatar": _look_url(r["avatar_key"]), "mark": r["mark"] or "", "vip": bool(r["vip"]),
+            "font": (r["font"] or "") if r["vip"] and (r["font"] or "") in FONT_OK else "",
             "comments": list(reversed(comments.get(r["id"], [])[:40])),
             "comment_n": len(comments.get(r["id"], [])),
         })
@@ -4240,7 +4244,7 @@ async def _forum_cards(con, rows, viewer: str):
 
 _FORUM_SELECT = """
     SELECT p.id, p.work_id, p.author_email, p.caption, p.origin, p.template_id, p.share_prompt, p.prompt_text,
-           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick, u.avatar_key, u.mark,
+           p.model_key, p.kind, p.title, p.source, p.hidden, p.skey, p.created_at, u.nick, u.avatar_key, u.mark, u.font,
            EXISTS(SELECT 1 FROM vip_subs v WHERE v.email = u.email AND v.until > now()) AS vip,
            (SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) AS likes,
            COALESCE(p.likes_boost, 0) AS likes_boost,
@@ -4353,6 +4357,27 @@ async def account_nick(request: Request):
         return {"ok": False, "error": "Этот ник уже занят"}
     print(f"🏷 Ник {email}: {nick}")
     return {"ok": True, "nick": nick}
+
+
+@app.post("/api/account/font")
+async def account_font(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    font = str(data.get("font") or "").strip()[:12]
+    if font not in FONT_OK:
+        return {"ok": False, "error": "Такого шрифта нет"}
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        if not await _is_vip(con, email):
+            return {"ok": False, "error": "Шрифт ника доступен только VIP"}
+        await con.execute("UPDATE users SET font=$2 WHERE email=$1", email, font)
+    return {"ok": True, "font": font}
 
 
 @app.get("/api/forum")
@@ -5444,7 +5469,7 @@ async def forum_profile(nick: str, request: Request):
     viewer = _viewer(request)
     async with db_pool.acquire() as con:
         user = await con.fetchrow(
-            "SELECT email, nick, avatar_key, cover_key, mark, "
+            "SELECT email, nick, avatar_key, cover_key, mark, font, "
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip "
             "FROM users WHERE lower(nick)=lower($1) AND NOT COALESCE(blocked, FALSE)", nick)
         if not user:
@@ -5468,7 +5493,7 @@ async def forum_profile(nick: str, request: Request):
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
             "likes": int(likes or 0), "followed": followed, "friend": friend, "mine": viewer == user["email"],
             "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "mark": user["mark"] or "",
-            "vip": bool(user["vip"]), "posts": posts}
+            "vip": bool(user["vip"]), "font": (user["font"] or "") if user["vip"] and (user["font"] or "") in FONT_OK else "", "posts": posts}
 
 
 @app.get("/api/forum/friends/{email}")
