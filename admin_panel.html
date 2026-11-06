@@ -122,7 +122,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   /* ---------- каркас ---------- */
   function main() {
     app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1><button class="ghost" id="logout">Выйти</button></div>' +
-      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="forum">📣 Форум</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
+      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="forum">📣 Форум</button><button data-t="hall">💬 Чат</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
     document.getElementById('logout').onclick = function () { sessionStorage.removeItem('ny_admin'); T = ''; login(); };
     app.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-t'); S.user = null; show(); }; });
     show();
@@ -130,7 +130,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   function show() {
     app.querySelectorAll('[data-t]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-t') === S.tab); });
     if (S.user) return userView(S.user);
-    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else if (S.tab === 'forum') forum(); else users();
+    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else if (S.tab === 'forum') forum(); else if (S.tab === 'hall') hall(); else users();
   }
   function view(h) { document.getElementById('view').innerHTML = h; }
 
@@ -202,6 +202,29 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
       document.getElementById('plist').innerHTML = h2;
       document.querySelectorAll('[data-tg]').forEach(function (b) {
         b.onclick = function () { api('/api/admin/promo/toggle', { code: b.getAttribute('data-tg') }).then(function (x) { toast(x.ok ? (x.active ? 'Включён' : 'Выключен') : x.error); promos(); }); };
+      });
+    }).catch(function () {});
+  }
+
+  function hall() {
+    view('<div id="hlist"><p class="dim">Загружаю…</p></div>');
+    api('/api/admin/hall').then(function (r) {
+      var bans = (r.bans || []).map(function (b) {
+        return '<tr><td>' + esc(b.nick || '—') + '<br><span class="dim" style="font-size:12px">' + esc(b.email) + '</span></td><td>' + esc(b.at) + '</td><td><button class="ghost" data-unban="' + esc(b.email) + '">Вернуть в чат</button></td></tr>';
+      }).join('') || '<tr><td colspan="3" class="dim">Никто не заблокирован</td></tr>';
+      var msgs = (r.messages || []).map(function (m) {
+        return '<tr><td>' + esc(m.at) + '</td><td>' + esc(m.nick || '—') + (m.banned ? ' <span class="tag" style="background:rgba(255,80,120,.2);color:#ff9fb8">чат закрыт</span>' : '') + '<br><span class="dim" style="font-size:12px">' + esc(m.email) + '</span></td><td>' + esc(m.text) + (m.hidden ? ' <span class="dim">· удалено</span>' : '') + '</td><td><button class="ghost danger" data-hhide="' + m.id + '" data-on="' + (m.hidden ? '0' : '1') + '">' + (m.hidden ? 'Вернуть' : 'Удалить') + '</button> <button class="ghost' + (m.banned ? '' : ' danger') + '" data-hban="' + esc(m.email) + '" data-on="' + (m.banned ? '0' : '1') + '">' + (m.banned ? 'Разбанить' : 'Закрыть чат') + '</button></td></tr>';
+      }).join('') || '<tr><td colspan="4" class="dim">Сообщений нет</td></tr>';
+      document.getElementById('hlist').innerHTML = '<div class="card tbl"><h3>Кто не может писать</h3><table><tr><th>Кто</th><th>Когда</th><th></th></tr>' + bans + '</table></div><div class="card tbl"><h3>Общий чат</h3><table><tr><th>Когда</th><th>Кто</th><th>Текст</th><th></th></tr>' + msgs + '</table></div>';
+      document.querySelectorAll('[data-hhide]').forEach(function (b) {
+        b.onclick = function () { api('/api/admin/hall/hide', { id: +b.getAttribute('data-hhide'), hidden: b.getAttribute('data-on') === '1' }).then(function () { hall(); }); };
+      });
+      document.querySelectorAll('[data-hban],[data-unban]').forEach(function (b) {
+        b.onclick = function () {
+          var email = b.getAttribute('data-hban') || b.getAttribute('data-unban');
+          var on = b.hasAttribute('data-unban') ? false : b.getAttribute('data-on') === '1';
+          api('/api/admin/hall/ban', { email: email, banned: on }).then(function (x) { toast(x.ok ? (x.banned ? 'Чат закрыт' : 'Снова может писать') : (x.error || 'Ошибка')); hall(); });
+        };
       });
     }).catch(function () {});
   }

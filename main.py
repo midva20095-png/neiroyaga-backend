@@ -469,6 +469,18 @@ CREATE TABLE IF NOT EXISTS profile_photos (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS profile_photos_email_idx ON profile_photos (email, id DESC);
+CREATE TABLE IF NOT EXISTS hall_messages (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL,
+    text TEXT NOT NULL,
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS hall_messages_id_idx ON hall_messages (hidden, id DESC);
+CREATE TABLE IF NOT EXISTS hall_bans (
+    email TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -4390,7 +4402,7 @@ async def forum_top():
         authors.append({"nick": r["nick"], "likes": likes.get(r["nick"], 0), "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True})
     for i, r in enumerate(rows):
-        if r["nick"] in seen or len(authors) >= 12:
+        if r["nick"] in seen or len(authors) >= 20:
             continue
         seen.add(r["nick"])
         authors.append({"nick": r["nick"], "likes": int(r["likes"]), "avatar": _look_url(r["avatar_key"]),
@@ -4687,6 +4699,121 @@ async def forum_people(nick: str, request: Request):
     pack["ok"] = True
     pack["kind"] = kind
     return pack
+
+
+@app.get("/api/hall")
+async def hall_list(request: Request):
+    email = norm_email(request.query_params.get("email"))
+    if not is_authorized(email, token_from_request(request, {})):
+        return JSONResponse({"ok": False, "error": "Войдите, чтобы открыть общий чат"}, status_code=401)
+    if not db_ready():
+        return {"ok": True, "messages": []}
+    try:
+        before = int(request.query_params.get("before") or 0)
+    except (TypeError, ValueError):
+        before = 0
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT m.id, m.text, m.created_at, m.email, u.nick, u.avatar_key, u.mark, "
+            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
+            "FROM hall_messages m JOIN users u ON u.email=m.email "
+            "WHERE NOT m.hidden AND ($1 = 0 OR m.id < $1) "
+            "ORDER BY m.id DESC LIMIT 40", before)
+    rows = list(reversed(rows))
+    return {"ok": True, "messages": [{
+        "id": r["id"], "text": r["text"], "nick": r["nick"] or "", "mark": r["mark"] or "",
+        "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"]), "mine": r["email"] == email,
+        "at": r["created_at"].strftime("%d.%m %H:%M"),
+    } for r in rows]}
+
+
+@app.post("/api/hall")
+async def hall_post(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Войдите, чтобы писать в общий чат"}, status_code=401)
+    text = str(data.get("text") or "").replace("\x00", "").strip()[:400]
+    if not text:
+        return {"ok": False, "error": "Пустое сообщение"}
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        if await _is_blocked(con, email):
+            return {"ok": False, "error": BLOCK_MSG}
+        if await con.fetchval("SELECT 1 FROM hall_bans WHERE email=$1", email):
+            return {"ok": False, "error": "Вам закрыт общий чат"}
+        fast = await con.fetchval(
+            "SELECT COUNT(*) FROM hall_messages WHERE email=$1 AND created_at > now() - interval '8 seconds'", email)
+        if int(fast or 0) >= 2:
+            return {"ok": False, "error": "Подождите пару секунд"}
+        cap = await _day_cap(con, email, 80, 400)
+        day = await con.fetchval(
+            "SELECT COUNT(*) FROM hall_messages WHERE email=$1 AND created_at > now() - interval '1 day'", email)
+        if int(day or 0) >= cap:
+            return {"ok": False, "error": "Лимит сообщений в общем чате на сегодня"}
+        mid = await con.fetchval("INSERT INTO hall_messages(email, text) VALUES($1,$2) RETURNING id", email, text)
+    return {"ok": True, "id": mid}
+
+
+@app.get("/api/admin/hall")
+async def admin_hall(request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    if not db_ready():
+        return {"ok": True, "messages": [], "bans": []}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT m.id, m.text, m.hidden, m.created_at, m.email, u.nick, "
+            "EXISTS(SELECT 1 FROM hall_bans b WHERE b.email=m.email) AS banned "
+            "FROM hall_messages m JOIN users u ON u.email=m.email ORDER BY m.id DESC LIMIT 80")
+        bans = await con.fetch(
+            "SELECT b.email, u.nick, b.created_at FROM hall_bans b LEFT JOIN users u ON u.email=b.email ORDER BY b.created_at DESC LIMIT 50")
+    return {"ok": True, "messages": [{
+        "id": r["id"], "text": r["text"], "hidden": r["hidden"], "email": r["email"], "nick": r["nick"] or "",
+        "banned": bool(r["banned"]), "at": r["created_at"].strftime("%d.%m.%Y %H:%M"),
+    } for r in rows], "bans": [{
+        "email": b["email"], "nick": b["nick"] or "", "at": b["created_at"].strftime("%d.%m.%Y %H:%M"),
+    } for b in bans]}
+
+
+@app.post("/api/admin/hall/hide")
+async def admin_hall_hide(request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    if not db_ready() or not mid:
+        return {"ok": False, "error": "Сообщение не найдено"}
+    async with db_pool.acquire() as con:
+        await con.execute("UPDATE hall_messages SET hidden=$2 WHERE id=$1", mid, bool(data.get("hidden", True)))
+    return {"ok": True}
+
+
+@app.post("/api/admin/hall/ban")
+async def admin_hall_ban(request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not email or not db_ready():
+        return {"ok": False, "error": "Пользователь не найден"}
+    async with db_pool.acquire() as con:
+        if data.get("banned"):
+            await con.execute(
+                "INSERT INTO hall_bans(email) VALUES($1) ON CONFLICT (email) DO NOTHING", email)
+        else:
+            await con.execute("DELETE FROM hall_bans WHERE email=$1", email)
+    return {"ok": True, "banned": bool(data.get("banned"))}
 
 
 @app.get("/api/forum/mine/{email}")
