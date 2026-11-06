@@ -486,6 +486,8 @@ CREATE TABLE IF NOT EXISTS hall_bans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'text';
+ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS reply_to BIGINT;
+CREATE INDEX IF NOT EXISTS hall_messages_reply_idx ON hall_messages (reply_to, id);
 CREATE TABLE IF NOT EXISTS hall_seen (
     email TEXT PRIMARY KEY,
     seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -4731,6 +4733,19 @@ def _hall_person(r) -> dict:
     return {"nick": r["nick"] or "", "mark": r["mark"] or "", "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"])}
 
 
+def _hall_card(r, email: str, replies: int = 0) -> dict:
+    return {"id": r["id"], "text": r["text"], "kind": r["kind"] or "text", "nick": r["nick"] or "",
+            "mark": r["mark"] or "", "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"]),
+            "mine": r["email"] == email, "at": r["created_at"].strftime("%H:%M"), "replies": int(replies or 0)}
+
+
+_HALL_MSG = (
+    "SELECT m.id, m.text, m.kind, m.created_at, m.email, m.reply_to, u.nick, u.avatar_key, u.mark, "
+    "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
+    "FROM hall_messages m JOIN users u ON u.email=m.email "
+)
+
+
 @app.get("/api/hall")
 async def hall_list(request: Request):
     email = norm_email(request.query_params.get("email"))
@@ -4740,17 +4755,28 @@ async def hall_list(request: Request):
         return {"ok": True, "messages": []}
     try:
         before = int(request.query_params.get("before") or 0)
+        thread = int(request.query_params.get("thread") or 0)
     except (TypeError, ValueError):
-        before = 0
+        before, thread = 0, 0
     async with db_pool.acquire() as con:
         await con.execute(
             "INSERT INTO hall_seen(email, seen_at) VALUES($1, now()) "
             "ON CONFLICT (email) DO UPDATE SET seen_at=now()", email)
+        if thread:
+            parent = await con.fetchrow(_HALL_MSG + "WHERE m.id=$1 AND NOT m.hidden", thread)
+            if not parent:
+                return {"ok": False, "error": "Ветка не найдена"}
+            root_id = int(parent["reply_to"] or parent["id"])
+            if root_id != parent["id"]:
+                parent = await con.fetchrow(_HALL_MSG + "WHERE m.id=$1 AND NOT m.hidden", root_id)
+            if not parent:
+                return {"ok": False, "error": "Ветка не найдена"}
+            replies = await con.fetch(
+                _HALL_MSG + "WHERE m.reply_to=$1 AND NOT m.hidden ORDER BY m.id ASC LIMIT 80", root_id)
+            return {"ok": True, "root": _hall_card(parent, email),
+                    "messages": [_hall_card(r, email) for r in replies]}
         rows = await con.fetch(
-            "SELECT m.id, m.text, m.kind, m.created_at, m.email, u.nick, u.avatar_key, u.mark, "
-            "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
-            "FROM hall_messages m JOIN users u ON u.email=m.email "
-            "WHERE NOT m.hidden AND ($1 = 0 OR m.id < $1) "
+            _HALL_MSG + "WHERE NOT m.hidden AND m.reply_to IS NULL AND ($1 = 0 OR m.id < $1) "
             "ORDER BY m.id DESC LIMIT 40", before)
         online = await con.fetch(
             "SELECT u.nick, u.avatar_key, u.mark, "
@@ -4765,15 +4791,18 @@ async def hall_list(request: Request):
             "FROM hall_seen s JOIN users u ON u.email=s.email "
             "WHERE u.nick IS NOT NULL ORDER BY s.seen_at DESC LIMIT 40")
         members_n = await con.fetchval("SELECT COUNT(*) FROM hall_seen s JOIN users u ON u.email=s.email WHERE u.nick IS NOT NULL")
+        ids = [r["id"] for r in rows]
+        counts = {}
+        if ids:
+            for c in await con.fetch(
+                "SELECT reply_to, COUNT(*) AS n FROM hall_messages "
+                "WHERE reply_to = ANY($1::bigint[]) AND NOT hidden GROUP BY reply_to", ids):
+                counts[c["reply_to"]] = int(c["n"] or 0)
     rows = list(reversed(rows))
     return {"ok": True, "members_n": int(members_n or 0),
             "online": [_hall_person(r) for r in online],
             "members": [dict(_hall_person(r), on=bool(r["on"])) for r in members],
-            "messages": [{
-        "id": r["id"], "text": r["text"], "kind": r["kind"] or "text", "nick": r["nick"] or "", "mark": r["mark"] or "",
-        "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"]), "mine": r["email"] == email,
-        "at": r["created_at"].strftime("%H:%M"),
-    } for r in rows]}
+            "messages": [_hall_card(r, email, counts.get(r["id"], 0)) for r in rows]}
 
 
 @app.post("/api/hall")
@@ -4809,7 +4838,19 @@ async def hall_post(request: Request):
             "SELECT COUNT(*) FROM hall_messages WHERE email=$1 AND created_at > now() - interval '1 day'", email)
         if int(day or 0) >= cap:
             return {"ok": False, "error": "Лимит сообщений в общем чате на сегодня"}
-        mid = await con.fetchval("INSERT INTO hall_messages(email, text, kind) VALUES($1,$2,$3) RETURNING id", email, text, kind)
+        reply_to = None
+        try:
+            raw_reply = int(data.get("reply_to") or 0)
+        except (TypeError, ValueError):
+            raw_reply = 0
+        if raw_reply:
+            parent = await con.fetchrow("SELECT id, reply_to, hidden FROM hall_messages WHERE id=$1", raw_reply)
+            if not parent or parent["hidden"]:
+                return {"ok": False, "error": "Сообщение для ответа не найдено"}
+            reply_to = int(parent["reply_to"] or parent["id"])
+        mid = await con.fetchval(
+            "INSERT INTO hall_messages(email, text, kind, reply_to) VALUES($1,$2,$3,$4) RETURNING id",
+            email, text, kind, reply_to)
     return {"ok": True, "id": mid}
 
 
