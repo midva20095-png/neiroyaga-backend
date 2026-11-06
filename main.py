@@ -333,6 +333,11 @@ CREATE TABLE IF NOT EXISTS vip_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS race_prizes (
+    place SMALLINT PRIMARY KEY,
+    credits INT NOT NULL DEFAULT 0
+);
+INSERT INTO race_prizes(place, credits) VALUES (1, 0), (2, 0), (3, 0) ON CONFLICT (place) DO NOTHING;
 CREATE TABLE IF NOT EXISTS storage_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -4421,7 +4426,7 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
 @app.get("/api/forum/top")
 async def forum_top():
     if not db_ready():
-        return {"ok": True, "authors": []}
+        return {"ok": True, "authors": [], "prizes": [0, 0, 0]}
     async with db_pool.acquire() as con:
         pinned = await con.fetch(
             "SELECT nick, avatar_key, mark, "
@@ -4447,6 +4452,7 @@ async def forum_top():
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
             "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0)) DESC LIMIT 20")
+        prizes = await _race_prizes(con)
     seen = set()
     authors = []
     for r in pinned:
@@ -4461,7 +4467,13 @@ async def forum_top():
         authors.append({"nick": r["nick"], "likes": int(r["real_likes"] or 0) + int(r["boost_likes"] or 0),
                         "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": ("🥇", "🥈", "🥉")[place] if place < 3 else "", "pin": False})
-    return {"ok": True, "authors": authors}
+    return {"ok": True, "authors": authors, "prizes": prizes}
+
+
+async def _race_prizes(con) -> list:
+    rows = await con.fetch("SELECT place, credits FROM race_prizes WHERE place BETWEEN 1 AND 3")
+    got = {int(r["place"]): max(0, int(r["credits"] or 0)) for r in rows}
+    return [got.get(1, 0), got.get(2, 0), got.get(3, 0)]
 
 
 def _story_item(r, fresh: int) -> dict:
@@ -5378,7 +5390,8 @@ async def admin_forum(request: Request, q: str = ""):
             "FROM forum_posts p JOIN users u ON u.email=p.author_email "
             "WHERE COALESCE(p.likes_boost,0) > 0 OR COALESCE(p.views_boost,0) > 0 "
             "ORDER BY p.likes_boost DESC, p.id DESC LIMIT 40")
-    return {"ok": True, "posts": [{
+        prizes = await _race_prizes(con)
+    return {"ok": True, "prizes": prizes, "posts": [{
         "id": r["id"], "nick": r["nick"], "email": r["author_email"], "caption": r["caption"] or "",
         "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"],
         "likes": int(r["likes"] or 0), "likes_boost": int(r["likes_boost"] or 0),
@@ -5398,6 +5411,29 @@ async def admin_forum(request: Request, q: str = ""):
         "id": b["id"], "nick": b["nick"] or "", "email": b["author_email"], "caption": b["caption"] or "",
         "real": int(b["real_likes"] or 0), "boost": int(b["likes_boost"] or 0), "views_boost": int(b["views_boost"] or 0),
     } for b in boosted]}
+
+
+@app.post("/api/admin/forum/prizes")
+async def admin_forum_prizes(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    raw = data.get("prizes") if isinstance(data.get("prizes"), list) else [data.get("p1"), data.get("p2"), data.get("p3")]
+    prizes = []
+    for i in range(3):
+        try:
+            n = int(raw[i] if i < len(raw) else 0)
+        except (TypeError, ValueError):
+            n = 0
+        prizes.append(max(0, min(n, 1000000)))
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        for place, credits in enumerate(prizes, start=1):
+            await con.execute(
+                "INSERT INTO race_prizes(place, credits) VALUES($1,$2) "
+                "ON CONFLICT (place) DO UPDATE SET credits=EXCLUDED.credits", place, credits)
+    return {"ok": True, "prizes": prizes}
 
 
 @app.post("/api/admin/forum/hide")

@@ -261,6 +261,12 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
               '<button class="ghost' + (c.hidden ? '' : ' danger') + '" data-chide="' + c.id + '" data-on="' + (c.hidden ? '0' : '1') + '">' + (c.hidden ? 'Вернуть' : 'Скрыть') + '</button> ' +
               '<button class="ghost' + (c.blocked ? '' : ' danger') + '" data-ban="' + esc(c.email) + '" data-blocked="' + (c.blocked ? '1' : '0') + '">' + (c.blocked ? 'Из ЧС' : 'В ЧС') + '</button></td></tr>';
           }).join('') || '<tr><td colspan="5" class="dim">Комментариев нет</td></tr>') + '</table></div>';
+        var prizes = r.prizes || [0, 0, 0];
+        var prizeBox = '<div class="card"><h3>Призы гонки</h3><p class="dim">Пока стоит 0, в ленте тоже 0. Напишите сумму в кредитах и сохраните. Само ничего не начисляется — это только цифра на дорожке.</p><div class="row">' +
+          '<input class="in" id="pz1" type="number" min="0" value="' + (prizes[0] || 0) + '" style="max-width:120px" placeholder="1 место">' +
+          '<input class="in" id="pz2" type="number" min="0" value="' + (prizes[1] || 0) + '" style="max-width:120px" placeholder="2 место">' +
+          '<input class="in" id="pz3" type="number" min="0" value="' + (prizes[2] || 0) + '" style="max-width:120px" placeholder="3 место">' +
+          '<button class="btn" id="pzsave">Сохранить призы</button></div></div>';
         var leaders = '<div class="card tbl"><h3>Рейтинг, как в ленте</h3><p class="dim">Честные — настоящие нажатия. Накрутка — то, что добавлено здесь. В ленте люди видят сумму, она совпадает с лайками на постах.</p><table><tr><th>#</th><th>Ник</th><th>Честные</th><th>Накрутка</th><th>В ленте</th><th>Честные за 7 дней</th></tr>' +
           ((r.leaders || []).map(function (a, i) {
             return '<tr><td>' + (i + 1) + '</td><td>' + esc(a.nick) + '<br><span class="dim" style="font-size:12px">' + esc(a.email) + '</span></td><td>' + n(a.real) + '</td><td>' + n(a.boost) + '</td><td>' + n(a.shown) + '</td><td>' + n(a.week_real) + '</td></tr>';
@@ -269,7 +275,15 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
           ((r.boosted || []).map(function (p) {
             return '<tr><td>#' + p.id + '<br><span class="dim" style="font-size:12px">' + esc(p.caption || '—') + '</span></td><td>' + esc(p.nick || '—') + '</td><td>' + n(p.real) + '</td><td>+' + n(p.boost) + (p.views_boost ? '<br><span class="dim" style="font-size:12px">просмотры +' + n(p.views_boost) + '</span>' : '') + '</td><td>' + n((p.real || 0) + (p.boost || 0)) + '</td></tr>';
           }).join('') || '<tr><td colspan="5" class="dim">Накрутки ещё нет</td></tr>') + '</table></div>';
-        document.getElementById('flist').innerHTML = leaders + boosted + posts + comments;
+        document.getElementById('flist').innerHTML = prizeBox + leaders + boosted + posts + comments;
+        var pz = document.getElementById('pzsave');
+        if (pz) pz.onclick = function () {
+          var nums = ['pz1', 'pz2', 'pz3'].map(function (id) { return parseInt((document.getElementById(id) || {}).value, 10) || 0; });
+          api('/api/admin/forum/prizes', { prizes: nums }).then(function (x) {
+            toast(x.ok ? 'Призы сохранены' : (x.error || 'Ошибка'));
+            if (x.ok) run();
+          });
+        };
         document.querySelectorAll('[data-boost]').forEach(function (b) {
           b.onclick = function () {
             var id = b.getAttribute('data-boost');
