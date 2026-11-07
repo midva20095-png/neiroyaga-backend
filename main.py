@@ -346,6 +346,10 @@ CREATE TABLE IF NOT EXISTS race_boosts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS race_boosts_author_idx ON race_boosts (author_email, created_at DESC);
+CREATE TABLE IF NOT EXISTS race_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS storage_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -4452,12 +4456,28 @@ def _race_bounds():
 
 
 def _race_points(alias: str = "u") -> str:
+    """Лайки этой недели плюс накрутка, поставленная на этой неделе. Скрытые посты не считаются."""
     return (
         "GREATEST(0, COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
         f"WHERE p.author_email={alias}.email AND NOT p.hidden AND l.created_at >= $1 AND l.created_at < $2), 0)"
-        " + COALESCE((SELECT SUM(b.amount) FROM race_boosts b "
-        f"WHERE b.author_email={alias}.email AND b.created_at >= $1 AND b.created_at < $2), 0))"
+        " + COALESCE((SELECT SUM(b.amount) FROM race_boosts b JOIN forum_posts p ON p.id=b.post_id "
+        f"WHERE p.author_email={alias}.email AND NOT p.hidden AND b.created_at >= $1 AND b.created_at < $2), 0))"
     )
+
+
+async def _race_sync_boosts(con):
+    """Один раз переносит уже стоящую накрутку в текущую неделю. Повторно не делает, чтобы в понедельник она обнулилась."""
+    done = await con.fetchval("SELECT value FROM race_meta WHERE key='boost_backfill'")
+    if done:
+        return
+    await con.execute(
+        "INSERT INTO race_boosts(author_email, post_id, amount) "
+        "SELECT p.author_email, p.id, "
+        "p.likes_boost - COALESCE((SELECT SUM(b.amount) FROM race_boosts b WHERE b.post_id=p.id), 0) "
+        "FROM forum_posts p WHERE NOT p.hidden AND "
+        "p.likes_boost <> COALESCE((SELECT SUM(b.amount) FROM race_boosts b WHERE b.post_id=p.id), 0)")
+    await con.execute(
+        "INSERT INTO race_meta(key, value) VALUES('boost_backfill', '1') ON CONFLICT (key) DO NOTHING")
 
 
 @app.get("/api/forum")
@@ -4485,6 +4505,7 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
                 int(before or 0), FORUM_PAGE)
         posts = await _forum_cards(con, rows, viewer)
         start, end = _race_bounds()
+        await _race_sync_boosts(con)
         points = _race_points("u")
         top = await con.fetch(
             "SELECT u.nick, " + points + " AS likes FROM users u "
@@ -4503,6 +4524,7 @@ async def forum_top():
     start, end = _race_bounds()
     points = _race_points("u")
     async with db_pool.acquire() as con:
+        await _race_sync_boosts(con)
         pinned = await con.fetch(
             "SELECT nick, avatar_key, mark, "
             "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
@@ -5616,6 +5638,7 @@ async def admin_forum(request: Request, q: str = ""):
             "OR lower(c.text) LIKE '%' || $1 || '%') "
             "ORDER BY c.id DESC LIMIT 80", q)
         start, end = _race_bounds()
+        await _race_sync_boosts(con)
         points = _race_points("u")
         leaders = await con.fetch(
             "SELECT u.nick, u.email, "
@@ -5625,8 +5648,8 @@ async def admin_forum(request: Request, q: str = ""):
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS boost_likes, "
             "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
             " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at >= $1 AND l.created_at < $2), 0) AS real_week, "
-            "COALESCE((SELECT SUM(b.amount) FROM race_boosts b "
-            " WHERE b.author_email=u.email AND b.created_at >= $1 AND b.created_at < $2), 0) AS boost_week "
+            "COALESCE((SELECT SUM(b.amount) FROM race_boosts b JOIN forum_posts p ON p.id=b.post_id "
+            " WHERE p.author_email=u.email AND NOT p.hidden AND b.created_at >= $1 AND b.created_at < $2), 0) AS boost_week "
             "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
             "AND " + points + " > 0 "
             "ORDER BY " + points + " DESC LIMIT 20", start, end)
