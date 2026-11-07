@@ -4970,6 +4970,41 @@ async def admin_hall_hide(request: Request):
     return {"ok": True}
 
 
+@app.post("/api/admin/hall/purge")
+async def admin_hall_purge(request: Request):
+    """Стирает сообщение из базы, а не прячет его. hidden_only чистит уже скрытые строки."""
+    if not check_admin(request):
+        return _admin_denied()
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        if data.get("hidden_only"):
+            gone = await con.fetchval("SELECT COUNT(*) FROM hall_messages WHERE hidden")
+            await con.execute("DELETE FROM hall_messages WHERE hidden")
+            return {"ok": True, "deleted": int(gone or 0)}
+        try:
+            mid = int(data.get("id") or 0)
+        except (TypeError, ValueError):
+            mid = 0
+        if not mid:
+            return {"ok": False, "error": "Сообщение не найдено"}
+        row = await con.fetchrow("SELECT id, reply_to FROM hall_messages WHERE id=$1", mid)
+        if not row:
+            return {"ok": False, "error": "Сообщение не найдено"}
+        if row["reply_to"] is None:
+            gone = await con.fetchval(
+                "WITH d AS (DELETE FROM hall_messages WHERE id=$1 OR reply_to=$1 RETURNING 1) SELECT COUNT(*) FROM d",
+                mid)
+        else:
+            gone = await con.fetchval(
+                "WITH d AS (DELETE FROM hall_messages WHERE id=$1 RETURNING 1) SELECT COUNT(*) FROM d", mid)
+    return {"ok": True, "deleted": int(gone or 0)}
+
+
 @app.post("/api/admin/hall/ban")
 async def admin_hall_ban(request: Request):
     if not check_admin(request):
