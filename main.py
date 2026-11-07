@@ -4624,15 +4624,16 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
 
 
 @app.get("/api/forum/top")
-async def forum_top():
+async def forum_top(email: str = ""):
     if not db_ready():
         return {"ok": True, "authors": [], "prizes": [0, 0, 0], "week_ends": 0}
     start, end = _race_bounds()
     points = _race_points("u")
+    viewer = norm_email(email)
     async with db_pool.acquire() as con:
         await _race_sync_boosts(con)
         pinned = await con.fetch(
-            "SELECT nick, avatar_key, mark, "
+            "SELECT email, nick, avatar_key, mark, "
             "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
             " WHERE p.author_email=users.email AND NOT p.hidden), 0) "
             "+ COALESCE((SELECT SUM(COALESCE(likes_boost,0)) FROM forum_posts p "
@@ -4645,12 +4646,16 @@ async def forum_top():
             "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
             "AND " + points + " > 0 ORDER BY likes DESC LIMIT 20", start, end)
         prizes = await _race_prizes(con)
+        followed = set()
+        if viewer:
+            followed = {r["author"] for r in await con.fetch("SELECT author FROM forum_follows WHERE follower=$1", viewer)}
     seen = set()
     authors = []
     for r in pinned:
         seen.add(r["nick"])
         authors.append({"nick": r["nick"], "likes": int(r["likes"] or 0), "avatar": _look_url(r["avatar_key"]),
-                        "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True})
+                        "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True,
+                        "followed": r["email"] in followed})
     for r in rows:
         if r["nick"] in seen or sum(1 for a in authors if not a["pin"]) >= 20:
             continue
