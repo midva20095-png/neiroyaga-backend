@@ -6310,6 +6310,12 @@ async def dm_send(request: Request):
             if int(started or 0) >= 20:
                 return {"ok": False, "error": "Не больше 20 новых диалогов в сутки"}
         me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+        dup = await con.fetchval(
+            "SELECT 1 FROM dm_messages WHERE a_email=$1 AND b_email=$2 AND from_email=$3 AND text=$4 AND kind=$5 "
+            "AND created_at > now() - interval '3 seconds'",
+            a, b, email, text, kind)
+        if dup:
+            return {"ok": True}
         await con.execute(
             "INSERT INTO dm_messages(a_email, b_email, from_email, text, kind, file_key, file_name) VALUES($1,$2,$3,$4,$5,$6,$7)",
             a, b, email, text, kind, file_key, file_name)
