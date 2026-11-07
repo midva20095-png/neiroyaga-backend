@@ -13,7 +13,7 @@ import re as _re
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
@@ -686,11 +686,49 @@ def _s3_put_bytes(data: bytes, key: str, mime: str):
     s3().put_object(Bucket=S3_BUCKET, Key=key, Body=data, ContentType=mime)
 
 
+PUBLIC_API = os.getenv("PUBLIC_BASE", "https://neiroyaga-backend-production.up.railway.app").rstrip("/")
+MEDIA_OK = ("profiles/", "works/", "stories/", "albums/", "forum/")
+
+
 def _s3_url(key: str, download_name: str = None, ttl: int = 86400) -> str:
-    params = {"Bucket": S3_BUCKET, "Key": key}
+    """Ссылка через наш сервер. Прямой адрес хранилища из России без VPN не открывается."""
+    from urllib.parse import quote
+    url = PUBLIC_API + "/api/media/" + quote(key or "", safe="/")
     if download_name:
-        params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
-    return s3().generate_presigned_url("get_object", Params=params, ExpiresIn=ttl)
+        url += "?name=" + quote(str(download_name)[:80])
+    return url
+
+
+@app.get("/api/media/{key:path}")
+async def public_media(key: str, name: str = ""):
+    key = (key or "").strip().lstrip("/")
+    if not key or ".." in key or "\\" in key or not key.startswith(MEDIA_OK) or not s3():
+        return JSONResponse({"ok": False}, status_code=404)
+    try:
+        obj = await asyncio.to_thread(lambda: s3().get_object(Bucket=S3_BUCKET, Key=key))
+    except Exception:
+        return JSONResponse({"ok": False}, status_code=404)
+    body = obj["Body"]
+    mime = obj.get("ContentType") or "application/octet-stream"
+
+    async def chunks():
+        try:
+            while True:
+                part = await asyncio.to_thread(body.read, 256 * 1024)
+                if not part:
+                    break
+                yield part
+        finally:
+            try:
+                body.close()
+            except Exception:
+                pass
+
+    headers = {"Cache-Control": "public, max-age=120" if key.startswith("profiles/") else "public, max-age=86400"}
+    safe = str(name or "").replace('"', "").replace("\n", "")[:80]
+    if safe:
+        headers["Content-Disposition"] = f'attachment; filename="{safe}"'
+    return StreamingResponse(chunks(), media_type=mime, headers=headers)
 
 
 def _look_key(email: str, kind: str) -> str:
