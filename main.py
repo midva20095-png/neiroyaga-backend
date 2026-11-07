@@ -494,7 +494,14 @@ CREATE TABLE IF NOT EXISTS hall_bans (
 );
 ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'text';
 ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS reply_to BIGINT;
+ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS file_key TEXT;
+ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE hall_messages ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS hall_messages_reply_idx ON hall_messages (reply_to, id);
+ALTER TABLE dm_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'text';
+ALTER TABLE dm_messages ADD COLUMN IF NOT EXISTS file_key TEXT;
+ALTER TABLE dm_messages ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE dm_messages ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS hall_seen (
     email TEXT PRIMARY KEY,
     seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -687,7 +694,7 @@ def _s3_put_bytes(data: bytes, key: str, mime: str):
 
 
 PUBLIC_API = os.getenv("PUBLIC_BASE", "https://neiroyaga-backend-production.up.railway.app").rstrip("/")
-MEDIA_OK = ("profiles/", "works/", "stories/", "albums/", "forum/")
+MEDIA_OK = ("profiles/", "works/", "stories/", "albums/", "forum/", "chat/")
 
 
 def _s3_url(key: str, download_name: str = None, ttl: int = 86400) -> str:
@@ -4807,19 +4814,73 @@ async def forum_people(nick: str, request: Request):
 
 HALL_STICKERS = set("🎉 🔥 ❤️ 😂 👍 👑 ✨ 🎁 💯 🚀 😭 😡 👏 🙏 💪 🌹 💎 ⭐ 🍀 🍕 ☕ 🐱 🐶 👻 🤖 💀 😎 🥰 🤩 💜 ⚡ 🏆 🎵 📷 🌈 🍓 💋 🤗 🤔 😴 👋 💃 🕺 🥳".split())
 
+try:
+    from zoneinfo import ZoneInfo
+    _CHAT_TZ = ZoneInfo("Europe/Moscow")
+except Exception:
+    _CHAT_TZ = _dt.timezone(_dt.timedelta(hours=3))
+
+_CHAT_EXT = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+    "application/pdf": "pdf",
+    "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3",
+    "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/aac": "aac",
+    "audio/x-m4a": "m4a",
+}
+
+
+def _chat_when(dt, with_date: bool = False):
+    """Время отправки. at — Москва, если браузер не разберёт ts. ts — точный момент."""
+    if not dt:
+        return "", ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_dt.timezone.utc)
+    local = dt.astimezone(_CHAT_TZ)
+    stamp = local.strftime("%d.%m %H:%M") if with_date else local.strftime("%H:%M")
+    return stamp, dt.astimezone(_dt.timezone.utc).isoformat()
+
+
+def _chat_bytes_ok(blob: bytes, mime: str) -> bool:
+    if mime == "image/jpeg":
+        return blob[:3] == b"\xff\xd8\xff"
+    if mime == "image/png":
+        return blob[:8] == b"\x89PNG\r\n\x1a\n"
+    if mime == "image/gif":
+        return blob[:6] in (b"GIF87a", b"GIF89a")
+    if mime == "image/webp":
+        return len(blob) > 12 and blob[:4] == b"RIFF" and blob[8:12] == b"WEBP"
+    if mime == "application/pdf":
+        return blob[:5] == b"%PDF-"
+    return mime.startswith("audio/")
+
 
 def _hall_person(r) -> dict:
     return {"nick": r["nick"] or "", "mark": r["mark"] or "", "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"])}
 
 
 def _hall_card(r, email: str, replies: int = 0) -> dict:
-    return {"id": r["id"], "text": r["text"], "kind": r["kind"] or "text", "nick": r["nick"] or "",
+    at, ts = _chat_when(r["created_at"], False)
+    kind = r["kind"] or "text"
+    key = r["file_key"] or ""
+    return {"id": r["id"], "text": r["text"], "kind": kind, "nick": r["nick"] or "",
             "mark": r["mark"] or "", "avatar": _look_url(r["avatar_key"]), "vip": bool(r["vip"]),
-            "mine": r["email"] == email, "at": r["created_at"].strftime("%H:%M"), "replies": int(replies or 0)}
+            "mine": r["email"] == email, "at": at, "ts": ts, "replies": int(replies or 0),
+            "file": _look_url(key) if key else "", "name": r["file_name"] or "",
+            "pinned": bool(r["pinned"])}
+
+
+def _dm_card(r, email: str) -> dict:
+    at, ts = _chat_when(r["created_at"], True)
+    kind = r["kind"] or "text"
+    key = r["file_key"] or ""
+    return {"id": r["id"], "mine": r["from_email"] == email, "text": r["text"] or "",
+            "kind": kind, "at": at, "ts": ts, "file": _look_url(key) if key else "",
+            "name": r["file_name"] or "", "pinned": bool(r["pinned"])}
 
 
 _HALL_MSG = (
-    "SELECT m.id, m.text, m.kind, m.created_at, m.email, m.reply_to, u.nick, u.avatar_key, u.mark, "
+    "SELECT m.id, m.text, m.kind, m.created_at, m.email, m.reply_to, m.file_key, m.file_name, m.pinned, "
+    "u.nick, u.avatar_key, u.mark, "
     "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
     "FROM hall_messages m JOIN users u ON u.email=m.email "
 )
@@ -4877,10 +4938,13 @@ async def hall_list(request: Request):
                 "SELECT reply_to, COUNT(*) AS n FROM hall_messages "
                 "WHERE reply_to = ANY($1::bigint[]) AND NOT hidden GROUP BY reply_to", ids):
                 counts[c["reply_to"]] = int(c["n"] or 0)
+        pin_row = await con.fetchrow(
+            _HALL_MSG + "WHERE NOT m.hidden AND m.pinned AND m.reply_to IS NULL ORDER BY m.id DESC LIMIT 1")
     rows = list(reversed(rows))
     return {"ok": True, "members_n": int(members_n or 0),
             "online": [_hall_person(r) for r in online],
             "members": [dict(_hall_person(r), on=bool(r["on"])) for r in members],
+            "pin": _hall_card(pin_row, email) if pin_row else None,
             "messages": [_hall_card(r, email, counts.get(r["id"], 0)) for r in rows]}
 
 
@@ -4894,11 +4958,22 @@ async def hall_post(request: Request):
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Войдите, чтобы писать в общий чат"}, status_code=401)
     text = str(data.get("text") or "").replace("\x00", "").strip()[:400]
-    kind = "sticker" if str(data.get("kind") or "") == "sticker" else "text"
+    kind_in = str(data.get("kind") or "")
+    kind = kind_in if kind_in in ("sticker", "file", "voice") else "text"
+    file_key = None
+    file_name = None
     if kind == "sticker":
         plain = text.replace("\ufe0f", "")
         if text not in HALL_STICKERS and plain not in {s.replace("\ufe0f", "") for s in HALL_STICKERS}:
             return {"ok": False, "error": "Такого стикера нет"}
+    elif kind in ("file", "voice"):
+        file_key = str(data.get("file_key") or "").strip()
+        if not _re.fullmatch(r"chat/[a-f0-9]{16,40}\.[a-z0-9]{2,5}", file_key):
+            return {"ok": False, "error": "Файл не найден"}
+        file_name = str(data.get("file_name") or ("Голосовое" if kind == "voice" else "Файл")).replace("\x00", "").strip()[:80]
+        if not text:
+            text = "Голосовое" if kind == "voice" else (file_name or "Файл")
+        text = text[:400]
     elif not text:
         return {"ok": False, "error": "Пустое сообщение"}
     if not db_ready():
@@ -4928,9 +5003,73 @@ async def hall_post(request: Request):
                 return {"ok": False, "error": "Сообщение для ответа не найдено"}
             reply_to = int(parent["reply_to"] or parent["id"])
         mid = await con.fetchval(
-            "INSERT INTO hall_messages(email, text, kind, reply_to) VALUES($1,$2,$3,$4) RETURNING id",
-            email, text, kind, reply_to)
+            "INSERT INTO hall_messages(email, text, kind, reply_to, file_key, file_name) VALUES($1,$2,$3,$4,$5,$6) RETURNING id",
+            email, text, kind, reply_to, file_key, file_name)
     return {"ok": True, "id": mid}
+
+
+@app.post("/api/chat/upload")
+async def chat_upload(request: Request):
+    """Картинка, pdf или голосовое в общий чат и личку. Ключ выдаёт только сервер."""
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Войдите заново"}, status_code=401)
+    if not db_ready() or not s3():
+        return {"ok": False, "error": "Хранилище недоступно"}
+    mime = str(data.get("mime") or "").split(";")[0].strip().lower()
+    if mime not in _CHAT_EXT:
+        return {"ok": False, "error": "Такой файл нельзя прикрепить"}
+    name = str(data.get("name") or "").replace("\x00", "").replace("\n", " ").strip()[:80]
+    raw_b64 = str(data.get("data") or "")
+    if "," in raw_b64 and raw_b64[:40].lower().startswith("data:"):
+        raw_b64 = raw_b64.split(",", 1)[1]
+    try:
+        blob = base64.b64decode(raw_b64, validate=False)
+    except Exception:
+        return {"ok": False, "error": "Файл не прочитался"}
+    voice = mime.startswith("audio/")
+    limit = 2 * 1024 * 1024 if voice else 4 * 1024 * 1024
+    if not blob or len(blob) > limit or not _chat_bytes_ok(blob, mime):
+        return {"ok": False, "error": "Голосовое до 2 МБ" if voice else "Файл до 4 МБ"}
+    key = "chat/" + uuid.uuid4().hex + "." + _CHAT_EXT[mime]
+    try:
+        await asyncio.to_thread(_s3_put_bytes, blob, key, mime)
+    except Exception:
+        return {"ok": False, "error": "Не удалось сохранить файл"}
+    if not name:
+        name = "Голосовое" if voice else "Файл"
+    return {"ok": True, "key": key, "url": _s3_url(key), "name": name, "kind": "voice" if voice else "file"}
+
+
+@app.post("/api/hall/pin")
+async def hall_pin(request: Request):
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Войдите, чтобы закрепить сообщение"}, status_code=401)
+    if not db_ready() or not mid:
+        return {"ok": False, "error": "Сообщение не найдено"}
+    async with db_pool.acquire() as con:
+        if await con.fetchval("SELECT 1 FROM hall_bans WHERE email=$1", email):
+            return {"ok": False, "error": "Вам закрыт общий чат"}
+        row = await con.fetchrow(
+            "SELECT id, hidden, pinned, reply_to FROM hall_messages WHERE id=$1", mid)
+        if not row or row["hidden"] or row["reply_to"] is not None:
+            return {"ok": False, "error": "Это сообщение нельзя закрепить"}
+        if row["pinned"]:
+            await con.execute("UPDATE hall_messages SET pinned=FALSE WHERE id=$1", mid)
+            return {"ok": True, "pinned": False}
+        await con.execute("UPDATE hall_messages SET pinned=FALSE WHERE pinned")
+        await con.execute("UPDATE hall_messages SET pinned=TRUE WHERE id=$1", mid)
+    return {"ok": True, "pinned": True}
 
 
 @app.get("/api/admin/hall")
@@ -5843,13 +5982,14 @@ async def dm_list(email: str, request: Request):
             if not r["seen"] and r["from_email"] != email:
                 threads[other]["unread"] += 1
             continue
+        at, ts = _chat_when(r["created_at"], True)
         threads[other] = {
             "nick": (r["nick_b"] if r["a_email"] == email else r["nick_a"]) or "без ника",
-            "text": r["text"], "at": r["created_at"].strftime("%d.%m %H:%M"),
+            "text": r["text"], "at": at, "ts": ts,
             "mine": r["from_email"] == email,
             "unread": 0 if r["seen"] or r["from_email"] == email else 1,
         }
-    return {"ok": True, "threads": [{"nick": v["nick"], **{k: v[k] for k in ("text", "at", "mine", "unread")}} for v in threads.values()]}
+    return {"ok": True, "threads": [{"nick": v["nick"], **{k: v[k] for k in ("text", "at", "ts", "mine", "unread")}} for v in threads.values()]}
 
 
 @app.get("/api/dm/chat/{nick}")
@@ -5866,14 +6006,19 @@ async def dm_with(nick: str, request: Request):
         await con.execute(
             "UPDATE dm_messages SET seen=TRUE WHERE a_email=$1 AND b_email=$2 AND from_email<>$3 AND NOT seen",
             a, b, email)
+        limit = 2000 if await _is_vip(con, email) else 200
         rows = await con.fetch(
-            "SELECT id, from_email, text, created_at FROM dm_messages WHERE a_email=$1 AND b_email=$2 ORDER BY id DESC LIMIT $3",
-            a, b, 2000 if await _is_vip(con, email) else 200)
+            "SELECT id, from_email, text, kind, file_key, file_name, pinned, created_at "
+            "FROM dm_messages WHERE a_email=$1 AND b_email=$2 ORDER BY id DESC LIMIT $3",
+            a, b, limit)
         rows = list(reversed(rows))
-    return {"ok": True, "nick": user["nick"], "messages": [{
-        "id": r["id"], "mine": r["from_email"] == email, "text": r["text"],
-        "at": r["created_at"].strftime("%d.%m %H:%M"),
-    } for r in rows]}
+        pin_row = await con.fetchrow(
+            "SELECT id, from_email, text, kind, file_key, file_name, pinned, created_at "
+            "FROM dm_messages WHERE a_email=$1 AND b_email=$2 AND pinned ORDER BY id DESC LIMIT 1",
+            a, b)
+    return {"ok": True, "nick": user["nick"],
+            "pin": _dm_card(pin_row, email) if pin_row else None,
+            "messages": [_dm_card(r, email) for r in rows]}
 
 
 @app.post("/api/dm")
@@ -5886,8 +6031,24 @@ async def dm_send(request: Request):
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
     nick = str(data.get("nick") or "").strip()[:20]
-    text = str(data.get("text") or "").strip()
-    if len(text) < 1 or len(text) > 1000:
+    text = str(data.get("text") or "").replace("\x00", "").strip()
+    kind_in = str(data.get("kind") or "")
+    kind = kind_in if kind_in in ("file", "voice", "sticker") else "text"
+    file_key = None
+    file_name = None
+    if kind == "sticker":
+        plain = text.replace("\ufe0f", "")
+        if text not in HALL_STICKERS and plain not in {s.replace("\ufe0f", "") for s in HALL_STICKERS}:
+            return {"ok": False, "error": "Такого стикера нет"}
+    elif kind in ("file", "voice"):
+        file_key = str(data.get("file_key") or "").strip()
+        if not _re.fullmatch(r"chat/[a-f0-9]{16,40}\.[a-z0-9]{2,5}", file_key):
+            return {"ok": False, "error": "Файл не найден"}
+        file_name = str(data.get("file_name") or ("Голосовое" if kind == "voice" else "Файл")).replace("\x00", "").strip()[:80]
+        if not text:
+            text = "Голосовое" if kind == "voice" else (file_name or "Файл")
+        text = text[:1000]
+    elif len(text) < 1 or len(text) > 1000:
         return {"ok": False, "error": "Сообщение от 1 до 1000 символов"}
     async with db_pool.acquire() as con:
         if await _is_blocked(con, email):
@@ -5913,10 +6074,42 @@ async def dm_send(request: Request):
                 return {"ok": False, "error": "Не больше 20 новых диалогов в сутки"}
         me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
         await con.execute(
-            "INSERT INTO dm_messages(a_email, b_email, from_email, text) VALUES($1,$2,$3,$4)",
-            a, b, email, text)
-        await _note(con, user["email"], "dm", me or "", None, text)
+            "INSERT INTO dm_messages(a_email, b_email, from_email, text, kind, file_key, file_name) VALUES($1,$2,$3,$4,$5,$6,$7)",
+            a, b, email, text, kind, file_key, file_name)
+        note = text if kind in ("text", "sticker") else ("🎤 голосовое" if kind == "voice" else "📎 " + (file_name or "файл"))
+        await _note(con, user["email"], "dm", me or "", None, note)
     return {"ok": True}
+
+
+@app.post("/api/dm/pin")
+async def dm_pin(request: Request):
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    if not mid or not db_ready():
+        return {"ok": False, "error": "Сообщение не найдено"}
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow("SELECT email FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user:
+            return {"ok": False, "error": "Собеседник не найден"}
+        a, b = _dm_pair(email, user["email"])
+        row = await con.fetchrow(
+            "SELECT id, pinned FROM dm_messages WHERE id=$1 AND a_email=$2 AND b_email=$3", mid, a, b)
+        if not row:
+            return {"ok": False, "error": "Сообщение не найдено"}
+        if row["pinned"]:
+            await con.execute("UPDATE dm_messages SET pinned=FALSE WHERE id=$1", mid)
+            return {"ok": True, "pinned": False}
+        await con.execute(
+            "UPDATE dm_messages SET pinned=FALSE WHERE a_email=$1 AND b_email=$2 AND pinned", a, b)
+        await con.execute("UPDATE dm_messages SET pinned=TRUE WHERE id=$1", mid)
+    return {"ok": True, "pinned": True}
 
 
 @app.post("/api/admin/forum/boost")
