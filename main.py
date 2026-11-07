@@ -879,6 +879,8 @@ async def works_list(email: str, request: Request):
         item["template_id"] = r["template_id"] if origin == "template" else None
         item["prompt"] = r["prompt"] if origin == "prompt" else None
         item["can_share_prompt"] = origin == "prompt" and bool(r["prompt"])
+        item["model_key"] = r["model_key"] or ""
+        item["model_name"] = _forum_model_name(r["model_key"] or "") or ((r["source"] or "").strip() if origin == "prompt" else "")
         item["forum_id"] = r["forum_id"]
         if r["skey"] and s3():
             try:
@@ -4208,9 +4210,12 @@ def _forum_repeat(post) -> dict:
             url = f"{url}{join}template={quote(str(post['template_id']), safe='')}"
         return {"type": "templates", "label": "Сделать так же", "url": url}
     if post["share_prompt"] and post["prompt_text"] and post["origin"] == "prompt":
+        key = post["model_key"] or ""
+        if not key and "work_model_key" in post.keys():
+            key = post["work_model_key"] or ""
+        name = _forum_model_name(key) or ((post["source"] or "").strip() if post["origin"] == "prompt" else "")
         return {"type": "prompt", "label": "Повторить промт", "prompt": post["prompt_text"],
-                "model_key": post["model_key"] or "", "model_name": _forum_model_name(post["model_key"] or ""),
-                "url": FORUM_CHAT_URL}
+                "model_key": key, "model_name": name, "url": FORUM_CHAT_URL}
     return None
 
 
@@ -4303,6 +4308,7 @@ _FORUM_SELECT = """
            (SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p2 ON p2.id = l.post_id
              WHERE p2.author_email = p.author_email AND NOT p2.hidden) AS author_likes,
            w.kind AS work_kind, w.url AS work_url, w.skey AS work_skey, w.mime AS work_mime,
+           w.model_key AS work_model_key,
            w.expires_at AS work_expires, (w.data IS NOT NULL) AS has_data
     FROM forum_posts p
     JOIN users u ON u.email = p.author_email
