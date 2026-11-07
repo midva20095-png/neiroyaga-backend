@@ -338,6 +338,14 @@ CREATE TABLE IF NOT EXISTS race_prizes (
     credits INT NOT NULL DEFAULT 0
 );
 INSERT INTO race_prizes(place, credits) VALUES (1, 0), (2, 0), (3, 0) ON CONFLICT (place) DO NOTHING;
+CREATE TABLE IF NOT EXISTS race_boosts (
+    id BIGSERIAL PRIMARY KEY,
+    author_email TEXT NOT NULL,
+    post_id BIGINT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS race_boosts_author_idx ON race_boosts (author_email, created_at DESC);
 CREATE TABLE IF NOT EXISTS storage_subs (
     email TEXT PRIMARY KEY,
     until TIMESTAMPTZ NOT NULL
@@ -4436,6 +4444,22 @@ async def account_font(request: Request):
     return {"ok": True, "font": font}
 
 
+def _race_bounds():
+    """Календарная неделя: понедельник 00:00 — следующий понедельник, Москва."""
+    now = _dt.datetime.now(_CHAT_TZ)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0) - _dt.timedelta(days=now.weekday())
+    return start, start + _dt.timedelta(days=7)
+
+
+def _race_points(alias: str = "u") -> str:
+    return (
+        "GREATEST(0, COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
+        f"WHERE p.author_email={alias}.email AND NOT p.hidden AND l.created_at >= $1 AND l.created_at < $2), 0)"
+        " + COALESCE((SELECT SUM(b.amount) FROM race_boosts b "
+        f"WHERE b.author_email={alias}.email AND b.created_at >= $1 AND b.created_at < $2), 0))"
+    )
+
+
 @app.get("/api/forum")
 async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
     if not db_ready():
@@ -4460,14 +4484,12 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
                 int(before or 0), FORUM_PAGE)
         posts = await _forum_cards(con, rows, viewer)
+        start, end = _race_bounds()
+        points = _race_points("u")
         top = await con.fetch(
-            "SELECT u.nick, "
-            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
-            "+ COALESCE((SELECT SUM(COALESCE(likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS likes "
-            "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
-            "ORDER BY likes DESC LIMIT 3")
+            "SELECT u.nick, " + points + " AS likes FROM users u "
+            "WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
+            "AND " + points + " > 0 ORDER BY likes DESC LIMIT 3", start, end)
     medals = {r["nick"]: m for r, m in zip(top, ("🥇", "🥈", "🥉"))}
     for c in posts:
         c["badge"] = medals.get(c["nick"], "")
@@ -4477,7 +4499,9 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
 @app.get("/api/forum/top")
 async def forum_top():
     if not db_ready():
-        return {"ok": True, "authors": [], "prizes": [0, 0, 0]}
+        return {"ok": True, "authors": [], "prizes": [0, 0, 0], "week_ends": 0}
+    start, end = _race_bounds()
+    points = _race_points("u")
     async with db_pool.acquire() as con:
         pinned = await con.fetch(
             "SELECT nick, avatar_key, mark, "
@@ -4488,21 +4512,10 @@ async def forum_top():
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=users.email AND v.until>now()) AS vip FROM users "
             "WHERE feed_pin AND nick IS NOT NULL AND NOT COALESCE(blocked, FALSE) ORDER BY nick LIMIT 8")
         rows = await con.fetch(
-            "SELECT u.nick, u.avatar_key, u.mark, u.email, "
-            "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS real_likes, "
-            "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS boost_likes, "
+            "SELECT u.nick, u.avatar_key, u.mark, u.email, " + points + " AS likes, "
             "EXISTS(SELECT 1 FROM vip_subs v WHERE v.email=u.email AND v.until>now()) AS vip "
             "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
-            "AND (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
-            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0)) > 0 "
-            "ORDER BY (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
-            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0)) DESC LIMIT 20")
+            "AND " + points + " > 0 ORDER BY likes DESC LIMIT 20", start, end)
         prizes = await _race_prizes(con)
     seen = set()
     authors = []
@@ -4510,15 +4523,15 @@ async def forum_top():
         seen.add(r["nick"])
         authors.append({"nick": r["nick"], "likes": int(r["likes"] or 0), "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": "✦", "pin": True})
-    for i, r in enumerate(rows):
+    for r in rows:
         if r["nick"] in seen or sum(1 for a in authors if not a["pin"]) >= 20:
             continue
         seen.add(r["nick"])
         place = sum(1 for a in authors if not a["pin"])
-        authors.append({"nick": r["nick"], "likes": int(r["real_likes"] or 0) + int(r["boost_likes"] or 0),
+        authors.append({"nick": r["nick"], "likes": int(r["likes"] or 0),
                         "avatar": _look_url(r["avatar_key"]),
                         "mark": r["mark"] or "", "vip": bool(r["vip"]), "badge": ("🥇", "🥈", "🥉")[place] if place < 3 else "", "pin": False})
-    return {"ok": True, "authors": authors, "prizes": prizes}
+    return {"ok": True, "authors": authors, "prizes": prizes, "week_ends": int(end.timestamp())}
 
 
 async def _race_prizes(con) -> list:
@@ -5602,6 +5615,8 @@ async def admin_forum(request: Request, q: str = ""):
             "WHERE ($1 = '' OR lower(COALESCE(u.nick,'')) LIKE '%' || $1 || '%' OR c.author_email LIKE '%' || $1 || '%' "
             "OR lower(c.text) LIKE '%' || $1 || '%') "
             "ORDER BY c.id DESC LIMIT 80", q)
+        start, end = _race_bounds()
+        points = _race_points("u")
         leaders = await con.fetch(
             "SELECT u.nick, u.email, "
             "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
@@ -5609,19 +5624,12 @@ async def admin_forum(request: Request, q: str = ""):
             "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
             " WHERE p.author_email=u.email AND NOT p.hidden), 0) AS boost_likes, "
             "COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at > now() - interval '7 days'), 0) AS real_week, "
-            "COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden AND p.created_at > now() - interval '7 days'), 0) AS boost_week "
+            " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at >= $1 AND l.created_at < $2), 0) AS real_week, "
+            "COALESCE((SELECT SUM(b.amount) FROM race_boosts b "
+            " WHERE b.author_email=u.email AND b.created_at >= $1 AND b.created_at < $2), 0) AS boost_week "
             "FROM users u WHERE u.nick IS NOT NULL AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) "
-            "AND (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0) "
-            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden), 0)) > 0 "
-            "ORDER BY (COALESCE((SELECT COUNT(*) FROM forum_likes l JOIN forum_posts p ON p.id=l.post_id "
-            " WHERE p.author_email=u.email AND NOT p.hidden AND l.created_at > now() - interval '7 days'), 0) "
-            "+ COALESCE((SELECT SUM(COALESCE(p.likes_boost,0)) FROM forum_posts p "
-            " WHERE p.author_email=u.email AND NOT p.hidden AND p.created_at > now() - interval '7 days'), 0)) DESC "
-            "LIMIT 20")
+            "AND " + points + " > 0 "
+            "ORDER BY " + points + " DESC LIMIT 20", start, end)
         boosted = await con.fetch(
             "SELECT p.id, u.nick, p.author_email, left(COALESCE(p.caption,''), 80) AS caption, "
             "(SELECT COUNT(*) FROM forum_likes l WHERE l.post_id=p.id) AS real_likes, "
@@ -5630,7 +5638,7 @@ async def admin_forum(request: Request, q: str = ""):
             "WHERE COALESCE(p.likes_boost,0) > 0 OR COALESCE(p.views_boost,0) > 0 "
             "ORDER BY p.likes_boost DESC, p.id DESC LIMIT 40")
         prizes = await _race_prizes(con)
-    return {"ok": True, "prizes": prizes, "posts": [{
+    return {"ok": True, "prizes": prizes, "week_ends": int(end.timestamp()), "posts": [{
         "id": r["id"], "nick": r["nick"], "email": r["author_email"], "caption": r["caption"] or "",
         "origin": r["origin"], "share_prompt": r["share_prompt"], "hidden": r["hidden"],
         "likes": int(r["likes"] or 0), "likes_boost": int(r["likes_boost"] or 0),
@@ -5645,6 +5653,8 @@ async def admin_forum(request: Request, q: str = ""):
         "nick": x["nick"], "email": x["email"],
         "real": int(x["real_likes"] or 0), "boost": int(x["boost_likes"] or 0),
         "week_real": int(x["real_week"] or 0),
+        "week_boost": int(x["boost_week"] or 0),
+        "week": max(0, int(x["real_week"] or 0) + int(x["boost_week"] or 0)),
         "shown": int(x["real_likes"] or 0) + int(x["boost_likes"] or 0),
     } for x in leaders], "boosted": [{
         "id": b["id"], "nick": b["nick"] or "", "email": b["author_email"], "caption": b["caption"] or "",
@@ -5690,6 +5700,69 @@ async def admin_forum_hide(request: Request):
     if n.endswith(" 0"):
         return {"ok": False, "error": "Пост не найден"}
     return {"ok": True, "hidden": hidden}
+
+
+@app.post("/api/admin/forum/purge")
+async def admin_forum_purge(request: Request):
+    """Стереть пост из базы. hidden_only — все уже снятые с ленты."""
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    hidden_only = bool(data.get("hidden_only"))
+    try:
+        post_id = int(data.get("id") or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    if not hidden_only and not post_id:
+        return {"ok": False, "error": "Нечего удалять"}
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        if hidden_only:
+            rows = await con.fetch("SELECT id, skey FROM forum_posts WHERE hidden")
+        else:
+            rows = await con.fetch("SELECT id, skey FROM forum_posts WHERE id=$1", post_id)
+        ids = [r["id"] for r in rows]
+        if not ids:
+            return {"ok": True, "deleted": 0}
+        await con.execute("DELETE FROM forum_reports WHERE post_id = ANY($1::bigint[])", ids)
+        await con.execute("DELETE FROM forum_donations WHERE post_id = ANY($1::bigint[])", ids)
+        await con.execute("DELETE FROM forum_views WHERE post_id = ANY($1::bigint[])", ids)
+        await con.execute("DELETE FROM forum_notes WHERE post_id = ANY($1::bigint[])", ids)
+        await con.execute("DELETE FROM race_boosts WHERE post_id = ANY($1::bigint[])", ids)
+        await con.execute("DELETE FROM forum_posts WHERE id = ANY($1::bigint[])", ids)
+    keys = [r["skey"] for r in rows if r["skey"]]
+    if keys:
+        try:
+            await asyncio.to_thread(_s3_delete, keys)
+        except Exception:
+            pass
+    return {"ok": True, "deleted": len(ids)}
+
+
+@app.post("/api/admin/forum/comment/purge")
+async def admin_comment_purge(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    hidden_only = bool(data.get("hidden_only"))
+    try:
+        cid = int(data.get("id") or 0)
+    except (TypeError, ValueError):
+        cid = 0
+    if not hidden_only and not cid:
+        return {"ok": False, "error": "Нечего удалять"}
+    if not db_ready():
+        return {"ok": False, "error": "База недоступна"}
+    async with db_pool.acquire() as con:
+        if hidden_only:
+            n = await con.execute("DELETE FROM forum_comments WHERE hidden")
+        else:
+            n = await con.execute("DELETE FROM forum_comments WHERE id=$1", cid)
+    deleted = int(n.split()[-1]) if n and n.split()[-1].isdigit() else 0
+    if not hidden_only and not deleted:
+        return {"ok": False, "error": "Комментарий не найден"}
+    return {"ok": True, "deleted": deleted}
 
 
 @app.post("/api/admin/forum/comment/hide")
@@ -6184,7 +6257,11 @@ async def admin_forum_boost(request: Request):
         row = await con.fetchrow(
             "UPDATE forum_posts SET likes_boost=GREATEST(0, COALESCE(likes_boost,0)+$2), "
             "views_boost=GREATEST(0, COALESCE(views_boost,0)+$3) WHERE id=$1 "
-            "RETURNING likes_boost, views_boost", post_id, likes, views)
+            "RETURNING likes_boost, views_boost, author_email", post_id, likes, views)
+        if row and likes:
+            await con.execute(
+                "INSERT INTO race_boosts(author_email, post_id, amount) VALUES($1,$2,$3)",
+                row["author_email"], post_id, likes)
     if not row:
         return {"ok": False, "error": "Пост не найден"}
     return {"ok": True, "likes_boost": row["likes_boost"], "views_boost": row["views_boost"]}

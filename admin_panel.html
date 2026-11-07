@@ -259,7 +259,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
     var run = function () {
       var q = document.getElementById('fq').value.trim();
       api('/api/admin/forum?q=' + encodeURIComponent(q)).then(function (r) {
-        var posts = '<div class="card tbl"><h3>Посты</h3><table><tr><th>Когда</th><th>Ник</th><th>Подпись</th><th>Лайки</th><th>Просмотры</th><th>Комм.</th><th></th></tr>' +
+        var posts = '<div class="card tbl"><h3>Посты</h3><p class="dim">«Скрыть» убирает пост из ленты, строка остаётся здесь. «Стереть» удаляет его из базы вместе с лайками и комментариями. «Очистить скрытые» стирает всё, что уже снято.</p><button class="ghost danger" id="fclear">Очистить скрытые</button><table><tr><th>Когда</th><th>Ник</th><th>Подпись</th><th>Лайки</th><th>Просмотры</th><th>Комм.</th><th></th></tr>' +
           ((r.posts || []).map(function (p) {
             return '<tr><td>' + esc(p.at) + '</td><td>' + esc(p.nick || '—') + (p.blocked ? ' <span class="tag" style="background:rgba(255,80,120,.2);color:#ff9fb8">ЧС</span>' : '') +
               '<br><span class="dim" style="font-size:12px">' + esc(p.email) + '</span></td><td>' +
@@ -268,17 +268,53 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
               n((p.views || 0) + (p.views_boost || 0)) + '<br><span class="dim" style="font-size:12px">+' + n(p.views_boost || 0) + '</span></td><td>' + n(p.comments || 0) + '</td><td>' +
               '<div class="row"><input class="in" data-bl="' + p.id + '" type="number" placeholder="+лайки" style="max-width:90px"><input class="in" data-bv="' + p.id + '" type="number" placeholder="+просм." style="max-width:90px"><button class="ghost" data-boost="' + p.id + '">Накрутить</button></div>' +
               '<button class="ghost' + (p.hidden ? '' : ' danger') + '" data-hide="' + p.id + '" data-on="' + (p.hidden ? '0' : '1') + '">' + (p.hidden ? 'Вернуть' : 'Скрыть') + '</button> ' +
+              '<button class="ghost danger" data-fpurge="' + p.id + '">Стереть</button> ' +
               '<button class="ghost' + (p.blocked ? '' : ' danger') + '" data-ban="' + esc(p.email) + '" data-blocked="' + (p.blocked ? '1' : '0') + '">' + (p.blocked ? 'Из ЧС' : 'В ЧС') + '</button></td></tr>';
           }).join('') || '<tr><td colspan="7" class="dim">Постов нет</td></tr>') + '</table></div>';
-        var comments = '<div class="card tbl"><h3>Комментарии</h3><table><tr><th>Когда</th><th>Кто</th><th>Текст</th><th>Пост</th><th></th></tr>' +
+        var comments = '<div class="card tbl"><h3>Комментарии</h3><button class="ghost danger" id="cclear">Очистить скрытые</button><table><tr><th>Когда</th><th>Кто</th><th>Текст</th><th>Пост</th><th></th></tr>' +
           ((r.comments || []).map(function (c) {
             return '<tr><td>' + esc(c.at) + '</td><td>' + esc(c.nick || '—') + (c.blocked ? ' <span class="tag" style="background:rgba(255,80,120,.2);color:#ff9fb8">ЧС</span>' : '') +
               '<br><span class="dim" style="font-size:12px">' + esc(c.email) + '</span></td><td>' + esc(c.text) +
               (c.hidden ? '<br><span class="dim" style="font-size:12px">скрыт</span>' : '') + '</td><td>#' + c.post_id + '</td><td>' +
               '<button class="ghost' + (c.hidden ? '' : ' danger') + '" data-chide="' + c.id + '" data-on="' + (c.hidden ? '0' : '1') + '">' + (c.hidden ? 'Вернуть' : 'Скрыть') + '</button> ' +
+              '<button class="ghost danger" data-cpurge="' + c.id + '">Стереть</button> ' +
               '<button class="ghost' + (c.blocked ? '' : ' danger') + '" data-ban="' + esc(c.email) + '" data-blocked="' + (c.blocked ? '1' : '0') + '">' + (c.blocked ? 'Из ЧС' : 'В ЧС') + '</button></td></tr>';
           }).join('') || '<tr><td colspan="5" class="dim">Комментариев нет</td></tr>') + '</table></div>';
         document.getElementById('flist').innerHTML = posts + comments;
+        var fclear = document.getElementById('fclear');
+        if (fclear) fclear.onclick = function () {
+          if (!confirm('Стереть из базы все посты, которые уже скрыты? Вернуть их будет нельзя.')) return;
+          api('/api/admin/forum/purge', { hidden_only: true }).then(function (x) {
+            toast(x.ok ? ('Стерто постов: ' + (x.deleted || 0)) : (x.error || 'Ошибка'));
+            if (x.ok) run();
+          });
+        };
+        var cclear = document.getElementById('cclear');
+        if (cclear) cclear.onclick = function () {
+          if (!confirm('Стереть из базы все скрытые комментарии?')) return;
+          api('/api/admin/forum/comment/purge', { hidden_only: true }).then(function (x) {
+            toast(x.ok ? ('Стерто комментариев: ' + (x.deleted || 0)) : (x.error || 'Ошибка'));
+            if (x.ok) run();
+          });
+        };
+        document.querySelectorAll('[data-fpurge]').forEach(function (b) {
+          b.onclick = function () {
+            if (!confirm('Стереть эту публикацию без возможности вернуть?')) return;
+            api('/api/admin/forum/purge', { id: +b.getAttribute('data-fpurge') }).then(function (x) {
+              toast(x.ok ? 'Стерто' : (x.error || 'Ошибка'));
+              if (x.ok) run();
+            });
+          };
+        });
+        document.querySelectorAll('[data-cpurge]').forEach(function (b) {
+          b.onclick = function () {
+            if (!confirm('Стереть этот комментарий?')) return;
+            api('/api/admin/forum/comment/purge', { id: +b.getAttribute('data-cpurge') }).then(function (x) {
+              toast(x.ok ? 'Стерто' : (x.error || 'Ошибка'));
+              if (x.ok) run();
+            });
+          };
+        });
         document.querySelectorAll('[data-boost]').forEach(function (b) {
           b.onclick = function () {
             var id = b.getAttribute('data-boost');
