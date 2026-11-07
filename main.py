@@ -779,6 +779,50 @@ COVER_PRESETS = (
     ("sweets", "Сладости", True), ("garden", "Сад", True),
 )
 COVER_BY_ID = {i: (n, v) for i, n, v in COVER_PRESETS}
+# id, имя, vip, обложка, фон, кожа, волосы, одежда, глаза, стрижка, стикеры
+HEROES = (
+    ("yaga", "Яга", False, "night", "#24143f", "#f3c7a1", "#6d28d9", "#312e81", "#1a1028", 2, ("🌙", "🔮", "🧹", "🕷️")),
+    ("cat", "Кот", False, "dusk", "#3b1d12", "#f6d7b0", "#ea580c", "#9a3412", "#1c1917", 3, ("🐱", "🐾", "🐟", "💤")),
+    ("spark", "Искра", False, "neon", "#082f49", "#fde68a", "#22d3ee", "#0e7490", "#082f49", 0, ("⚡", "💫", "🩵", "🔷")),
+    ("witch", "Ведьма", True, "pulse", "#3b0764", "#f5d0c5", "#111827", "#6d28d9", "#111827", 2, ("🧙", "🪄", "🧪", "🧿")),
+    ("drake", "Дракон", True, "flare", "#450a0a", "#f6d0b0", "#b91c1c", "#7f1d1d", "#450a0a", 4, ("🐉", "🔥", "🦴", "🟥")),
+    ("fairy", "Фея", True, "silk", "#831843", "#ffe4e6", "#f9a8d4", "#be185d", "#831843", 1, ("🧚", "🦋", "🌸", "💗")),
+    ("baker", "Кексы", True, "cakes", "#9d174d", "#ffe7d6", "#fb7185", "#9f1239", "#881337", 0, ("🧁", "🍰", "🎂", "🍩")),
+    ("torte", "Торт", True, "tort", "#7c2d12", "#ffedd5", "#f59e0b", "#9a3412", "#7c2d12", 2, ("🎂", "🥳", "🕯️", "🍫")),
+    ("bloom", "Лепестки", True, "petals", "#4c1d95", "#ffe4f3", "#f0abfc", "#a21caf", "#4c1d95", 1, ("💮", "🌺", "🌷", "🌼")),
+    ("rose", "Розы", True, "roses", "#4a044e", "#fecdd3", "#be123c", "#881337", "#4c0519", 1, ("🌹", "💐", "🥀", "💋")),
+    ("party", "Шары", True, "balloons", "#1e1b4b", "#fde68a", "#38bdf8", "#4338ca", "#1e1b4b", 0, ("🎈", "🎉", "🎊", "🎁")),
+    ("love", "Сердца", True, "hearts", "#881337", "#ffe4e6", "#fb7185", "#be123c", "#881337", 1, ("💗", "💖", "💕", "💘")),
+    ("sweet", "Сладости", True, "sweets", "#7c2d12", "#fff7ed", "#f472b6", "#c2410c", "#7c2d12", 0, ("🍭", "🍬", "🍪", "🍫")),
+    ("grove", "Сад", True, "garden", "#14532d", "#fef3c7", "#65a30d", "#166534", "#14532d", 3, ("🌻", "🌼", "🐝", "🍃")),
+    ("orbit", "Космос", True, "comet", "#020617", "#e0f2fe", "#818cf8", "#1e3a8a", "#020617", 4, ("🪐", "🚀", "🌌", "👽")),
+    ("neonx", "Неон", True, "laser", "#0f172a", "#fce7f3", "#e879f9", "#701a75", "#0f172a", 0, ("🪩", "🎧", "💜", "🟣")),
+    ("tide", "Волна", True, "wave", "#042f2e", "#cffafe", "#06b6d4", "#155e75", "#042f2e", 1, ("🌊", "🐬", "🐚", "💠")),
+    ("bot", "Матрица", True, "matrix", "#022c22", "#d1fae5", "#22c55e", "#064e3b", "#022c22", 0, ("🤖", "💾", "🟢", "🕹️")),
+    ("king", "Корона", True, "royal", "#3b0764", "#fef3c7", "#eab308", "#6d28d9", "#3b0764", 2, ("👑", "🦁", "🏆", "💍")),
+    ("ghost", "Призрак", True, "vortex", "#1e1b4b", "#e0e7ff", "#c4b5fd", "#312e81", "#1e1b4b", 0, ("👻", "🎃", "🦇", "🕯️")),
+    ("muse", "Муза", True, "holo", "#4a044e", "#fae8ff", "#e879f9", "#a21caf", "#4a044e", 1, ("🎤", "🎸", "🎻", "🎶")),
+    ("fox", "Лиса", True, "aurora", "#7c2d12", "#ffedd5", "#f97316", "#9a3412", "#7c2d12", 3, ("🦊", "🍂", "🍁", "🔥")),
+    ("pirate", "Пират", True, "storm", "#0f172a", "#fed7aa", "#1f2937", "#1e3a8a", "#0f172a", 2, ("🏴‍☠️", "⚓", "🗺️", "🦜")),
+)
+FREE_HERO_STICK = {e for row in HEROES if not row[2] for e in row[10]}
+VIP_HERO_STICK = {e for row in HEROES if row[2] for e in row[10]} - FREE_HERO_STICK
+
+
+def _sticker_ok(text: str, vip: bool) -> bool:
+    plain = text.replace("\ufe0f", "")
+    pool = set(HALL_STICKERS) | FREE_HERO_STICK
+    if vip:
+        pool |= VIP_HERO_STICK
+    plains = {s.replace("\ufe0f", "") for s in pool}
+    return text in pool or plain in plains
+
+
+def _heroes_public():
+    return [{
+        "id": i, "name": n, "vip": v, "cover": c, "bg": bg, "skin": skin,
+        "hair": hair, "cloth": cloth, "eye": eye, "cut": cut, "stickers": list(st),
+    } for i, n, v, c, bg, skin, hair, cloth, eye, cut, st in HEROES]
 
 
 def _cover_view(key: str, vip: bool = True):
@@ -2198,6 +2242,7 @@ async def account_info(email: str, request: Request):
     return {"ok": True, "db": True, "email": email, "nick": nick, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
             "avatar": _look_url(u["avatar_key"]), "cover": cover_url, "cover_style": cover_style,
             "covers": [{"id": i, "name": n, "vip": v} for i, n, v in COVER_PRESETS],
+            "heroes": _heroes_public(),
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
             "categories": cats, "level": _level(bought, vip), "history": history,
             "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
@@ -5051,8 +5096,7 @@ async def hall_post(request: Request):
     file_key = None
     file_name = None
     if kind == "sticker":
-        plain = text.replace("\ufe0f", "")
-        if text not in HALL_STICKERS and plain not in {s.replace("\ufe0f", "") for s in HALL_STICKERS}:
+        if not _sticker_ok(text, True):
             return {"ok": False, "error": "Такого стикера нет"}
     elif kind in ("file", "voice"):
         file_key = str(data.get("file_key") or "").strip()
@@ -5069,6 +5113,8 @@ async def hall_post(request: Request):
     async with db_pool.acquire() as con:
         if await _is_blocked(con, email):
             return {"ok": False, "error": BLOCK_MSG}
+        if kind == "sticker" and not _sticker_ok(text, await _is_vip(con, email)):
+            return {"ok": False, "error": "Этот стикер только для VIP"}
         if await con.fetchval("SELECT 1 FROM hall_bans WHERE email=$1", email):
             return {"ok": False, "error": "Вам закрыт общий чат"}
         fast = await con.fetchval(
@@ -6208,8 +6254,7 @@ async def dm_send(request: Request):
     file_key = None
     file_name = None
     if kind == "sticker":
-        plain = text.replace("\ufe0f", "")
-        if text not in HALL_STICKERS and plain not in {s.replace("\ufe0f", "") for s in HALL_STICKERS}:
+        if not _sticker_ok(text, True):
             return {"ok": False, "error": "Такого стикера нет"}
     elif kind in ("file", "voice"):
         file_key = str(data.get("file_key") or "").strip()
@@ -6224,6 +6269,8 @@ async def dm_send(request: Request):
     async with db_pool.acquire() as con:
         if await _is_blocked(con, email):
             return {"ok": False, "error": BLOCK_MSG}
+        if kind == "sticker" and not _sticker_ok(text, await _is_vip(con, email)):
+            return {"ok": False, "error": "Этот стикер только для VIP"}
         user = await con.fetchrow("SELECT email, nick, blocked, feed_pin FROM users WHERE lower(nick)=lower($1)", nick)
         if not user or user["blocked"]:
             return {"ok": False, "error": "Собеседник не найден"}
