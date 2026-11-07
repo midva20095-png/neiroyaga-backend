@@ -764,6 +764,32 @@ def _look_url(key: str) -> str:
         return ""
 
 
+COVER_PRESETS = (
+    ("night", "Ночь", False), ("neon", "Неон", False), ("dusk", "Закат", False),
+    ("grid", "Сетка", False), ("ember", "Угли", False),
+    ("pulse", "Пульс", True), ("aurora", "Сияние", True), ("wave", "Волна", True),
+    ("laser", "Луч", True), ("orbit", "Орбита", True), ("matrix", "Матрица", True),
+    ("storm", "Шторм", True), ("candy", "Конфетти", True), ("comet", "Комета", True),
+    ("holo", "Голограмма", True), ("vortex", "Вихрь", True), ("spark", "Искры", True),
+    ("tide", "Прилив", True), ("royal", "Корона", True), ("glitch", "Глитч", True),
+    ("bloom", "Цветение", True), ("circuit", "Схема", True), ("nova", "Нова", True),
+    ("silk", "Шёлк", True), ("flare", "Вспышка", True),
+)
+COVER_BY_ID = {i: (n, v) for i, n, v in COVER_PRESETS}
+
+
+def _cover_view(key: str, vip: bool = True):
+    """Своя картинка или готовый стиль. VIP-стиль без подписки снаружи не показываем, ключ в базе остаётся."""
+    key = key or ""
+    if key.startswith("preset:"):
+        pid = key.split(":", 1)[1]
+        item = COVER_BY_ID.get(pid)
+        if not item or (item[1] and not vip):
+            return "", ""
+        return "", pid
+    return _look_url(key), ""
+
+
 def _fit_look(data: bytes, kind: str) -> bytes:
     import io
     from PIL import Image
@@ -2165,8 +2191,10 @@ async def account_info(email: str, request: Request):
     cats = {k: v for k, v in cats.items() if v > 0}
     bought = int(stats["bought"])
     vip = await vip_until(email)
+    cover_url, cover_style = _cover_view(u["cover_key"], bool(vip))
     return {"ok": True, "db": True, "email": email, "nick": nick, "credits": u["credits"], "since": u["created_at"].strftime("%d.%m.%Y"),
-            "avatar": _look_url(u["avatar_key"]), "cover": _look_url(u["cover_key"]),
+            "avatar": _look_url(u["avatar_key"]), "cover": cover_url, "cover_style": cover_style,
+            "covers": [{"id": i, "name": n, "vip": v} for i, n, v in COVER_PRESETS],
             "bought": bought, "payments": int(stats["n"]), "spent": max(0, spent), "generations": max(0, gens),
             "categories": cats, "level": _level(bought, vip), "history": history,
             "vip": {"active": bool(vip), "until": vip.strftime("%d.%m.%Y") if vip else None,
@@ -4360,16 +4388,21 @@ async def account_look(request: Request):
         return {"ok": False, "error": "Неизвестный тип"}
     if not db_ready():
         return {"ok": False, "error": "База недоступна"}
-    if not s3():
-        return {"ok": False, "error": "Хранилище недоступно"}
     col = "avatar_key" if kind == "avatar" else "cover_key"
     clear = bool(data.get("clear"))
+    preset = str(data.get("preset") or "").strip()[:24]
     async with db_pool.acquire() as con:
         old = await con.fetchval(f"SELECT {col} FROM users WHERE email=$1", email)
         if old is None and not await con.fetchval("SELECT 1 FROM users WHERE email=$1", email):
             return {"ok": False, "error": "Нужно войти заново"}
         if clear:
             await con.execute(f"UPDATE users SET {col}=NULL WHERE email=$1", email)
+        elif preset:
+            if kind != "cover" or preset not in COVER_BY_ID:
+                return {"ok": False, "error": "Такой обложки нет"}
+            if COVER_BY_ID[preset][1] and not await _is_vip(con, email):
+                return {"ok": False, "error": "Эта обложка только для VIP"}
+            await con.execute("UPDATE users SET cover_key=$2 WHERE email=$1", email, "preset:" + preset)
         else:
             try:
                 raw = _decode_look(data.get("data") or "")
@@ -4378,6 +4411,8 @@ async def account_look(request: Request):
                 return {"ok": False, "error": str(e)}
             except Exception:
                 return {"ok": False, "error": "Не удалось прочитать картинку"}
+            if not s3():
+                return {"ok": False, "error": "Хранилище недоступно"}
             key = _look_key(email, kind)
             try:
                 await asyncio.to_thread(_s3_put_bytes, jpg, key, "image/jpeg")
@@ -4385,14 +4420,23 @@ async def account_look(request: Request):
                 print(f"⚠️ Профиль: не сохранил {kind} {email}: {e}")
                 return {"ok": False, "error": "Не удалось сохранить картинку"}
             await con.execute(f"UPDATE users SET {col}=$2 WHERE email=$1", email, key)
-            old = None
-    if clear and old:
+            old = None if old == key else old
+    if old and not str(old).startswith("preset:") and (clear or preset or old != _look_key(email, kind)):
         try:
             await asyncio.to_thread(_s3_delete, [old])
         except Exception:
             pass
-    url = "" if clear else _look_url(_look_key(email, kind))
-    return {"ok": True, "kind": kind, "url": url}
+    is_vip = True
+    if db_ready():
+        async with db_pool.acquire() as con:
+            is_vip = await _is_vip(con, email)
+            saved = await con.fetchval(f"SELECT {col} FROM users WHERE email=$1", email)
+    else:
+        saved = ""
+    url, style = _cover_view(saved, is_vip) if kind == "cover" else (_look_url(saved), "")
+    if kind == "avatar":
+        url = "" if clear else _look_url(_look_key(email, kind))
+    return {"ok": True, "kind": kind, "url": url, "style": style}
 
 
 @app.post("/api/account/nick")
@@ -5861,9 +5905,10 @@ async def forum_profile(nick: str, request: Request):
         rows = await con.fetch(
             _FORUM_SELECT + " WHERE NOT p.hidden AND p.author_email=$1 ORDER BY p.id DESC LIMIT 24", user["email"])
         posts = await _forum_cards(con, rows, viewer)
+    cover_url, cover_style = _cover_view(user["cover_key"], bool(user["vip"]))
     return {"ok": True, "nick": user["nick"], "followers": int(followers or 0), "following": int(following or 0),
             "likes": int(likes or 0), "followed": followed, "friend": friend, "mine": viewer == user["email"],
-            "avatar": _look_url(user["avatar_key"]), "cover": _look_url(user["cover_key"]), "mark": user["mark"] or "",
+            "avatar": _look_url(user["avatar_key"]), "cover": cover_url, "cover_style": cover_style, "mark": user["mark"] or "",
             "vip": bool(user["vip"]), "pin": bool(user["feed_pin"]), "font": (user["font"] or "") if user["vip"] and (user["font"] or "") in FONT_OK else "", "posts": posts}
 
 
