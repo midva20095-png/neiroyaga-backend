@@ -774,6 +774,9 @@ COVER_PRESETS = (
     ("tide", "Прилив", True), ("royal", "Корона", True), ("glitch", "Глитч", True),
     ("bloom", "Цветение", True), ("circuit", "Схема", True), ("nova", "Нова", True),
     ("silk", "Шёлк", True), ("flare", "Вспышка", True),
+    ("cakes", "Кексы", True), ("tort", "Торты", True), ("petals", "Лепестки", True),
+    ("roses", "Розы", True), ("balloons", "Шары", True), ("hearts", "Сердца", True),
+    ("sweets", "Сладости", True), ("garden", "Сад", True),
 )
 COVER_BY_ID = {i: (n, v) for i, n, v in COVER_PRESETS}
 
