@@ -5072,6 +5072,27 @@ async def hall_pin(request: Request):
     return {"ok": True, "pinned": True}
 
 
+@app.post("/api/hall/delete")
+async def hall_delete(request: Request):
+    """Автор убирает своё сообщение из чата. Чужие строки не трогает."""
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not db_ready() or not mid:
+        return {"ok": False, "error": "Сообщение не найдено"}
+    async with db_pool.acquire() as con:
+        row = await con.fetchrow("SELECT email, hidden FROM hall_messages WHERE id=$1", mid)
+        if not row or row["hidden"] or row["email"] != email:
+            return {"ok": False, "error": "Можно удалить только своё сообщение"}
+        await con.execute("UPDATE hall_messages SET hidden=TRUE, pinned=FALSE WHERE id=$1", mid)
+    return {"ok": True}
+
+
 @app.get("/api/admin/hall")
 async def admin_hall(request: Request):
     if not check_admin(request):
@@ -6110,6 +6131,34 @@ async def dm_pin(request: Request):
             "UPDATE dm_messages SET pinned=FALSE WHERE a_email=$1 AND b_email=$2 AND pinned", a, b)
         await con.execute("UPDATE dm_messages SET pinned=TRUE WHERE id=$1", mid)
     return {"ok": True, "pinned": True}
+
+
+@app.post("/api/dm/delete")
+async def dm_delete(request: Request):
+    """Автор стирает своё сообщение в личке. Чужое удалить нельзя."""
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    if not mid or not db_ready():
+        return {"ok": False, "error": "Сообщение не найдено"}
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow("SELECT email FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user:
+            return {"ok": False, "error": "Собеседник не найден"}
+        a, b = _dm_pair(email, user["email"])
+        gone = await con.fetchval(
+            "WITH d AS (DELETE FROM dm_messages WHERE id=$1 AND from_email=$2 AND a_email=$3 AND b_email=$4 RETURNING 1) "
+            "SELECT COUNT(*) FROM d",
+            mid, email, a, b)
+    if not int(gone or 0):
+        return {"ok": False, "error": "Можно удалить только своё сообщение"}
+    return {"ok": True}
 
 
 @app.post("/api/admin/forum/boost")
