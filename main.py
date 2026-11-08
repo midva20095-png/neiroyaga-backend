@@ -6394,6 +6394,34 @@ async def dm_drop(request: Request):
     return {"ok": True}
 
 
+@app.post("/api/dm/edit")
+async def dm_edit(request: Request):
+    """Автор редактирует своё текстовое сообщение."""
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+        text = str(data.get("text") or "").replace("\x00", "").strip()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    if not mid or not text or len(text) > 1000 or not db_ready():
+        return {"ok": False, "error": "Сообщение от 1 до 1000 символов"}
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow("SELECT email FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user:
+            return {"ok": False, "error": "Собеседник не найден"}
+        a, b = _dm_pair(email, user["email"])
+        row = await con.fetchrow(
+            "UPDATE dm_messages SET text=$1 WHERE id=$2 AND from_email=$3 AND a_email=$4 AND b_email=$5 AND kind='text' RETURNING id",
+            text, mid, email, a, b)
+    if not row:
+        return {"ok": False, "error": "Можно изменить только своё текстовое сообщение"}
+    return {"ok": True}
+
+
 @app.post("/api/dm/delete")
 async def dm_delete(request: Request):
     """Автор стирает своё сообщение в личке. Чужое удалить нельзя."""
