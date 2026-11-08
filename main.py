@@ -54,11 +54,11 @@ MAX_HISTORY = 30
 SCRIPT_TIMEOUT = 25
 
 MODEL_MAPPING = {
-    'flash': 'gemini-2.5-flash',
-    'flash_25': 'gemini-2.5-flash',
-    'pro': 'gemini-2.5-pro',
-    'nanobanana': 'gemini-2.5-flash-image',
-    'nanobanana_pro': 'gemini-2.5-pro-image'
+    'flash': 'gemini-2.0-flash',
+    'flash_25': 'gemini-2.0-flash',
+    'pro': 'gemini-3.1-pro-preview',
+    'nanobanana': 'gemini-2.0-flash-exp',
+    'nanobanana_pro': 'gemini-3-pro-image-preview'
 }
 
 # Цены в кредитах (1 кредит = 1 ₽)
@@ -100,7 +100,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1beta"})
 
 
 def parse_packages(raw: str) -> dict:
