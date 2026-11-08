@@ -5225,6 +5225,29 @@ async def hall_pin(request: Request):
     return {"ok": True, "pinned": True}
 
 
+@app.post("/api/hall/edit")
+async def hall_edit(request: Request):
+    """Автор редактирует своё текстовое сообщение в зале."""
+    try:
+        data = await request.json()
+        mid = int(data.get("id") or 0)
+        text = str(data.get("text") or "").replace("\x00", "").strip()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not mid or not text or len(text) > 1000 or not db_ready():
+        return {"ok": False, "error": "Сообщение от 1 до 1000 символов"}
+    async with db_pool.acquire() as con:
+        row = await con.fetchrow(
+            "UPDATE hall_messages SET text=$1 WHERE id=$2 AND email=$3 AND kind='text' RETURNING id",
+            text, mid, email)
+    if not row:
+        return {"ok": False, "error": "Можно изменить только своё текстовое сообщение"}
+    return {"ok": True}
+
+
 @app.post("/api/hall/delete")
 async def hall_delete(request: Request):
     """Автор убирает своё сообщение из чата. Чужие строки не трогает."""
