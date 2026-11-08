@@ -902,11 +902,12 @@ async def save_work(email: str, kind: str, title: str, source: str, url: str = N
                 norm_email(email), kind, (title or "")[:160], (source or "")[:60], url, data, mime, WORKS_DAYS,
                 origin_store, tid, prompt_store, (str(model_key).strip()[:60] or None) if model_key else None)
             until = await con.fetchval("SELECT until FROM storage_subs WHERE email=$1 AND until > now()", norm_email(email))
+            if until and wid:
+                await con.execute(
+                    "DELETE FROM works WHERE email=$1 AND NOT extended AND id NOT IN "
+                    "(SELECT id FROM works WHERE email=$1 ORDER BY created_at DESC LIMIT $2)", norm_email(email), WORKS_MAX_PER_USER)
         if until and wid:
             await secure_work(norm_email(email), wid, until)
-            await con.execute(
-                "DELETE FROM works WHERE email=$1 AND NOT extended AND id NOT IN "
-                "(SELECT id FROM works WHERE email=$1 ORDER BY created_at DESC LIMIT $2)", norm_email(email), WORKS_MAX_PER_USER)
     except Exception as e:
         print(f"⚠️ Не удалось сохранить работу {email}: {e}")
 
