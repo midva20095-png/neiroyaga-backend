@@ -6368,6 +6368,32 @@ async def dm_pin(request: Request):
     return {"ok": True, "pinned": True}
 
 
+@app.post("/api/dm/drop")
+async def dm_drop(request: Request):
+    """Удаляет весь диалог с указанным ником."""
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    nick = str(data.get("nick") or "").strip()[:20]
+    if not nick or not db_ready():
+        return {"ok": False, "error": "Диалог не найден"}
+    async with db_pool.acquire() as con:
+        user = await con.fetchrow("SELECT email FROM users WHERE lower(nick)=lower($1)", nick)
+        if not user:
+            return {"ok": False, "error": "Собеседник не найден"}
+        a, b = _dm_pair(email, user["email"])
+        await con.execute("DELETE FROM dm_messages WHERE a_email=$1 AND b_email=$2", a, b)
+        me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+        if me:
+            await con.execute("DELETE FROM forum_notes WHERE email=$1 AND kind='dm' AND from_nick=$2", user["email"], me)
+            await con.execute("DELETE FROM forum_notes WHERE email=$1 AND kind='dm' AND from_nick=$2", email, nick)
+    return {"ok": True}
+
+
 @app.post("/api/dm/delete")
 async def dm_delete(request: Request):
     """Автор стирает своё сообщение в личке. Чужое удалить нельзя."""
