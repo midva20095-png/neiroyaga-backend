@@ -56,7 +56,7 @@ SCRIPT_TIMEOUT = 25
 MODEL_MAPPING = {
     'flash': 'gemini-3.8-flash',
     'flash_25': 'gemini-3.8-flash',
-    'pro': 'gemini-3.1-pro-preview',
+    'pro': 'gemini-2.5-pro',
     'nanobanana': 'gemini-3.1-flash-image',
     'nanobanana_pro': 'gemini-3-pro-image'
 }
