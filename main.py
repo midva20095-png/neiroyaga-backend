@@ -6310,12 +6310,6 @@ async def dm_send(request: Request):
             if int(started or 0) >= 20:
                 return {"ok": False, "error": "Не больше 20 новых диалогов в сутки"}
         me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
-        dup = await con.fetchval(
-            "SELECT 1 FROM dm_messages WHERE a_email=$1 AND b_email=$2 AND from_email=$3 AND text=$4 AND kind=$5 "
-            "AND created_at > now() - interval '3 seconds'",
-            a, b, email, text, kind)
-        if dup:
-            return {"ok": True}
         await con.execute(
             "INSERT INTO dm_messages(a_email, b_email, from_email, text, kind, file_key, file_name) VALUES($1,$2,$3,$4,$5,$6,$7)",
             a, b, email, text, kind, file_key, file_name)
@@ -6374,11 +6368,16 @@ async def dm_delete(request: Request):
         if not user:
             return {"ok": False, "error": "Собеседник не найден"}
         a, b = _dm_pair(email, user["email"])
-        gone = await con.fetchval(
-            "WITH d AS (DELETE FROM dm_messages WHERE id=$1 AND from_email=$2 AND a_email=$3 AND b_email=$4 RETURNING 1) "
-            "SELECT COUNT(*) FROM d",
+        row = await con.fetchrow(
+            "DELETE FROM dm_messages WHERE id=$1 AND from_email=$2 AND a_email=$3 AND b_email=$4 RETURNING text",
             mid, email, a, b)
-    if not int(gone or 0):
+        if row:
+            me = await con.fetchval("SELECT nick FROM users WHERE email=$1", email)
+            if me and row["text"]:
+                await con.execute(
+                    "DELETE FROM forum_notes WHERE email=$1 AND kind='dm' AND from_nick=$2 AND text=$3",
+                    user["email"], me, row["text"][:180])
+    if not row:
         return {"ok": False, "error": "Можно удалить только своё сообщение"}
     return {"ok": True}
 
