@@ -6161,6 +6161,25 @@ async def notify_list(email: str, request: Request):
     return {"ok": True, "unread": int(unread or 0) + int(sunread or 0), "items": items[:40]}
 
 
+@app.post("/api/notify/delete")
+async def notify_delete(request: Request):
+    try:
+        data = await request.json()
+        nid = int(data.get("id") or 0)
+    except Exception:
+        return {"ok": False, "error": "Неверный запрос"}
+    email = norm_email(data.get("email"))
+    if not is_authorized(email, token_from_request(request, data)):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    if not nid or not db_ready():
+        return {"ok": False, "error": "Не найдено"}
+    async with db_pool.acquire() as con:
+        gone = await con.fetchval("DELETE FROM forum_notes WHERE id=$1 AND email=$2 RETURNING 1", nid, email)
+    if not gone:
+        return {"ok": False, "error": "Не найдено"}
+    return {"ok": True}
+
+
 @app.post("/api/notify/read")
 async def notify_read(request: Request):
     try:
