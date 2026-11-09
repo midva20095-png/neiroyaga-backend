@@ -57,8 +57,8 @@ MODEL_MAPPING = {
     'flash': 'gemini-3.8-flash',
     'flash_25': 'gemini-3.8-flash',
     'pro': 'gemini-3.1-pro-preview',
-    'nanobanana': 'gemini-3.8-flash',
-    'nanobanana_pro': 'gemini-3.1-pro-preview'
+    'nanobanana': 'gemini-3.1-flash-image',
+    'nanobanana_pro': 'gemini-3-pro-image'
 }
 
 # Цены в кредитах (1 кредит = 1 ₽)
