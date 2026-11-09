@@ -54,11 +54,11 @@ MAX_HISTORY = 30
 SCRIPT_TIMEOUT = 25
 
 MODEL_MAPPING = {
-    'flash': 'gemini-2.0-flash',
-    'flash_25': 'gemini-2.0-flash',
+    'flash': 'gemini-3.8-flash',
+    'flash_25': 'gemini-3.8-flash',
     'pro': 'gemini-3.1-pro-preview',
-    'nanobanana': 'gemini-2.0-flash-exp',
-    'nanobanana_pro': 'gemini-3-pro-image-preview'
+    'nanobanana': 'gemini-3.8-flash',
+    'nanobanana_pro': 'gemini-3.1-pro-preview'
 }
 
 # Цены в кредитах (1 кредит = 1 ₽)
