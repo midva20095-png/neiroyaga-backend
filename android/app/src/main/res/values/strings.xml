@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">НейроЯга</string>
+    <string name="home_url">https://babayagaland.ru/</string>
+    <string name="offline_title">Нет соединения</string>
+    <string name="offline_body">Проверьте интернет и откройте сайт ещё раз. Чат, кабинет и лента откроются здесь же.</string>
+    <string name="retry">Повторить</string>
+    <string name="choose_file">Выберите файл</string>
+    <string name="download_started">Файл сохраняется в «Загрузки»</string>
+    <string name="download_unsupported">Этот файл можно сохранить со страницы сайта</string>
+    <string name="download_failed">Не удалось сохранить файл</string>
+    <string name="open_failed">Не удалось открыть ссылку</string>
+    <string name="webview_missing">На телефоне нет компонента для сайта. Обновите Android System WebView в магазине приложений и откройте НейроЯгу снова.</string>
+</resources>
