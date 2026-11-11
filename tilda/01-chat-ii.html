@@ -1,0 +1,2456 @@
+<!-- Бот: https://t.me/babayaga_ai_bot . Если username другой, замените эту ссылку во всём файле. Вставлять целиком в один блок T123 вместо прежнего кода. -->
+<section class="vb-nya" data-section-name="НейроЯга — приложение" aria-label="НейроЯга — чат и шаблоны" data-vibeblock-unique-section="yes"> <div id="nya" class="nya"> <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="nyaG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00d4ff"/><stop offset=".5" stop-color="#9d4dff"/><stop offset="1" stop-color="#ff2ec4"/></linearGradient></defs></svg> <div class="nya-aura" aria-hidden="true"></div> <aside class="nya-side"> <a class="nya-brand" href="https://babayagaland.ru/"><span class="nya-logo"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 20.6 14.4 9.6C15.5 7.3 17.4 5.9 20.2 5.5L24.6 5C22.2 6.3 20.6 8.2 20 10.8L23.2 20.6Z" fill="#fff"/><ellipse cx="16" cy="21.6" rx="12.2" ry="2.9" fill="#fff"/><path d="M10.3 17.4H22.1L23.1 20.4H9.1Z" fill="#7a2df0"/><path d="M11.8 19.2 14.6 18 17.3 19.2 20.2 18" fill="none" stroke="#fff" stroke-width=".7" stroke-linecap="round"/><circle cx="11.8" cy="19.2" r=".95" fill="#fff"/><circle cx="14.6" cy="18" r=".95" fill="#fff"/><circle cx="17.3" cy="19.2" r=".95" fill="#fff"/><circle cx="20.2" cy="18" r=".95" fill="#fff"/><path d="M6.6 5.2 7.3 7.1 9.2 7.8 7.3 8.5 6.6 10.4 5.9 8.5 4 7.8 5.9 7.1Z" fill="#fff"/><circle cx="27" cy="11.5" r="1" fill="#fff" opacity=".85"/></svg></span><b>Нейро<i>Яга</i></b></a> <button type="button" class="nya-new" data-act="newchat"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Новый чат</button> <button type="button" class="nya-nav on" data-go="chat"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Чат</button> <button type="button" class="nya-nav" data-go="tpl"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>Шаблоны</button> <button type="button" class="nya-nav" data-go="biz"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg>Бизнес</button> <button type="button" class="nya-nav" data-go="works"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>Мои работы</button> <a class="nya-nav" href="https://babayagaland.ru/lenta"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Лента</a> <a class="nya-nav" href="https://t.me/babayaga_ai_bot" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M21 4 3 11.2l6.2 2.1L17.5 7.5l-6.2 7.2.2 4.3 2.6-3.2L18 18.8 21 4z"/></svg>Telegram-бот</a> <h6>Недавние чаты</h6> <div class="nya-chats" id="nya-chats"></div> <div class="nya-side-foot"> <div class="nya-wallet"><span>Баланс</span><b><i class="nya-cr">—</i> кр.</b><button type="button" class="nya-btn w" data-act="pay">Пополнить</button></div> <a class="nya-acc nya-hub" href="https://babayagaland.ru/kabinet"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></svg><span class="nya-acc-t"><b>Центр управления</b><span>Посты, страница, настройки</span></span><svg class="nya-acc-go" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></a> <button type="button" class="nya-acc" data-act="profile"><i class="nya-ava" id="nya-ava">?</i><span class="nya-acc-t"><b id="nya-acc-title">Кабинет чатов</b><span id="nya-mail">Нажмите, чтобы войти</span></span><svg class="nya-acc-go" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button> </div> </aside> <main class="nya-main"> <header class="nya-top"> <a class="nya-brand" href="https://babayagaland.ru/"><span class="nya-logo"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 20.6 14.4 9.6C15.5 7.3 17.4 5.9 20.2 5.5L24.6 5C22.2 6.3 20.6 8.2 20 10.8L23.2 20.6Z" fill="#fff"/><ellipse cx="16" cy="21.6" rx="12.2" ry="2.9" fill="#fff"/><path d="M10.3 17.4H22.1L23.1 20.4H9.1Z" fill="#7a2df0"/><path d="M11.8 19.2 14.6 18 17.3 19.2 20.2 18" fill="none" stroke="#fff" stroke-width=".7" stroke-linecap="round"/><circle cx="11.8" cy="19.2" r=".95" fill="#fff"/><circle cx="14.6" cy="18" r=".95" fill="#fff"/><circle cx="17.3" cy="19.2" r=".95" fill="#fff"/><circle cx="20.2" cy="18" r=".95" fill="#fff"/><path d="M6.6 5.2 7.3 7.1 9.2 7.8 7.3 8.5 6.6 10.4 5.9 8.5 4 7.8 5.9 7.1Z" fill="#fff"/><circle cx="27" cy="11.5" r="1" fill="#fff" opacity=".85"/></svg></span><b>Нейро<i>Яга</i></b></a> <div class="nya-model" id="nya-model"> <span class="nya-bizlabel" id="nya-bizlabel">💼 Бизнес-помощник</span> <button type="button" data-act="model"><span id="nya-model-name">⚡ Flash</span><i id="nya-model-cost">1 кр.</i><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button> <div class="nya-menu" id="nya-model-menu"></div> </div> <div class="nya-sp"></div> <button type="button" class="nya-ib nya-mob" data-act="chats" title="Мои чаты"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button> <button type="button" class="nya-ib nya-mob" data-act="newchat" title="Новый чат"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button> <a class="nya-ib nya-mob" href="https://t.me/babayaga_ai_bot" target="_blank" rel="noopener" title="Telegram-бот" aria-label="Telegram-бот"><svg viewBox="0 0 24 24"><path d="M21 4 3 11.2l6.2 2.1L17.5 7.5l-6.2 7.2.2 4.3 2.6-3.2L18 18.8 21 4z"/></svg></a> <span class="nya-dot" id="nya-dot" title="Нет соединения"></span> <button type="button" class="nya-pill" data-act="pay">💎 <b class="nya-cr">—</b></button> </header> <div class="nya-view" id="nya-v-chat"> <div class="nya-scroll" id="nya-scroll"><div class="nya-col" id="nya-col"></div></div> <div class="nya-dock"> <div id="nya-bizform"></div> <div class="nya-modes" id="nya-modes"></div> <div class="nya-box"> <div class="nya-chips" id="nya-chips" hidden></div> <textarea id="nya-ta" class="nya-ta" rows="1" placeholder="Спросите НейроЯгу" aria-label="Сообщение"></textarea> <div class="nya-bar"> <div class="nya-tools"> <button type="button" class="nya-ib" data-act="emo" title="Смайлы">😊</button> <div class="nya-menu" id="nya-tools-menu"></div> </div> <label class="nya-ib" id="nya-clip" title="Прикрепить фото или файл"><svg viewBox="0 0 24 24"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.3"/></svg><input type="file" id="nya-file" accept="image/*,application/pdf,.txt" hidden></label> <label class="nya-ab" id="nya-mic" title="Голосовая запись" hidden>🎙 Аудио<input type="file" id="nya-audio" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.flac" hidden></label> <div class="nya-tools" id="nya-asp-wrap" hidden> <button type="button" class="nya-ab" data-act="aspmenu" title="Размер картинки"><span id="nya-asp-shape"></span><span id="nya-asp-label">3:4</span></button> <div class="nya-menu nya-asp-menu" id="nya-asp-menu"></div> </div> <div class="nya-tools" id="nya-vdur" hidden> <button type="button" class="nya-ab" data-act="optmenu" id="nya-opt-btn"></button> <div class="nya-menu nya-opt-menu" id="nya-opt-menu"></div> </div> <div class="nya-sp"></div> <button type="button" class="nya-send" id="nya-send" disabled aria-label="Отправить"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button> </div> </div> <p class="nya-note">НейроЯга может ошибаться. Проверяйте важное.</p> <div id="nya-emo" hidden></div> </div> </div> <div class="nya-view" id="nya-v-tpl" hidden> <div class="nya-scroll"><div class="nya-page"> <h2 class="nya-ph">Шаблоны</h2> <p class="nya-ps">Выберите шаблон, ответьте на пару вопросов и получите готовую картинку</p> <div class="nya-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="nya-q" class="nya-in" type="search" placeholder="Поиск шаблона" autocomplete="off"></div> <div class="nya-cats" id="nya-cats"></div> <div id="nya-hot"></div> <div class="nya-grid" id="nya-grid"><div class="nya-empty">Загружаем шаблоны…</div></div> </div></div> </div> <div class="nya-view" id="nya-v-biz" hidden> <div class="nya-scroll"><div class="nya-page"> <h2 class="nya-ph">💼 Бизнес-помощник</h2> <p class="nya-ps">Готовые инструменты для предпринимателей. Заполните пару полей — получите план, тексты и расчёты. Модель уже выбрана, ничего настраивать не нужно</p> <div class="nya-bizgrid" id="nya-bizgrid"></div> <div id="nya-bizvip"></div> </div></div> </div> <div class="nya-view" id="nya-v-works" hidden> <div class="nya-scroll"><div class="nya-page"> <h2 class="nya-ph">Мои работы</h2> <p class="nya-ps">Картинки, видео и песни — видны с любого устройства</p> <div id="nya-wtop"></div> <div class="nya-grid" id="nya-works"></div> </div></div> </div> <div class="nya-view" id="nya-v-forum" hidden> <div class="nya-scroll"><div class="nya-page" id="nya-forum"><div class="nya-empty">Загружаю форум…</div></div></div> </div> <nav class="nya-tabs"> <button type="button" class="nya-tab on" data-go="chat"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Чат</button> <button type="button" class="nya-tab" data-go="tpl"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>Шаблоны</button> <button type="button" class="nya-tab" data-go="biz"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg>Бизнес</button> <button type="button" class="nya-tab" data-go="works"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>Работы</button> <a class="nya-tab" href="https://babayagaland.ru/lenta"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Лента</a> <button type="button" class="nya-tab" data-act="profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Кабинет</button> </nav> </main> <div class="nya-sheet" id="nya-sheet"><div class="nya-sheet-in" id="nya-sheet-in" role="dialog" aria-modal="true" aria-label="Выбор модели"></div></div> <div class="nya-modal" id="nya-modal"><div class="nya-dlg" role="dialog" aria-modal="true"> <button type="button" class="nya-x" data-act="close" aria-label="Закрыть"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button> <div id="nya-mb"></div> </div></div> <div class="nya-zoom" id="nya-zoom"><img alt=""></div> <div class="nya-toast" id="nya-toast" role="status"></div> </div> <style>
+.vb-nya,.vb-nya *{box-sizing:border-box}
+.vb-nya input,.vb-nya textarea,.vb-nya select{font:inherit}
+html.nya-lock,html.nya-lock body{overflow:hidden!important;height:100%!important;overscroll-behavior:none;background:#06030d!important}
+.nya{--hf:var(--t-headline-font),sans-serif;--bg:#06030d;--p1:#0c0719;--p2:#130b27;--p3:#1b1236;--ln:#241943;--ln2:#35265f;--pk:#ff2ec4;--cy:#00d4ff;--pu:#9d4dff;--tx:#f3ecff;--mut:#a597c9;--dim:#6f6496;--grad:linear-gradient(120deg,#00d4ff 0%,#9d4dff 50%,#ff2ec4 100%);
+  position:fixed;left:0;right:0;top:var(--vb-q8m-h,0px);height:calc(100vh - var(--vb-q8m-h,0px));height:calc(100dvh - var(--vb-q8m-h,0px));z-index:9990;display:flex;background:var(--bg);color:var(--tx);font:400 15px/1.55 var(--t-text-font),system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden;text-align:left}
+.nya *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+.nya button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0;margin:0}
+.nya svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.nya [hidden]{display:none!important}
+.nya :focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+.nya-aura{position:absolute;inset:0;pointer-events:none;z-index:0;background:radial-gradient(60% 45% at 88% -8%,rgba(255,46,196,.15),transparent 70%),radial-gradient(55% 45% at 8% 108%,rgba(0,212,255,.12),transparent 70%),radial-gradient(45% 35% at 50% 45%,rgba(157,77,255,.06),transparent 70%)}
+.nya-side{position:relative;z-index:2;width:272px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;padding:18px 14px;background:rgba(12,7,25,.85);border-right:1px solid var(--ln);overflow:hidden}
+.nya-new{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px!important;margin-bottom:10px!important;border-radius:14px;border:1px solid var(--ln2)!important;background:var(--p2)!important;font-weight:600;transition:border-color .2s,box-shadow .2s}
+.nya-new:hover{border-color:var(--pu)!important;box-shadow:0 0 18px rgba(157,77,255,.25)}
+.nya-chats{flex:1 1 auto;min-height:60px;overflow-y:auto;margin:0 -4px;padding:0 4px;scrollbar-width:thin;scrollbar-color:var(--ln2) transparent}
+.nya-ci{display:flex;align-items:center;border-radius:10px;margin-bottom:2px}
+.nya-ci:hover{background:var(--p2)}
+.nya-ci.on{background:var(--p3)}
+.nya-ci>button:first-child{flex:1;min-width:0;text-align:left;padding:9px 12px!important;border-radius:10px;color:var(--mut)!important;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nya-ci.on>button:first-child{color:var(--tx)!important}
+.nya-del{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;color:var(--dim)!important;opacity:0;flex-shrink:0;margin-right:4px!important}
+.nya-del:hover{color:#ff87e0!important;background:var(--p3)!important}
+.nya-del svg{width:15px;height:15px}
+.nya-ci:hover .nya-del,.nya-ci.on .nya-del{opacity:1}
+@media(pointer:coarse){.nya-del{opacity:1}}
+.nya-chats-empty{padding:8px 12px;color:var(--dim);font-size:13px}
+.nya-dlg .nya-chats{max-height:55vh;margin:4px -4px 0}
+.nya-mob{display:none!important}
+.nya-brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px;text-decoration:none!important;color:var(--tx)!important}
+.nya-logo{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--grad);box-shadow:0 0 22px rgba(255,46,196,.35);font-size:18px;flex-shrink:0}
+.nya-brand b{font:700 17px/1 var(--hf);letter-spacing:-.02em}
+.nya-brand b i{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.nya-logo svg{width:27px;height:27px;display:block}
+.nya-nav{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px!important;border-radius:12px;color:var(--mut)!important;font-weight:500;transition:background .15s,color .15s;text-decoration:none}
+.nya-nav:hover{background:var(--p2)!important;color:var(--tx)!important}
+.nya-nav.on{background:var(--p3)!important;color:var(--tx)!important;box-shadow:inset 3px 0 0 var(--pk)}
+.nya-side h6{margin:20px 12px 6px;font:600 12px/1 var(--t-text-font),sans-serif;color:var(--dim)}
+.nya-tool{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px!important;border-radius:10px;color:var(--mut)!important;font-size:14px;text-align:left}
+.nya-tool:hover{background:var(--p2)!important;color:var(--tx)!important}
+.nya-tool small{margin-left:auto;padding-left:8px;color:var(--dim);font-size:12px;white-space:nowrap}
+.nya-side-foot{margin-top:auto;padding-top:16px;display:flex;flex-direction:column;gap:10px}
+.nya-wallet{padding:14px;border-radius:16px;background:linear-gradient(160deg,rgba(255,46,196,.12),rgba(0,212,255,.06));border:1px solid var(--ln2)}
+.nya-wallet>span{display:block;font-size:12px;color:var(--mut)}
+.nya-wallet>b{display:block;font:700 22px/1.2 var(--hf);margin:4px 0 12px}
+.nya-wallet i{font-style:normal}
+.nya-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px!important;border-radius:12px;font-weight:700;background:var(--grad)!important;color:#fff!important;box-shadow:0 6px 24px rgba(255,46,196,.28);transition:transform .15s,box-shadow .15s;text-decoration:none}
+.nya-btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(255,46,196,.42)}
+.nya-btn:disabled{opacity:.55;transform:none;cursor:wait}
+.nya-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px!important;border-radius:12px;border:1px solid var(--ln2)!important;color:var(--tx)!important;font-weight:600}
+.nya-ghost:hover{background:var(--p2)!important}
+.nya-btn.w,.nya-ghost.w{width:100%}
+.nya-acc{display:flex;align-items:center;gap:10px;padding:8px 10px!important;border-radius:12px;width:100%;text-align:left}
+.nya-ava{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--p3);border:1px solid var(--ln2);font-weight:700;font-size:13px;font-style:normal;flex-shrink:0;text-transform:uppercase}
+.nya-acc{border:1px solid var(--ln2)!important;background:rgba(255,255,255,.03)!important;transition:border-color .15s,background .15s}
+.nya-acc:hover{border-color:var(--pu)!important;background:rgba(157,77,255,.1)!important}
+.nya-acc .nya-acc-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nya-acc .nya-acc-t b{font-size:14px;font-weight:700;color:var(--tx)}
+.nya-acc .nya-acc-t span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--mut)}
+.nya-acc-go{width:16px;height:16px;flex-shrink:0;fill:none;stroke:var(--mut);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nya-hub{text-decoration:none!important;color:var(--tx)!important}
+.nya-hub svg:first-child{width:34px;height:34px;flex-shrink:0;padding:7px;border-radius:10px;fill:none;stroke:#00ffe0;stroke-width:1.7;stroke-linejoin:round;background:rgba(0,255,224,.1)}
+.nya-main{position:relative;z-index:1;flex:1;min-width:0;display:flex;flex-direction:column}
+.nya-top{flex-shrink:0;height:60px;display:flex;align-items:center;gap:10px;padding:0 20px}
+.nya-top .nya-brand{display:none;padding:0}
+.nya-model{position:relative}
+.nya-model>button{display:flex;align-items:center;gap:8px;padding:8px 12px!important;border-radius:12px;font-weight:600;font-size:15px;white-space:nowrap}
+.nya-model>button:hover{background:var(--p2)!important}
+.nya-model>button i{font-style:normal;font-size:12px;color:var(--mut);font-weight:500}
+.nya-model>button svg{width:16px;height:16px;color:var(--mut)}
+.nya-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:290px;max-height:min(72vh,600px);overflow-y:auto;padding:6px;border-radius:16px;background:var(--p2);border:1px solid var(--ln2);box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:30;display:none}
+.nya-menu.on{display:block;animation:nyaPop .16s ease-out}
+@keyframes nyaPop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.nya-opt{display:flex;align-items:flex-start;gap:12px;width:100%;padding:10px 12px!important;border-radius:12px;text-align:left}
+.nya-opt:hover{background:var(--p3)!important}
+.nya-opt.on{background:var(--p3)!important;box-shadow:inset 0 0 0 1px var(--ln2)}
+.nya-opt em{font-style:normal;font-size:18px;line-height:1.3}
+.nya-opt b{display:block;font-weight:600}
+.nya-opt small{display:block;color:var(--mut);font-size:12.5px;line-height:1.35}
+.nya-opt span{margin-left:auto;color:var(--cy);font-size:12px;font-weight:700;white-space:nowrap;padding-top:2px}
+.nya-sp{flex:1}
+.nya-dot{width:8px;height:8px;border-radius:50%;background:#f87171;box-shadow:0 0 8px #f87171;flex-shrink:0}
+.nya-dot.ok{background:#34d399;box-shadow:0 0 8px #34d399}
+.nya-pill{display:none;align-items:center;gap:6px;padding:7px 12px!important;border-radius:999px;border:1px solid var(--ln2)!important;font-weight:700;font-size:13px;white-space:nowrap}
+.nya-pill b{color:#ff87e0}
+.nya-view{flex:1;min-height:0;display:flex;flex-direction:column}
+.nya-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--ln2) transparent}
+.nya-col{max-width:800px;margin:0 auto;padding:12px 24px 24px;display:flex;flex-direction:column;gap:22px;min-height:100%}
+.nya-hello{margin:auto 0;padding:20px 0}
+.nya-hello h1{margin:0;font:700 clamp(30px,5vw,46px)/1.12 var(--hf);letter-spacing:-.03em;background:linear-gradient(100deg,#00d4ff,#9d4dff,#ff2ec4,#00d4ff);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:nyaFlow 9s linear infinite}
+@keyframes nyaFlow{to{background-position:300% 0}}
+.nya-hello p{margin:10px 0 26px;font-size:clamp(18px,2.6vw,24px);color:var(--dim);font-weight:500}
+.nya-sugg{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:900px){.nya-sugg{grid-template-columns:repeat(3,1fr)}}
+.nya-card{display:flex;flex-direction:column;gap:6px;padding:16px!important;border-radius:18px;background:var(--p1)!important;border:1px solid var(--ln)!important;text-align:left;min-height:104px;transition:border-color .2s,background .2s,transform .2s}
+.nya-card:hover{border-color:var(--ln2)!important;background:var(--p2)!important;transform:translateY(-2px)}
+.nya-card em{font-style:normal;font-size:20px}
+.nya-card b{font-weight:600;font-size:14.5px}
+.nya-card small{color:var(--mut);font-size:12.5px;line-height:1.4}
+.nya-u{align-self:flex-end;max-width:min(80%,620px);padding:12px 16px;border-radius:22px 22px 6px 22px;background:var(--p3);border:1px solid var(--ln2);white-space:pre-wrap;word-break:break-word;animation:nyaIn .25s ease-out}
+.nya-u small{display:block;margin-top:6px;color:var(--cy);font-size:12px}
+.nya-b{display:grid;grid-template-columns:32px minmax(0,1fr);gap:14px;animation:nyaIn .3s ease-out}
+@keyframes nyaIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.nya-bav{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--p2);border:1px solid var(--ln2)}
+.nya-bav svg{width:18px;height:18px;fill:url(#nyaG);stroke:none}
+.nya-md{word-break:break-word;color:#ece4ff;padding-top:4px}
+.nya-md p{margin:0 0 10px}.nya-md p:last-child{margin-bottom:0}
+.nya-md h4{margin:14px 0 6px;font-size:16px;font-weight:700;color:#fff}
+.nya-md ul,.nya-md ol{margin:0 0 10px;padding-left:22px}.nya-md li{margin:3px 0}
+.nya-md code{padding:2px 6px;border-radius:6px;background:var(--p3);font:13px/1.4 ui-monospace,Menlo,monospace}
+.nya-md pre{margin:0 0 10px;padding:12px 14px;border-radius:12px;background:#0a0616;border:1px solid var(--ln);overflow-x:auto;white-space:pre}
+.nya-md pre code{padding:0;background:none}
+.nya-md b{color:#fff}
+.nya-img{display:block;max-width:min(100%,460px);border-radius:16px;margin-top:10px;border:1px solid var(--ln2);cursor:zoom-in}
+.nya-acts{display:flex;gap:2px;margin-top:6px}
+.nya-acts button{display:flex;align-items:center;gap:6px;padding:6px 8px!important;border-radius:8px;font-size:12.5px;color:var(--dim)!important}
+.nya-acts button:hover{background:var(--p2)!important;color:var(--tx)!important}
+.nya-acts svg{width:16px;height:16px}
+.nya-think .nya-bav{animation:nyaSpin 2.4s linear infinite}
+@keyframes nyaSpin{to{transform:rotate(360deg)}}
+.nya-think .nya-md{background:linear-gradient(90deg,var(--dim) 30%,#fff 50%,var(--dim) 70%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:nyaShim 1.6s linear infinite}
+@keyframes nyaShim{from{background-position:100% 0}to{background-position:-100% 0}}
+.nya-dock{flex-shrink:0;width:100%;max-width:848px;margin:0 auto;padding:8px 24px 14px}
+.nya-biz{margin-bottom:10px;padding:14px;border-radius:18px;background:var(--p1);border:1px solid var(--ln2);animation:nyaIn .2s ease-out}
+.nya-biz-h{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-weight:600}
+.nya-biz-h small{color:var(--mut);font-weight:500}
+.nya-biz-h button{margin-left:auto!important;color:var(--mut)!important;padding:4px!important}
+.nya-biz-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.nya-biz-g label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+.nya-in{width:100%;padding:11px 13px;border-radius:12px;border:1px solid var(--ln2);background:var(--bg);color:var(--tx);font:inherit;font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+.nya-in:focus{border-color:var(--cy)}
+.nya-in::placeholder{color:var(--dim)}
+.nya-bizgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:6px}
+.nya-bizvip-h{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:28px 0 6px;padding:16px 18px;border-radius:20px;border:1px solid rgba(255,215,106,.5);background:linear-gradient(135deg,rgba(255,215,106,.14),rgba(157,77,255,.12))}
+.nya-bizvip-h>span{font-size:32px}
+.nya-bizvip-h>div{flex:1;min-width:200px}
+.nya-bizvip-h b{display:block;font-size:16px;color:#ffe9a8}
+.nya-bizvip-h small{color:var(--mut);font-size:13px;line-height:1.45}
+.nya-bizsub{margin:22px 0 12px;font-size:17px;font-family:var(--hf)}
+.nya-bizintro{max-width:560px;margin:8vh auto 0;text-align:center;padding:0 12px}
+.nya-bizintro em{font-style:normal;font-size:52px;display:block}
+.nya-bizintro h2{margin:8px 0 6px;font-size:26px;font-family:var(--hf)}
+.nya-bizintro p{color:var(--mut);margin:0 0 10px}
+.nya-bizintro small{display:block;color:var(--mut);font-size:13px;margin-bottom:16px}
+@media(max-width:720px){.nya-bizgrid{grid-template-columns:1fr 1fr;gap:8px}.nya-bizcard{padding:14px!important}.nya-bizcard em{font-size:24px}.nya-bizcard b{font-size:14px}.nya-bizcard small{font-size:12px}
+  .nya-bizlabel{font-size:13px;white-space:nowrap}.nya-bizintro{margin-top:4vh}.nya-bizintro h2{font-size:22px}}
+.nya-bizcard{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:18px!important;border-radius:20px;border:1px solid var(--ln2)!important;
+  background:radial-gradient(120% 100% at 0 0,rgba(0,212,255,.12),transparent 55%),var(--p1)!important;transition:transform .15s,border-color .15s}
+.nya-bizcard:hover{transform:translateY(-2px);border-color:var(--cy)!important}
+.nya-bizcard em{font-style:normal;font-size:28px}
+.nya-bizcard b{font-size:16px}
+.nya-bizcard small{color:var(--mut);font-size:13px;line-height:1.45;flex:1}
+.nya-bizcard span{margin-top:6px;font-size:12px;font-weight:700;color:#ff8be0}
+.nya-bizlabel{display:none;font-weight:700;font-size:15px;padding:6px 4px}
+.nya-bizmode .nya-bizlabel{display:inline-block}
+.nya-bizmode .nya-model [data-act="model"],.nya-bizmode .nya-modes{display:none!important}
+.nya-modes{display:flex;align-items:center;gap:6px;margin:0 0 8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.nya-modes::-webkit-scrollbar{display:none}
+.nya-mode{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:8px 14px!important;border-radius:999px;border:1px solid var(--ln2)!important;background:var(--p1)!important;font-size:13.5px;font-weight:700;color:var(--mut)!important;white-space:nowrap;transition:border-color .15s,color .15s,background .15s}
+.nya-mode:hover{color:var(--tx)!important;border-color:var(--pu)!important}
+.nya-mode.on{color:#fff!important;border-color:transparent!important;background:var(--grad)!important;box-shadow:0 6px 18px rgba(157,77,255,.35)}
+.nya-mpick{flex-shrink:0;margin-left:auto;display:inline-flex;align-items:center;gap:7px;padding:7px 12px!important;border-radius:12px;border:1px dashed var(--ln2)!important;font-size:13px;color:var(--tx)!important;white-space:nowrap}
+.nya-mpick:hover{border-color:var(--cy)!important}
+.nya-mpick small{color:var(--mut);font-size:12px}
+.nya-mpick b{font-weight:700}
+.nya-mpick i{font-style:normal;color:#ff8be0;font-weight:800}
+.nya-sheet{position:absolute;inset:0;z-index:55;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(4,2,10,.7);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.nya-sheet.on{display:flex}
+.nya-sheet-in{width:min(820px,100%);max-height:88%;overflow-y:auto;background:var(--p1);border:1px solid var(--ln2);border-radius:24px;padding:18px 18px 22px;box-shadow:0 30px 80px rgba(0,0,0,.6);animation:nyaUp .25s ease-out}
+.nya-sh-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.nya-sh-top h3{margin:0;font-size:18px;flex:1;font-family:var(--hf)}
+.nya-sh-x{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--p2)!important;color:var(--mut)!important;font-size:18px}
+.nya-sh-modes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.nya-sh-flt{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px}
+.nya-sh-flt button{padding:6px 12px!important;border-radius:999px;border:1px solid var(--ln2)!important;font-size:12.5px;color:var(--mut)!important}
+.nya-sh-flt button.on{border-color:var(--cy)!important;color:var(--tx)!important;background:rgba(0,212,255,.1)!important}
+.nya-tier{margin:16px 0 8px;font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--mut)}
+.nya-tier span{text-transform:none;letter-spacing:0;font-weight:500;margin-left:6px;color:var(--dim)}
+.nya-mgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nya-mc{position:relative;display:flex;flex-direction:column;gap:6px;padding:12px 14px!important;border-radius:16px;border:1px solid var(--ln2)!important;background:var(--p2)!important;text-align:left;transition:border-color .15s,transform .15s}
+.nya-mc:hover{border-color:var(--pu)!important;transform:translateY(-1px)}
+.nya-mc.on{border-color:var(--pk)!important;box-shadow:0 0 0 1px var(--pk) inset}
+.nya-mc-h{display:flex;align-items:center;gap:8px}
+.nya-mc-h b{font-size:14.5px;flex:1;min-width:0}
+.nya-mc-h i{font-style:normal;font-weight:800;font-size:13px;color:#ff8be0;white-space:nowrap}
+.nya-mc p{margin:0;font-size:12.5px;line-height:1.4;color:var(--mut)}
+.nya-mc-t{display:flex;flex-wrap:wrap;gap:4px}
+.nya-mc-t span{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--tx)}
+.nya-mc em{position:absolute;top:-8px;right:10px;font-style:normal;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:8px;background:var(--grad);color:#fff}
+.nya-mc.on em{background:#1f9d63}
+@media(max-width:720px){
+  .nya-modes{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;overflow:visible}
+  .nya-mode{justify-content:center;gap:4px;padding:8px 2px!important;font-size:12px}
+  .nya-mpick{display:none}
+  .nya-sheet{align-items:flex-end;padding:0}
+  .nya-sheet-in{width:100%;max-height:88%;border-radius:24px 24px 0 0;padding:14px 14px calc(20px + env(safe-area-inset-bottom,0px));animation:nyaSheet .28s ease-out}
+  .nya-mgrid{grid-template-columns:1fr}
+}
+@keyframes nyaSheet{from{transform:translateY(100%)}to{transform:none}}
+.nya-box{border-radius:26px;background:var(--p2);border:1px solid var(--ln2);padding:10px 10px 8px 18px;transition:border-color .2s,box-shadow .2s}
+.nya-box:focus-within{border-color:rgba(157,77,255,.75);box-shadow:0 0 0 4px rgba(157,77,255,.12),0 0 40px rgba(255,46,196,.12)}
+.nya-chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px}
+.nya-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;border-radius:999px;background:var(--p3);border:1px solid var(--ln2);font-size:12.5px;max-width:100%}
+.nya-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nya-chip button{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;color:var(--mut)!important;flex-shrink:0}
+.nya-chip svg{width:14px;height:14px}
+.nya-ta{display:block;width:100%;min-height:30px;max-height:200px;resize:none;border:0;outline:0;background:none;color:var(--tx);font:inherit;font-size:16px;line-height:1.5;padding:6px 0;margin:0}
+.nya-ta::placeholder{color:var(--dim)}
+.nya-bar{display:flex;align-items:center;gap:4px;margin-top:2px}
+.nya-ib{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--mut)!important;cursor:pointer;margin:0}
+.nya-ib:hover{background:var(--p3)!important;color:var(--tx)!important}
+.nya-send{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--grad)!important;color:#fff!important;box-shadow:0 4px 18px rgba(255,46,196,.35);transition:transform .15s,opacity .15s}
+.nya-send:disabled{opacity:.3;box-shadow:none;cursor:default}
+.nya-send:not(:disabled):hover{transform:scale(1.06)}
+.nya-tools{position:relative}
+.nya-tools .nya-menu{top:auto;bottom:calc(100% + 8px)}
+.nya-note{margin:8px 0 0;text-align:center;font-size:11.5px;color:var(--dim)}
+#nya-emo{display:flex;flex-wrap:wrap;gap:2px;max-height:190px;overflow:auto;margin:0 0 8px;padding:6px;border-radius:14px;background:#12081c;border:1px solid rgba(157,77,255,.4)}
+#nya-emo[hidden]{display:none!important}
+#nya-emo button{width:34px;height:34px;border:0!important;background:transparent!important;font-size:20px;padding:0!important;box-shadow:none!important}
+.nya-page{max-width:1120px;margin:0 auto;padding:8px 24px 40px}
+.nya-ph{margin:6px 0 4px;font:700 clamp(24px,3.6vw,34px)/1.15 var(--hf);letter-spacing:-.02em;color:var(--tx)}
+.nya-ps{margin:0 0 18px;color:var(--mut)}
+.nya-search{position:relative;max-width:440px;margin-bottom:12px}
+.nya-search svg{position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--dim);width:18px;height:18px}
+.nya-search .nya-in{padding-left:44px;border-radius:999px;background:var(--p1)}
+.nya-cats{display:flex;gap:8px;overflow-x:auto;padding:2px 0 14px;scrollbar-width:none}
+.nya-cats::-webkit-scrollbar{display:none}
+.nya-cat{flex:0 0 auto;padding:8px 14px!important;border-radius:999px;border:1px solid var(--ln2)!important;color:var(--mut)!important;font-size:14px;white-space:nowrap}
+.nya-cat.on{color:#fff!important;background:var(--p3)!important;border-color:var(--pu)!important;box-shadow:0 0 14px rgba(157,77,255,.35)}
+.nya-h3{margin:8px 0 12px;font-weight:700;font-size:16px}
+.nya-strip{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 18px;scroll-snap-type:x mandatory;scrollbar-width:none}
+.nya-strip::-webkit-scrollbar{display:none}
+.nya-strip .nya-t{flex:0 0 170px;scroll-snap-align:start}
+.nya-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:700px){.nya-grid{grid-template-columns:repeat(3,1fr);gap:16px}}
+@media(min-width:1200px){.nya-grid{grid-template-columns:repeat(4,1fr)}}
+.nya-t{position:relative;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;background:var(--p1)!important;border:1px solid var(--ln)!important;text-align:left;transition:transform .2s,border-color .2s,box-shadow .2s;cursor:pointer}
+.nya-t:hover{transform:translateY(-3px);border-color:var(--cy)!important;box-shadow:0 10px 30px rgba(0,212,255,.15)}
+.nya-wshare{display:flex!important;align-items:center;justify-content:center;margin:0 10px 12px;width:calc(100% - 20px)!important;min-width:0!important;min-height:38px;padding:8px 10px!important;border-radius:12px;border:1px solid rgba(0,255,224,.5)!important;background:rgba(0,255,224,.08)!important;color:#00ffe0!important;font:800 13px/1.2 Manrope,sans-serif;box-shadow:none!important;position:relative;z-index:2}
+.nya-wshare:hover{background:rgba(0,255,224,.16)!important}
+.nya-wshared{display:block;margin:0 12px 12px;color:#7af6ea;font-size:12px;font-weight:800}
+.nya-tp{position:relative;aspect-ratio:3/4;min-height:0;overflow:hidden;display:grid;place-items:center;font-size:40px;background:linear-gradient(150deg,#22164a,#0d2b3a)}
+.nya-tp img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+.nya-tb{padding:10px 12px 12px}
+.nya-tb b{display:block;font-size:14px;line-height:1.3;font-weight:600}
+.nya-tb span{display:inline-block;margin-top:6px;font-size:13px;font-weight:700;color:var(--cy)}
+.nya-flag{position:absolute;top:8px;left:8px;padding:3px 9px;border-radius:8px;background:var(--pk);color:#fff;font-size:11.5px;font-weight:700;box-shadow:0 0 12px rgba(255,46,196,.6)}
+.nya-empty{grid-column:1/-1;padding:56px 12px;text-align:center;color:var(--mut)}
+.nya-empty button{margin-top:14px!important}
+.nya-tabs{display:none}
+.nya-modal{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(4,2,10,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.nya-modal.on{display:flex;animation:nyaFade .2s ease-out}
+@keyframes nyaFade{from{opacity:0}to{opacity:1}}
+.nya-dlg{position:relative;width:100%;max-width:480px;max-height:calc(100% - 20px);overflow-y:auto;padding:26px 22px 22px;border-radius:24px;background:var(--p1);border:1px solid var(--ln2);box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 60px rgba(157,77,255,.15);animation:nyaUp .25s cubic-bezier(.2,.9,.3,1)}
+@keyframes nyaUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.nya-x{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--mut)!important;background:var(--p2)!important;z-index:2}
+.nya-x{padding:0!important;border:0!important;-webkit-appearance:none;appearance:none}.nya-x svg{width:18px!important;height:18px!important;fill:none!important;stroke:currentColor!important;stroke-width:2.2;stroke-linecap:round;display:block}
+.nya-dlg h3{margin:0 40px 6px 0;font:700 21px/1.2 var(--hf);letter-spacing:-.02em;color:var(--tx)}
+.nya-dlg p{margin:0 0 16px;color:var(--mut);font-size:14px}
+.nya-lab{display:block;margin:0 0 6px;font-size:13px;font-weight:600;color:var(--cy)}
+.nya-dlg .nya-in{margin-bottom:14px}
+.nya-dlg .nya-ghost{margin-top:10px}
+.nya-err{margin:0 0 14px;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,46,196,.5);background:rgba(255,46,196,.08);font-size:14px}
+.nya-wait{margin:12px 0 0;text-align:center;color:var(--mut);font-size:14px}
+.nya-hero{position:relative;margin:-26px -22px 18px;height:min(56vh,560px);background:#07041a;overflow:hidden;border-radius:24px 24px 0 0}.nya-hero img{display:block;width:100%;height:100%;object-fit:cover}.nya-hero::after{content:'';position:absolute;left:0;right:0;bottom:0;height:90px;background:linear-gradient(transparent,var(--p1))}.nya-dlg .nya-x{background:rgba(6,3,13,.7)!important;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:#fff!important}
+.nya-res{display:block;width:100%;border-radius:16px;margin-bottom:14px;box-shadow:0 0 30px rgba(0,212,255,.2)}
+.nya-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.nya-th{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--cy)}
+.nya-th img{width:100%;height:100%;object-fit:cover;display:block}
+.nya-th button{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.7)!important}
+.nya-th svg{width:14px;height:14px}
+.nya-add{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:12px;border:2px dashed rgba(0,212,255,.6);color:var(--cy);font-size:13px;font-weight:700;cursor:pointer;background:rgba(0,212,255,.04);margin:0}
+.nya-add input{display:none}
+.nya-mt{padding:6px 12px 8px;font-size:12px;font-weight:600;color:var(--dim)}
+.nya-opt-menu{min-width:250px!important;left:auto!important;right:0}
+.nya-ab{white-space:nowrap}
+.nya-ab i{font-style:normal;opacity:.6;font-size:11px}
+.nya-dim{color:var(--mut);font-size:14px;margin:6px 0}
+.nya-cab-h{display:flex;align-items:center;gap:14px;margin:0 40px 16px 0}
+.nya-cab-av{width:56px;height:56px;border-radius:18px;background:var(--grad);display:grid;place-items:center;font:700 24px/1 var(--hf);color:#fff;flex-shrink:0;text-transform:uppercase;box-shadow:0 0 24px rgba(157,77,255,.35)}
+.nya-cab-h b{display:block;font-size:16px;word-break:break-all}
+.nya-cab-h small{color:var(--mut);font-size:13px}
+.nya-cab-lv{display:inline-block;margin-top:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:rgba(157,77,255,.18);color:#d9b8ff;border:1px solid rgba(157,77,255,.4)}
+.nya-cab-lv.vip{background:linear-gradient(135deg,#ffd76a,#ff9f43);color:#3a1d00;border:0}
+.nya-cab-bal{position:relative;overflow:hidden;border-radius:20px;padding:18px;margin-bottom:14px;background:linear-gradient(135deg,rgba(0,212,255,.18),rgba(157,77,255,.2) 55%,rgba(255,46,196,.18));border:1px solid var(--ln2)}
+.nya-cab-bal::after{content:'';position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.12),transparent 70%);pointer-events:none;z-index:0}
+.nya-cab-bal>*{position:relative;z-index:1}
+.nya-cab-bal small{color:var(--mut);font-size:13px}
+.nya-cab-bt{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.nya-cab-bt b{font:700 34px/1.1 var(--hf)}
+.nya-cab-bt .nya-btn{padding:10px 18px!important;font-size:14px}
+.nya-cab-en{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.nya-cab-en span{font-size:12px;padding:5px 10px;border-radius:999px;background:rgba(6,3,13,.45);color:var(--tx)}
+.nya-cab-tabs{display:flex;gap:4px;padding:4px;margin-bottom:14px;border-radius:14px;background:rgba(255,255,255,.04)}
+.nya-cab-tabs button{flex:1;padding:9px 4px!important;border-radius:10px;font-weight:600;font-size:14px;color:var(--mut)!important;white-space:nowrap}
+.nya-cab-tabs button.on{background:var(--grad)!important;color:#fff!important}
+.nya-cab-st{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.nya-cab-st div{border:1px solid var(--ln2);border-radius:14px;padding:12px 6px;text-align:center;background:rgba(255,255,255,.02)}
+.nya-cab-st b{display:block;font:700 18px/1.2 var(--hf)}
+.nya-cab-st small{color:var(--mut);font-size:11px}
+.nya-cab-card{border:1px solid var(--ln2);border-radius:16px;padding:14px;margin-bottom:14px;background:rgba(255,255,255,.02)}
+.nya-cab-card h4{margin:0 0 10px;font-size:14px;font-weight:700}
+.nya-cab-pg{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin:8px 0 6px}
+.nya-cab-pg i{display:block;height:100%;border-radius:99px;background:var(--grad)}
+.nya-cab-card p{margin:0;color:var(--mut);font-size:13px}
+.nya-cab-bar{display:grid;grid-template-columns:112px 1fr auto;align-items:center;gap:10px;margin:8px 0;font-size:13px}
+.nya-cab-bar div{height:10px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+.nya-cab-bar div i{display:block;height:100%;border-radius:99px}
+.nya-cab-bar b{font-weight:700;white-space:nowrap}
+.nya-cab-flt{display:flex;gap:6px;margin-bottom:8px}
+.nya-cab-flt button{padding:7px 14px!important;border-radius:999px;border:1px solid var(--ln2)!important;font-size:13px;color:var(--mut)!important}
+.nya-cab-flt button.on{border-color:var(--cy)!important;color:var(--tx)!important;background:rgba(0,212,255,.1)!important}
+.nya-cab-day{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 4px}
+.nya-cab-tx{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--ln)}
+.nya-cab-ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:18px;flex-shrink:0}
+.nya-cab-tx>div{flex:1;min-width:0}
+.nya-cab-tx>.nya-cab-ic{flex:0 0 38px}
+.nya-cab-tx b{font-size:14px;font-weight:600;display:block}
+.nya-cab-tx small{display:block;color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nya-cab-tx span{text-align:right;font-weight:700;white-space:nowrap;font-size:14px}
+.nya-cab-tx span em{display:block;font-style:normal;font-weight:400;font-size:11px;color:var(--mut)}
+.nya-cab-tx .p{color:#3ee08f}.nya-cab-tx .m{color:#ff7ad6}
+.nya-cab-pw{display:grid;gap:8px}
+.nya-cab-pw .nya-in{margin:0!important}
+@media(max-width:520px){.nya-cab-st{grid-template-columns:repeat(2,1fr)}.nya-cab-bt b{font-size:30px}.nya-cab-bar{grid-template-columns:96px 1fr auto}}
+.nya-mtabs{display:flex;gap:4px;padding:4px;margin:0 0 6px;border-radius:12px;background:rgba(255,255,255,.04);position:sticky;top:-6px;z-index:2;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.nya-mtab{flex:1;padding:8px 4px!important;border-radius:9px;font-size:13px;font-weight:600;color:var(--mut)!important;white-space:nowrap}
+.nya-mtab.on{background:var(--grad)!important;color:#fff!important}
+.nya-mh{padding:12px 12px 4px;font-size:12px;font-weight:600;color:var(--dim);border-top:1px solid var(--ln);margin-top:6px}
+.nya-lnk{color:#fff;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.nya-wflt{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.nya-wflt button{padding:7px 14px!important;border-radius:999px;border:1px solid var(--ln2)!important;font-size:13px;color:var(--mut)!important}
+.nya-wflt button.on{border-color:var(--cy)!important;color:var(--tx)!important;background:rgba(0,212,255,.1)!important}
+.nya-wnote{font-size:13px;line-height:1.5;color:#ffd9f4;background:rgba(255,46,196,.1);border:1px solid rgba(255,46,196,.35);border-radius:14px;padding:10px 14px;margin-bottom:12px}
+.nya-wnote.ok{color:#c9ffe4;background:rgba(62,224,143,.1);border-color:rgba(62,224,143,.4)}
+.nya-wm{position:relative}
+.nya-wm video,.nya-wm img{display:block;width:100%;height:100%;object-fit:cover}
+.nya-wplay{position:absolute;inset:0;display:grid;place-items:center;font-size:30px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6);pointer-events:none}
+.nya-waud{display:grid;place-items:center;width:100%;height:100%;font-size:46px;background:radial-gradient(circle at 50% 40%,rgba(62,224,143,.25),transparent 65%),#0f0a1e}
+.nya-wleft{position:absolute;left:8px;top:8px;font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:rgba(6,3,13,.75);color:#fff}
+.nya-wleft.warn{background:#ff2ec4}
+.nya-wleft.keep{background:#1f9d63}
+.nya-wview img,.nya-wview .nya-res{display:block;width:100%;max-height:42vh;object-fit:contain;border-radius:16px;margin-bottom:12px;background:#07041a}
+.nya-wview video{display:block;width:100%;max-height:42vh;border-radius:16px;background:#000;margin-bottom:12px}
+.nya-wview audio{display:block;width:100%;margin:10px 0 12px}
+.nya-wview .nya-waud{height:180px;border-radius:16px;margin-bottom:6px}
+.nya-txtres{white-space:pre-wrap;word-break:break-word;font-size:14.5px;line-height:1.6;background:var(--p2);border:1px solid var(--ln2);border-radius:16px;padding:14px 16px;max-height:52vh;overflow-y:auto;margin:6px 0 8px;-webkit-user-select:text;user-select:text}
+.nya-txtmeta{font-size:12px!important;color:var(--mut);margin:0 0 12px!important}
+.nya-tarea{resize:vertical;min-height:58px;font:inherit;line-height:1.45}
+.nya-tp-txt{display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:radial-gradient(circle at 50% 35%,rgba(0,212,255,.22),transparent 60%),linear-gradient(160deg,#1c1240,#0f0a24)!important}
+.nya-tp-txt span{font-size:42px}
+.nya-tp-txt small{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#bfefff}
+.nya-refrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nya-refcode{font-size:20px;letter-spacing:.05em;margin-right:auto;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.nya-refrow .nya-btn,.nya-refrow .nya-ghost{padding:9px 14px!important;font-size:13px}
+.nya-refin{display:flex;gap:8px;margin-top:10px}
+.nya-refin .nya-in{flex:1;min-width:0}
+.nya-refin .nya-in::placeholder{text-transform:none}
+.nya-stbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.nya-stbtns .nya-pack{position:relative}
+.nya-stbtns .nya-pack em{position:absolute;top:-9px;right:10px;font-style:normal;font-size:11px;font-weight:800;padding:3px 9px;border-radius:8px;background:var(--grad);color:#fff;line-height:1.2}
+.nya-stwarn{font-size:13.5px;line-height:1.5;margin:0 0 12px;color:#ffd9f4;background:rgba(255,46,196,.12);border:1px solid rgba(255,46,196,.4);border-radius:12px;padding:10px 12px}
+.nya-stcard.on{border-color:rgba(62,224,143,.45)!important}
+.nya-keep{margin-top:8px;font-size:12.5px;line-height:1.45;color:#ffc6ee}
+.nya-keep a{color:#fff;text-decoration:underline;text-underline-offset:2px}
+.nya-keep.ok{color:#a8f5cd}
+.nya-aud{display:block;width:100%;max-width:460px;margin-top:10px}
+.nya-aud-l{margin-top:12px;font-size:13px;color:var(--mut)}
+.nya-vid{display:block;width:100%;max-width:520px;max-height:70vh;border-radius:16px;margin-top:10px;border:1px solid var(--ln2);background:#000}
+.nya-acts a{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;font-size:12.5px;color:var(--dim)!important;text-decoration:none!important}
+.nya-acts a:hover{background:var(--p2);color:var(--tx)!important}
+.nya-engs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.nya-eng{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:12px 12px!important;border-radius:14px;border:1px solid var(--ln2)!important;text-align:left;transition:border-color .15s,background .15s}
+.nya-eng:hover{border-color:var(--pu)!important}
+.nya-eng b{font-weight:700;font-size:14px;color:var(--tx)}
+.nya-eng small{font-size:12px;color:var(--mut);line-height:1.35}
+.nya-eng span{margin-top:4px;font-weight:700;color:var(--cy);font-size:14px}
+.nya-eng.on{border-color:var(--cy)!important;background:rgba(0,212,255,.08)!important;box-shadow:0 0 14px rgba(0,212,255,.2)}
+.nya-asps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.nya-asp{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;min-height:78px;padding:10px 6px!important;border-radius:12px;border:1px solid var(--ln2)!important;color:var(--mut)!important;font-size:12px;transition:border-color .15s,background .15s}
+.nya-asp:hover{border-color:var(--pu)!important}
+.nya-asp b{font-weight:600;color:var(--tx);font-size:13px}
+.nya-asp.on{border-color:var(--cy)!important;background:rgba(0,212,255,.08)!important;box-shadow:0 0 14px rgba(0,212,255,.2)}
+.nya-shape{display:block;border:2px solid currentColor;border-radius:4px;flex-shrink:0}
+.nya-asp.on .nya-shape{color:var(--cy)}
+.nya-ab{display:flex;align-items:center;gap:7px;height:36px;padding:0 12px!important;border-radius:999px;border:1px solid var(--ln2)!important;color:var(--mut)!important;font-size:13px;font-weight:600;margin-left:2px!important}
+.nya-ab:hover{color:var(--tx)!important;border-color:var(--pu)!important}
+.nya-ab .nya-shape{border-width:1.6px;border-radius:3px}
+.nya-asp-menu{min-width:0!important;width:290px;padding:10px!important}
+.nya-asp-menu .nya-asps{margin:0}
+.nya-packs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px}
+.nya-pack{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:16px 10px!important;border-radius:16px;background:var(--p2)!important;border:1px solid var(--ln2)!important;transition:border-color .2s,transform .2s}
+.nya-pack:hover{border-color:var(--pk)!important;transform:translateY(-2px)}
+.nya-pack b{font:700 18px/1.2 var(--hf);color:#ff87e0}
+.nya-pack span{color:var(--mut);font-size:14px}
+.nya-cat-vip{border-color:rgba(255,215,106,.6)!important;color:#ffe9a8!important;background:linear-gradient(135deg,rgba(255,215,106,.14),rgba(255,159,67,.08))!important}
+.nya-cat-vip.on{background:linear-gradient(135deg,#ffd76a,#ff9f43)!important;color:#3a1d00!important;border-color:transparent!important}
+.nya-vipban{display:flex;gap:14px;align-items:flex-start;padding:16px 18px;margin:0 0 16px;border-radius:20px;border:1px solid rgba(255,215,106,.5);background:linear-gradient(135deg,rgba(255,215,106,.14),rgba(157,77,255,.12))}
+.nya-vipban>span{font-size:34px;line-height:1}
+.nya-vipban>div{flex:1;min-width:0}
+.nya-vipban b{display:block;font-size:16px;color:#ffe9a8;margin-bottom:4px}
+.nya-vipban small{display:block;color:var(--mut);font-size:13px;line-height:1.45}
+.nya-vipban.on{border-color:rgba(62,224,143,.5)}
+.nya-vipor{font-size:13px!important;color:var(--mut);text-align:center;margin:-8px 0 0!important}
+.nya-vipcard{border-color:rgba(255,215,106,.45)!important}
+.nya-vippack{position:relative;display:flex;align-items:center;gap:12px;width:100%;margin:0 0 20px;padding:14px 16px!important;border-radius:18px;text-align:left;
+  background:linear-gradient(135deg,rgba(255,215,106,.18),rgba(255,159,67,.12) 50%,rgba(157,77,255,.18))!important;border:1px solid rgba(255,215,106,.55)!important;box-shadow:0 10px 30px rgba(255,159,67,.15);transition:transform .15s}
+.nya-vippack:hover{transform:translateY(-2px)}
+.nya-vippack div{flex:1;min-width:0}
+.nya-vippack b{display:block;font-size:15px;color:#ffe9a8}
+.nya-vippack small{display:block;color:var(--mut);font-size:12px;line-height:1.4;margin-top:2px}
+.nya-vippack strong{font-size:17px;font-weight:800;color:#fff;white-space:nowrap}
+.nya-vipcrown{font-size:28px}
+.nya-vipnow{margin:0 0 10px;font-weight:700;color:#ffe9a8}
+.nya-viphero{font-size:52px;text-align:center;margin:4px 0 6px}
+.nya-viplist{margin:0 0 14px;padding-left:18px;color:var(--mut);font-size:13.5px;line-height:1.7}
+.nya-vipbadge{position:absolute;top:8px;left:8px;z-index:2;padding:3px 8px;border-radius:8px;font-size:11px;font-weight:800;color:#3a1d00;background:linear-gradient(135deg,#ffd76a,#ff9f43)}
+.nya-pack i{position:absolute;top:-8px;right:10px;font-style:normal;padding:2px 8px;border-radius:6px;background:var(--grad);font-size:11px;font-weight:700;color:#fff}
+.nya-toast{position:absolute;left:50%;bottom:110px;z-index:60;transform:translate(-50%,10px);max-width:min(92%,420px);padding:11px 16px;border-radius:14px;background:var(--p3);border:1px solid var(--ln2);font-size:14px;text-align:center;opacity:0;pointer-events:none;transition:.2s}
+.nya-toast.on{opacity:1;transform:translate(-50%,0)}
+.nya-zoom{position:absolute;inset:0;z-index:70;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.92);cursor:zoom-out}
+.nya-zoom.on{display:flex}
+.nya-zoom img{max-width:100%;max-height:100%;border-radius:12px}
+.nya-fcard{margin:0 0 14px;padding:12px;border-radius:16px;background:var(--p1);border:1px solid var(--ln2)}
+.nya-fcard header{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.nya-fcard header b{font-size:15px}
+.nya-fcard header span,.nya-fcard header time{color:var(--dim);font-size:12px}
+.nya-fcard header time{margin-left:auto}
+.nya-fcard img,.nya-fcard video{display:block;width:100%;min-height:180px;max-height:420px;object-fit:contain;border-radius:12px;background:#000}
+.nya-fcard audio{width:100%;margin-top:6px}
+.nya-fcap{margin:8px 0;white-space:pre-wrap}
+.nya-facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.nya-facts .nya-ghost,.nya-facts .nya-btn{padding:8px 12px!important;font-size:13px}
+.nya-fexpired{padding:28px 12px;text-align:center;color:var(--dim);border:1px dashed var(--ln2);border-radius:12px}
+.nya-fcoms{margin-top:10px;display:grid;gap:6px}
+.nya-fcom{margin:0;font-size:13.5px;line-height:1.4}
+.nya-fcom.reply{margin-left:16px;padding-left:10px;border-left:2px solid #b366ff}
+.nya-fcom b,.nya-fnickbtn{color:#00ffe0;background:none;border:0;padding:0;font-weight:700;cursor:pointer}
+.nya-fcomf{display:flex;gap:8px;margin-top:8px}
+.nya-fcomf .nya-in{flex:1;margin:0;padding:9px 12px;font-size:14px}
+.nya-ftools{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.nya-fnick{display:flex;gap:8px;margin:0 0 12px}
+.nya-fnick .nya-in{flex:1}
+@media(max-width:1024px){
+  .nya-side{display:none}
+  .nya-top{height:calc(56px + env(safe-area-inset-top,0px));padding:env(safe-area-inset-top,0px) 12px 0;border-bottom:1px solid var(--ln);background:rgba(10,6,22,.9)}
+  .nya-top .nya-brand{display:flex}
+  .nya-pill{display:inline-flex}
+  .nya-mob{display:grid!important}
+  .nya-tabs{display:flex;flex-shrink:0;border-top:1px solid var(--ln);background:rgba(10,6,22,.96);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .nya-tab{flex:1;display:flex!important;flex-direction:column;align-items:center;gap:2px;padding:8px 0 7px!important;font-size:11px;font-weight:800;color:#efe8ff!important;text-decoration:none}
+  .nya-tab svg{width:22px;height:22px}
+  .nya-tab.on{color:#00ffe0!important;box-shadow:inset 0 3px 0 #00ffe0}
+  .nya-tab.on svg{color:var(--pk);filter:drop-shadow(0 0 6px rgba(255,46,196,.6))}
+  .nya-col{padding:12px 16px 20px}
+  .nya-dock{padding:6px 10px 8px}
+  .nya-page{padding:14px 16px 32px}
+  .nya-modal{align-items:flex-end;padding:0}
+  .nya-dlg{max-width:none;max-height:92%;border-radius:24px 24px 0 0;border-bottom:0;padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
+  .nya-note{display:none}
+  .nya-toast{bottom:160px}
+}
+@media(max-width:600px){
+  .nya-top .nya-brand b{display:none}
+  .nya-model>button{font-size:14px;padding:8px 4px!important;gap:4px}
+  .nya-top{gap:4px}
+  .nya-model>button i{display:none}
+  .nya-menu{min-width:min(300px,calc(100vw - 24px))}
+  .nya-card{min-height:0;padding:13px!important;gap:4px}
+  .nya-card small{display:none}
+  .nya-hello{padding:8px 0}
+  .nya-hello p{margin:6px 0 18px}
+  .nya-biz-g{grid-template-columns:1fr 1fr}
+  .nya-biz-g>div:last-child:nth-child(odd){grid-column:1/-1}
+  .nya-u{max-width:88%}
+  .nya-b{grid-template-columns:28px minmax(0,1fr);gap:10px}
+  .nya-bav{width:28px;height:28px}
+}
+@media(prefers-reduced-motion:reduce){.nya *{animation:none!important;transition:none!important}}
+</style> <script>
+(function () {
+  'use strict';
+  var root = document.getElementById('nya');
+  if (!root || root.dataset.ready) return;
+  root.dataset.ready = '1';
+
+  var API = 'https://neiroyaga-backend-production.up.railway.app';
+  var PACKS = [{ c: 250, p: 250 }, { c: 525, p: 500, hit: 1 }, { c: 1060, p: 1000 }, { c: 2750, p: 2500 }];
+  var MODELS = [
+    { id: 'flash', icon: '⚡', name: 'Flash', desc: 'Быстрые ответы на любые вопросы', cost: 4 },
+    { id: 'pro', icon: '🧠', name: 'Pro', desc: 'Сложные задачи, анализ и длинные тексты', cost: 15 },
+    { id: 'nanobanana', icon: '🎨', name: 'Картинка', desc: 'Создание и обработка изображений', cost: 20 },
+    { id: 'nanobanana_pro', icon: '🌟', name: 'Картинка Pro', desc: 'Максимальное качество изображений', cost: 50 }
+  ];
+  var BIZ = {
+    plan: { icon: '📊', title: 'Бизнес-план', desc: 'Расходы, окупаемость, маркетинг и риски', fields: [
+      { id: 'sphere', label: 'Сфера бизнеса', ph: 'Кофейня, пункт выдачи…' },
+      { id: 'budget', label: 'Бюджет (руб)', ph: '300 000' },
+      { id: 'city', label: 'Город', ph: 'Калуга' }],
+      tpl: 'Действуй как опытный бизнес-консультант. Составь подробный бизнес-план для проекта: {sphere}. Город: {city}, стартовый бюджет: {budget} рублей. Напиши: 1) Описание продукта и целевой аудитории, 2) Расчет основных расходов и окупаемости, 3) Маркетинговую стратегию привлечения клиентов, 4) Главные риски. Дополнительные пожелания: {user_prompt}' },
+    vk: { icon: '🛍️', title: 'Продажи во ВКонтакте', desc: 'Оформление группы, посты и реклама', fields: [
+      { id: 'niche', label: 'Ниша / товар', ph: 'Ремонт обуви, одежда…' },
+      { id: 'city', label: 'Город / регион', ph: 'Москва / онлайн' },
+      { id: 'goal', label: 'Главная цель', ph: 'Запустить продажи с нуля' }],
+      tpl: 'Ты — эксперт по SMM и продажам во ВКонтакте. Напиши пошаговый план запуска и оформления сообщества VK для ниши: {niche}. Регион: {city}. Цель: {goal}. Включи: 1) Структуру шапки и описания группы, 2) Идеи для первых 5 продающих постов, 3) План настройки таргетированной рекламы или продвижения. Пожелания: {user_prompt}' },
+    risks: { icon: '⚠️', title: 'Разбор проблем', desc: 'Причины, сценарии решения, ошибки', fields: [
+      { id: 'sphere', label: 'Сфера бизнеса', ph: 'Общепит, услуги…' },
+      { id: 'problem', label: 'Главная сложность', ph: 'Мало клиентов, кассовый разрыв…' }],
+      tpl: 'Разбери бизнес-ситуацию в нише: {sphere}. Главная проблема: {problem}. Проанализируй причины, предложи 3 пошаговых сценария решения и укажи 5 главных ошибок, которых нужно избежать. Пожелания: {user_prompt}' },
+    utp: { icon: '🚀', title: 'Генератор УТП', desc: 'Сильные офферы и акции для продаж', fields: [
+      { id: 'product', label: 'Продукт / услуга', ph: 'Авторские торты…' },
+      { id: 'audience', label: 'Кто покупает?', ph: 'Мамы, молодёжь…' }],
+      tpl: 'Сформулируй 5 сильных УТП (уникальных торговых предложений) для продукта: {product}. Целевая аудитория: {audience}. Предложи мощный продающий оффер для рекламы и 3 акции для быстрого роста продаж. Пожелания: {user_prompt}' },
+    ask: { icon: '💬', title: 'Вопрос бизнес-консультанту', desc: 'Любой вопрос о вашем деле — ответ как от эксперта', fields: [],
+      tpl: 'Ты — опытный бизнес-консультант и маркетолог для малого бизнеса в России. Ответь на вопрос предпринимателя чётко и практично: сначала короткий вывод, затем конкретные шаги и примеры. Вопрос: {user_prompt}' },
+    rivals: { icon: '🔎', title: 'Анализ конкурентов', desc: 'Сильные и слабые стороны, чем выделиться', fields: [
+      { id: 'niche', label: 'Ваша ниша', ph: 'Барбершоп, доставка роллов…' },
+      { id: 'city', label: 'Город', ph: 'Казань' },
+      { id: 'rivals', label: 'Конкуренты (если знаете)', ph: 'Названия или ссылки' }],
+      tpl: 'Ты — маркетолог-аналитик. Проведи анализ конкурентной среды для ниши: {niche}, город: {city}. Известные конкуренты: {rivals}. Опиши: 1) типичные сильные и слабые стороны конкурентов в этой нише, 2) что обычно не устраивает клиентов, 3) 5 способов выделиться, 4) ценовое позиционирование, 5) с чего начать на этой неделе. Пожелания: {user_prompt}' },
+    price: { icon: '💰', title: 'Ценообразование', desc: 'Цена, наценка, точка безубыточности', fields: [
+      { id: 'product', label: 'Товар / услуга', ph: 'Торт на заказ, маникюр…' },
+      { id: 'cost', label: 'Себестоимость (руб)', ph: '1 200' },
+      { id: 'market', label: 'Цены у конкурентов', ph: '2 000 – 3 500' }],
+      tpl: 'Ты — финансовый консультант малого бизнеса. Помоги установить цену на: {product}. Себестоимость: {cost} руб. Цены на рынке: {market}. Рассчитай: 1) рекомендуемую цену и наценку с объяснением, 2) точку безубыточности в штуках в месяц (сделай разумные допущения и укажи их), 3) три ценовых пакета (эконом/стандарт/премиум), 4) как поднимать цену без потери клиентов. Пожелания: {user_prompt}' },
+    script: { icon: '📞', title: 'Скрипт продаж', desc: 'Диалог для звонка или переписки с клиентом', fields: [
+      { id: 'product', label: 'Что продаёте', ph: 'Курс английского, ремонт квартир…' },
+      { id: 'channel', label: 'Где общаетесь', ph: 'Звонок, WhatsApp, Директ…' },
+      { id: 'objection', label: 'Частое возражение', ph: 'Дорого, подумаю…' }],
+      tpl: 'Ты — тренер по продажам. Напиши скрипт продаж для: {product}. Канал общения: {channel}. Частое возражение клиентов: {objection}. Структура: приветствие и установление контакта, выявление потребности (5 вопросов), презентация через выгоды, работа с возражениями (включая указанное и ещё 3 частых), закрытие сделки. Пиши живыми репликами. Пожелания: {user_prompt}' }
+  };
+  var BIZ_COST = 15;
+  var ASPECTS = [
+    { v: '1:1', n: 'Квадрат' }, { v: '4:5', n: 'Пост' }, { v: '3:4', n: 'Портрет' },
+    { v: '9:16', n: 'Сторис' }, { v: '4:3', n: 'Альбом' }, { v: '16:9', n: 'Широкий' }
+  ];
+  var CAT_ORDER = ['VIP', 'Тексты', 'Бизнес', 'День рождения', 'Осень', 'Развлечение', 'Семья', 'Новый год', 'Зима', 'Знаки зодиака'];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var qa = function (sel) { return Array.prototype.slice.call(root.querySelectorAll(sel)); };
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'nyt_token' && e.newValue && e.newValue !== S.token) { S.token = e.newValue; S.email = ls('nyt_email') || S.email; }
+  });
+  function ls(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {}
+    return null;
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  var IC = {
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+    dl: '<svg viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>',
+    trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+    star: '<svg viewBox="0 0 24 24"><path d="M12 2c.6 4.8 2.7 8.4 10 10-7.3 1.6-9.4 5.2-10 10-.6-4.8-2.7-8.4-10-10 7.3-1.6 9.4-5.2 10-10z"/></svg>'
+  };
+  function inl(s) {
+    return s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s.,!?)]|$)/g, '$1<i>$2</i>');
+  }
+  function md(src) {
+    var t = esc(src || ''), blocks = [];
+    t = t.replace(/```[a-zA-Z]*\n?([\s\S]*?)```/g, function (_, c) { blocks.push('<pre><code>' + c.replace(/\n$/, '') + '</code></pre>'); return '\n\u0001' + (blocks.length - 1) + '\u0001\n'; });
+    var out = [], para = [], list = null;
+    function fp() { if (para.length) { out.push('<p>' + para.join('<br>') + '</p>'); para = []; } }
+    function fl() { if (list) { out.push('<' + list.t + '>' + list.i.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</' + list.t + '>'); list = null; } }
+    t.split('\n').forEach(function (l) {
+      var m, s = l.trim();
+      if (/^\u0001\d+\u0001$/.test(s)) { fp(); fl(); out.push(s); return; }
+      if (!s) { fp(); fl(); return; }
+      if ((m = s.match(/^#{1,4}\s+(.*)/))) { fp(); fl(); out.push('<h4>' + inl(m[1]) + '</h4>'); return; }
+      if ((m = s.match(/^[-*•]\s+(.*)/))) { fp(); if (!list || list.t !== 'ul') { fl(); list = { t: 'ul', i: [] }; } list.i.push(inl(m[1])); return; }
+      if ((m = s.match(/^\d+[.)]\s+(.*)/))) { fp(); if (!list || list.t !== 'ol') { fl(); list = { t: 'ol', i: [] }; } list.i.push(inl(m[1])); return; }
+      fl(); para.push(inl(s));
+    });
+    fp(); fl();
+    return out.join('').replace(/\u0001(\d+)\u0001/g, function (_, i) { return blocks[+i]; });
+  }
+  function toast(m) {
+    var t = $('nya-toast'); t.textContent = m; t.classList.add('on');
+    clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove('on'); }, 3200);
+  }
+  function req(path, opts, ms) {
+    opts = opts || {};
+    var ac = window.AbortController ? new AbortController() : null, tm = setTimeout(function () { if (ac) ac.abort(); }, ms || 30000);
+    if (ac) opts.signal = ac.signal;
+    opts.headers = Object.assign({ 'Content-Type': 'application/json' }, S.token ? { Authorization: 'Bearer ' + S.token } : {});
+    return fetch(API + path, opts).then(function (r) {
+      clearTimeout(tm);
+      if (r.status === 401) { logout(true); throw { auth: true }; }
+      return r.json();
+    }, function (e) { clearTimeout(tm); throw e; });
+  }
+  var coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+
+  var S = {
+    email: ls('neiro_user_email') || ls('nyt_email') || '', token: ls('nyt_token') || '', credits: null,
+    model: ls('nya_model') || 'flash', view: 'chat', ws: null, tries: 0, stopWs: false,
+    waiting: false, waitT: null, pendingChat: null, chats: [], chatId: null, legacy: false, file: null, biz: null, bizFirst: false, hist: [], hasMsgs: false,
+    tpl: [], cat: '', q: '', cur: null, photos: {}, busy: false, lastSrc: null, after: null, deepDone: false
+  };
+  if (!MODELS.some(function (m) { return m.id === S.model; })) S.model = 'flash';
+  var savedModel = S.model;
+  var VASP = ['16:9', '9:16', '1:1'], VIDEO_MARK = '🎬 Видео готово', IMAGE_MARK = '🖼 Картинка готова', MUSIC_MARK = '🎵 Музыка готова';
+  S.audio = null;
+  S.vmodels = []; S.vaspect = ls('nya_vaspect') || '16:9'; S.vdur = +ls('nya_vdur') || 5; S.iq = ls('nya_iq') || 'medium';
+  if (VASP.indexOf(S.vaspect) < 0) S.vaspect = '16:9';
+  try { S.vjob = JSON.parse(ls('nya_vjob') || 'null'); } catch (e) { S.vjob = null; }
+  S.aspect = ls('nya_aspect') || '3:4';
+  if (!ASPECTS.some(function (a) { return a.v === S.aspect; })) S.aspect = '3:4';
+  var col = $('nya-col'), scroller = $('nya-scroll'), ta = $('nya-ta'), sendBtn = $('nya-send');
+
+  document.documentElement.classList.add('nya-lock');
+  function fit() {
+    var v = window.visualViewport; if (!v) return;
+    root.style.height = v.height + 'px'; root.style.top = v.offsetTop + 'px';
+  }
+  if (window.visualViewport) { visualViewport.addEventListener('resize', fit); visualViewport.addEventListener('scroll', fit); fit(); }
+
+  function go(v) {
+    S.view = v;
+    ['chat', 'tpl', 'works', 'biz', 'forum'].forEach(function (x) { $('nya-v-' + x).hidden = x !== v; });
+    if (v === 'biz') bizDraw();
+    if (v === 'forum') forumOpen();
+    if (v !== 'chat' && S.biz) endBiz();
+    qa('[data-go]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-go') === v); });
+    $('nya-model').style.visibility = v === 'chat' ? 'visible' : 'hidden';
+    closeMenus();
+    if (v === 'tpl' && !S.tpl.length) loadTemplates();
+    if (v === 'works') { S.sw = null; worksDraw(); }
+    if (v === 'chat' && S.hasMsgs) bottom();
+  }
+
+  function setCredits(v) {
+    if (v === undefined || v === null || v === '') return;
+    S.credits = v;
+    qa('.nya-cr').forEach(function (e) { e.textContent = v; });
+  }
+  function account() {
+    $('nya-acc-title').textContent = 'Кабинет чатов';
+    $('nya-mail').textContent = S.email || 'Нажмите, чтобы войти';
+    $('nya-ava').textContent = S.email ? S.email.charAt(0) : '?';
+    if (!S.email) qa('.nya-cr').forEach(function (e) { e.textContent = '—'; });
+  }
+  function loadBalance() {
+    if (!S.email) return;
+    req('/api/balance/' + encodeURIComponent(S.email)).then(function (r) {
+      if (!r || !r.ok) return;
+      setCredits(r.credits);
+      S.vip = !!r.vip; S.vipUntil = r.vip_until || null; if (r.vip_pack) S.vipPack = r.vip_pack;
+      if (S.tpl.length) tplDraw();
+    }).catch(function () {});
+  }
+  function setLogin(email, token) {
+    S.email = email; S.token = token || ''; S.stopWs = false;
+    S.sw = null; S.fposts = null; S.nick = null; S.hist = [];
+    ls('nya_vjob', null); S.vjob = null;
+    ls('neiro_user_email', email); ls('nyt_email', email); ls('nyt_token', S.token || null);
+    account(); newChat(); loadChats(); connect(); loadBalance(); loadStorage();
+  }
+  function logout(expired) {
+    if (expired) {
+      var st = ls('nyt_token');
+      if (st && st !== S.token) { S.token = st; S.email = ls('nyt_email') || S.email; return; }
+    }
+    S.stopWs = true; try { if (S.ws) S.ws.close(); } catch (e) {}
+    ['neiro_user_email', 'nyt_email', 'nyt_token'].forEach(function (k) { ls(k, null); });
+    S.email = ''; S.token = ''; S.credits = null; S.hist = []; S.chats = []; S.chatId = null;
+    account(); newChat(); drawChats(); setDot(false);
+    if (expired) toast('Сессия истекла, войдите снова');
+  }
+
+  function open(html) { $('nya-mb').innerHTML = html; $('nya-modal').classList.add('on'); closeMenus(); }
+  function close() {
+    if (S.busy) { toast('Картинка ещё создаётся, подождите'); return; }
+    $('nya-modal').classList.remove('on'); S.cur = null;
+  }
+  function authView(after) {
+    S.after = after || null;
+    open('<h3>Вход в НейроЯгу</h3><p>Введите email и пароль. Если аккаунта ещё нет, он создастся автоматически.</p>' +
+      '<label class="nya-lab" for="nya-em">Email</label><input class="nya-in" id="nya-em" type="email" autocomplete="email" placeholder="you@mail.ru">' +
+      '<label class="nya-lab" for="nya-pw">Пароль</label><input class="nya-in" id="nya-pw" type="password" autocomplete="current-password" placeholder="Минимум 4 символа">' +
+      '<div id="nya-aerr"></div><button type="button" class="nya-btn w" data-act="login">Войти</button>' +
+      '<button type="button" class="nya-ghost w" data-act="forgot">Забыли пароль?</button>');
+    setTimeout(function () { var e = $('nya-em'); if (e && !coarse) e.focus(); }, 80);
+  }
+  function forgotView() {
+    var em = ($('nya-em') && $('nya-em').value) || '';
+    open('<h3>Восстановление пароля</h3><p>Укажите почту, на которую зарегистрирован аккаунт. Мы пришлём ссылку для нового пароля.</p>' +
+      '<label class="nya-lab" for="nya-fem">Email</label><input class="nya-in" id="nya-fem" type="email" autocomplete="email" placeholder="you@mail.ru" value="' + esc(em) + '">' +
+      '<div id="nya-aerr"></div><button type="button" class="nya-btn w" data-act="forgotsend">Отправить ссылку</button>' +
+      '<button type="button" class="nya-ghost w" data-act="tologin">← Вернуться ко входу</button>');
+  }
+  function forgotSend(btn) {
+    var em = $('nya-fem').value.trim(), errBox = $('nya-aerr');
+    if (em.indexOf('@') < 1) { errBox.innerHTML = '<div class="nya-err">Введите корректный email</div>'; return; }
+    btn.disabled = true;
+    req('/api/auth/forgot', { method: 'POST', body: JSON.stringify({ email: em }) }).then(function (r) {
+      btn.disabled = false;
+      if (!r || !r.ok) { errBox.innerHTML = '<div class="nya-err">' + esc((r && r.error) || 'Не получилось, попробуйте позже') + '</div>'; return; }
+      open('<h3>📬 Проверьте почту</h3><p>' + esc(r.message) + '</p><p>Ссылка действует 30 минут. По ней откроется страница, где можно задать новый пароль.</p>' +
+        '<button type="button" class="nya-ghost w" data-act="tologin">← Вернуться ко входу</button>');
+    }).catch(function () { btn.disabled = false; errBox.innerHTML = '<div class="nya-err">Нет связи с сервером</div>'; });
+  }
+  function doLogin(btn) {
+    var em = $('nya-em').value.trim(), pw = $('nya-pw').value;
+    var errBox = $('nya-aerr');
+    if (em.indexOf('@') < 1) { errBox.innerHTML = '<div class="nya-err">Введите корректный email</div>'; return; }
+    if (pw.length < 4) { errBox.innerHTML = '<div class="nya-err">Пароль — минимум 4 символа</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Входим…';
+    req('/api/auth', { method: 'POST', body: JSON.stringify({ email: em, password: pw }) }).then(function (r) {
+      if (!r || !r.success) throw { msg: (r && r.error) || 'Неверный email или пароль' };
+      var after = S.after; S.after = null;
+      $('nya-modal').classList.remove('on');
+      setLogin(r.email || em, r.token);
+      toast('Вы вошли');
+      if (after) after();
+    }).catch(function (e) {
+      errBox.innerHTML = '<div class="nya-err">' + esc((e && e.msg) || 'Нет связи с сервером, попробуйте ещё раз') + '</div>';
+      btn.disabled = false; btn.textContent = 'Войти';
+    });
+  }
+  function vipPack() { return S.vipPack || { rub: 5000, credits: 5500, days: 30 }; }
+  function vipPackHtml() {
+    var v = vipPack();
+    return '<button type="button" class="nya-vippack" data-act="buy" data-c="' + v.credits + '" data-p="' + v.rub + '">' +
+      '<span class="nya-vipcrown">👑</span><div><b>VIP-пакет · ' + fmtN(v.credits) + ' кр.</b><small>+10% кредитов и статус VIP на ' + v.days + ' дней: доступ к VIP-шаблонам для таргета и SMM</small></div>' +
+      '<strong>' + fmtN(v.rub) + ' ₽</strong></button>';
+  }
+  function vipBanner() {
+    var v = vipPack();
+    if (S.vip) return '<div class="nya-vipban on"><span>👑</span><div><b>Ваш VIP активен до ' + esc(S.vipUntil || '') + '</b><small>Все шаблоны этого раздела доступны: креативы, карточки товаров и тексты для таргета и SMM</small></div></div>';
+    return '<div class="nya-vipban"><span>👑</span><div><b>Раздел для VIP-клиентов</b><small>Креативы для таргета, карточки WB и Ozon, тексты для SMM. Откройте их VIP-пакетом: ' + fmtN(v.credits) + ' кр. за ' + fmtN(v.rub) + ' ₽ и статус VIP на ' + v.days + ' дней</small>' +
+      '<button type="button" class="nya-btn" data-act="pay" style="margin-top:10px">👑 Получить VIP</button></div></div>';
+  }
+  function vipView() {
+    var v = vipPack();
+    open('<div class="nya-viphero">👑</div><h3>Шаблон для VIP-клиентов</h3><p>Шаблоны для таргета, SMM и карточек товаров доступны со статусом VIP.</p>' +
+      '<ul class="nya-viplist"><li>' + fmtN(v.credits) + ' кредитов за ' + fmtN(v.rub) + ' ₽ — на 10% больше обычного</li><li>Статус VIP на ' + v.days + ' дней, повторная покупка продлевает</li><li>Все VIP-шаблоны: креативы для таргета, обложки, сторис, карточки WB и Ozon</li></ul>' +
+      vipPackHtml() + '<button type="button" class="nya-ghost w" data-act="close" style="margin-top:10px">Не сейчас</button>');
+  }
+  function packsHtml() {
+    return (S.vip ? '<p class="nya-vipnow">👑 Вы VIP до ' + esc(S.vipUntil || '') + '</p>' : '') + vipPackHtml() + '<div class="nya-packs">' + PACKS.map(function (p) {
+      return '<button type="button" class="nya-pack" data-act="buy" data-c="' + p.c + '" data-p="' + p.p + '">' + (p.hit ? '<i>Хит</i>' : '') + '<b>' + p.c + ' кр.</b><span>' + p.p + ' ₽</span></button>';
+    }).join('') + '</div>';
+  }
+  function payView(fromCab) {
+    if (!S.email) { authView(payView); return; }
+    open('<h3>Пополнение баланса</h3><p>Сейчас на балансе: ' + (S.credits == null ? '…' : S.credits) + ' кр. Выберите пакет:</p>' + packsHtml() +
+      (fromCab ? '<button type="button" class="nya-ghost w" data-act="profile" style="margin-top:14px">← Назад в кабинет</button>' : ''));
+  }
+  var CAT = {
+    chat: { i: '💬', n: 'Чат', c: '#00d4ff' }, image: { i: '🎨', n: 'Картинки', c: '#9d4dff' },
+    template: { i: '✨', n: 'Шаблоны', c: '#ff2ec4' }, video: { i: '🎬', n: 'Видео', c: '#ff9f43' },
+    audio: { i: '🎵', n: 'Музыка', c: '#3ee08f' }, payment: { i: '💎', n: 'Пополнение', c: '#3ee08f' },
+    other: { i: '•', n: 'Прочее', c: '#8a80a8' }
+  };
+  function profileView() {
+    if (!S.email) { authView(profileView); return; }
+    S.accN = 30; S.ctab = S.ctab || 'over'; S.cflt = 'all';
+    accDraw(null);
+    req('/api/account/' + encodeURIComponent(S.email)).then(function (r) {
+      if (!r || !r.ok) { accDraw({ credits: S.credits, history: [], err: (r && r.error) || 'Не удалось загрузить кабинет' }); return; }
+      setCredits(r.credits); S.acc = r; accDraw(r); loadStorage(); loadRef();
+    }).catch(function (e) { if (!(e && e.auth)) accDraw({ credits: S.credits, history: [], err: 'Нет связи с сервером' }); });
+  }
+  function fmtN(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+  function dayLabel(d) {
+    var t = new Date(); t.setHours(0, 0, 0, 0);
+    var x = new Date(d); x.setHours(0, 0, 0, 0);
+    var diff = Math.round((t - x) / 864e5);
+    if (diff === 0) return 'Сегодня';
+    if (diff === 1) return 'Вчера';
+    return x.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: x.getFullYear() === t.getFullYear() ? undefined : 'numeric' });
+  }
+  function accDraw(r) {
+    var bal = r ? r.credits : S.credits, lv = r && r.level;
+    var h = '<div class="nya-cab-h"><div class="nya-cab-av">' + esc((S.email || '?').charAt(0)) + '</div><div><b>' + esc(S.email) + '</b><small>' +
+      (r && r.since ? 'С нами с ' + esc(r.since) : 'Кабинет чатов') + '</small>' +
+      (lv ? '<br><span class="nya-cab-lv' + (lv.name === 'VIP' ? ' vip' : '') + '">' + (lv.name === 'VIP' ? '👑 ' : '⭐ ') + esc(lv.name) + '</span>' : '') + '</div></div>';
+    h += '<div class="nya-cab-bal"><small>Баланс</small><div class="nya-cab-bt"><b>' + (bal == null ? '…' : fmtN(bal)) + ' кр.</b>' +
+      '<button type="button" class="nya-btn" data-act="cabtop">💎 Пополнить</button></div><small>1 кредит = 1 ₽</small>';
+    if (bal) h += '<div class="nya-cab-en"><span>≈ ' + fmtN(bal / 4) + ' сообщений</span><span>≈ ' + fmtN(bal / 20) + ' картинок</span><span>≈ ' + fmtN(bal / 6) + ' сек видео</span></div>';
+    h += '</div>';
+    h += '<a class="nya-btn w" href="https://babayagaland.ru/kabinet" style="text-decoration:none;margin-bottom:12px">Центр управления</a>';
+    h += '<div class="nya-cab-tabs">' + [['over', 'Обзор'], ['hist', 'История'], ['set', 'Настройки']].map(function (t) {
+      return '<button type="button" data-ctab="' + t[0] + '" class="' + (S.ctab === t[0] ? 'on' : '') + '">' + t[1] + '</button>';
+    }).join('') + '</div>';
+    if (!r) h += '<p class="nya-dim">Загружаю…</p>';
+    else if (r.err) h += '<p class="nya-dim">' + esc(r.err) + '</p>';
+    else if (S.ctab === 'over') h += cabOver(r);
+    else if (S.ctab === 'hist') h += cabHist(r);
+    else h += cabSet();
+    var mb = $('nya-mb'), y = mb ? mb.scrollTop : 0, same = $('nya-modal').classList.contains('on') && $('nya-cabmark');
+    open('<i id="nya-cabmark" hidden></i>' + h);
+    if (same && mb) mb.scrollTop = y;
+  }
+  function stPrices() {
+    var p = (S.st && S.st.prices) || {}, out = [];
+    if (p['30'] || p[30]) out.push([30, p['30'] || p[30], '1 месяц']);
+    if (p['90'] || p[90]) out.push([90, p['90'] || p[90], '3 месяца']);
+    return out;
+  }
+  function storageCard() {
+    var st = S.st;
+    if (!st || !st.available) return '';
+    var btns = '<div class="nya-stbtns">' + stPrices().map(function (x) {
+      return '<button type="button" class="nya-pack" data-act="stbuy" data-d="' + x[0] + '">' + (x[0] === 90 ? '<em>Выгодно</em>' : '') + '<b>' + x[1] + ' кр.</b><span>' + (st.active ? '+ ' : '') + x[2] + '</span></button>';
+    }).join('') + '</div>';
+    var h = '<div class="nya-cab-card nya-stcard' + (st.active ? ' on' : '') + '" id="nya-stcard"><h4>💾 Хранилище работ</h4>';
+    if (st.active) {
+      var used = st.used_mb || 0, quota = (st.quota_gb || 3) * 1024, pct = Math.max(2, Math.min(100, Math.round(used / quota * 100)));
+      h += '<p>✅ Активно до <b>' + esc(st.until) + '</b>. Все работы хранятся, пока подписка активна.</p><div class="nya-cab-pg"><i style="width:' + pct + '%"></i></div>' +
+        '<p style="font-size:12px;margin-bottom:12px">Занято ' + (used >= 1024 ? (used / 1024).toFixed(2) + ' ГБ' : used.toFixed(1) + ' МБ') + ' из ' + (st.quota_gb || 3) + ' ГБ. Продлить можно до 3 месяцев вперёд:</p>' + btns;
+    } else if (st.until) {
+      h += '<p class="nya-stwarn">⚠️ Подписка закончилась ' + esc(st.until) + '. Продлите в течение 3 дней, иначе сохранённые работы удалятся.</p>' + btns;
+    } else {
+      h += '<p style="margin-bottom:12px">Без подписки работы удаляются через 10 дней. С подпиской — картинки, видео и песни хранятся, пока она активна (до ' + (st.quota_gb || 3) + ' ГБ).</p>' + btns;
+    }
+    return h + '</div>';
+  }
+  function stBuy(btn) {
+    var d = +btn.getAttribute('data-d'), price = (stPrices().filter(function (x) { return x[0] === d; })[0] || [])[1];
+    if (!confirm('Оплатить хранилище на ' + (d === 90 ? '3 месяца' : '1 месяц') + ' за ' + price + ' кр.?')) return;
+    btn.disabled = true;
+    req('/api/storage/subscribe', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, days: d }) }).then(function (r) {
+      btn.disabled = false;
+      if (!r || !r.ok) { toast((r && r.error) || 'Не получилось оплатить'); return; }
+      toast('💾 Хранилище активно до ' + r.until);
+      setCredits(r.credits); S.sw = null;
+      req('/api/storage/' + encodeURIComponent(S.email)).then(function (x) { S.st = x && x.ok ? x : S.st; refreshKeepNotes(); if (S.acc) { S.acc.credits = r.credits; accDraw(S.acc); } });
+    }).catch(function (e) { btn.disabled = false; if (!(e && e.auth)) toast('Нет связи с сервером'); });
+  }
+  function loadRef() {
+    req('/api/referral/' + encodeURIComponent(S.email)).then(function (x) {
+      if (!x || !x.ok) return;
+      S.ref = x;
+      if (S.acc && $('nya-cabmark') && $('nya-modal').classList.contains('on')) accDraw(S.acc);
+    }).catch(function () {});
+  }
+  function refCard() {
+    var r = S.ref; if (!r) return '';
+    var h = '<div class="nya-cab-card nya-refc"><h4>🎁 Пригласите друга</h4><p style="margin-bottom:10px">Друг вводит ваш код до первой оплаты. Когда он пополнит баланс от ' + fmtN(r.min_rub) + ' ₽, вы оба получите по ' + r.percent + '% кредитами.</p>' +
+      '<div class="nya-refrow"><b class="nya-refcode">' + esc(r.code) + '</b><button type="button" class="nya-btn" data-act="refcopy">📋 Код</button><button type="button" class="nya-ghost" data-act="reflink">🔗 Ссылка</button></div>' +
+      '<p style="font-size:12px;margin-top:8px">Пригласили: ' + r.invited + ' · оплатили: ' + r.paid + ' · заработано: ' + fmtN(r.earned) + ' кр.</p>';
+    if (r.applied) h += '<p style="font-size:12.5px;margin-top:6px">🤝 Вы ввели код друга ' + esc(r.applied.code) + (r.applied.rewarded ? ' — бонус начислен' : ' — бонус придёт после первой оплаты от ' + fmtN(r.min_rub) + ' ₽') + '</p>';
+    else if (r.can_apply) h += '<div class="nya-refin"><input class="nya-in" id="nya-refin" placeholder="Код друга: YAGA-XXXXXX" maxlength="20" style="text-transform:uppercase;margin:0"><button type="button" class="nya-btn" data-act="refapply">Применить</button></div>';
+    return h + '</div>';
+  }
+  function copyTxt(t, msg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast(msg); }, function () { prompt('Скопируйте:', t); });
+    else prompt('Скопируйте:', t);
+  }
+  function promoCard() {
+    return '<div class="nya-cab-card"><h4>🎟 Промокод или сертификат</h4><div class="nya-refin" style="margin-top:0"><input class="nya-in" id="nya-promoin" placeholder="Например BLOGER100" maxlength="32" style="text-transform:uppercase;margin:0">' +
+      '<button type="button" class="nya-btn" data-act="promoapply">Применить</button></div>' +
+      '<a href="https://babayagaland.ru/kabinet?tab=gift" style="display:inline-block;margin-top:10px;font-size:13px;color:var(--mut)">🎁 Подарить сертификат другу →</a></div>';
+  }
+  function botMoveCard() {
+    var bal = S.credits == null ? '…' : fmtN(S.credits);
+    return '<div class="nya-cab-card"><h4>Перенос в Telegram</h4><p style="margin-bottom:8px">1 кредит на сайте = 1 кредит в боте. Сначала откройте бота и нажмите /start, иначе бот ещё не знает ваш аккаунт.</p>' +
+      '<label class="nya-lab" for="nya-tg">Куда зачислить</label><input class="nya-in" id="nya-tg" maxlength="40" placeholder="@username или числовой id" autocomplete="off">' +
+      '<label class="nya-lab" for="nya-tc">Сколько кредитов. Сейчас на сайте: ' + bal + '</label><input class="nya-in" id="nya-tc" inputmode="numeric" placeholder="100">' +
+      '<button type="button" class="nya-btn w" data-act="tobot">Перенести в бота</button>' +
+      '<p style="margin:12px 0 8px">Обратно, из бота на этот сайт: в боте нажмите «На сайт» и укажите почту кабинета. Пароль для этого направления не нужен.</p>' +
+      '<a class="nya-ghost w" href="https://t.me/babayaga_ai_bot" target="_blank" rel="noopener" style="text-decoration:none">Открыть Telegram-бота</a></div>';
+  }
+  function cabOver(r) {
+    var h = botMoveCard() + (S.vip ? '<div class="nya-cab-card nya-vipcard"><h4>👑 VIP активен до ' + esc(S.vipUntil || '') + '</h4><p>Доступны все VIP-шаблоны. Покупка VIP-пакета продлевает статус ещё на ' + vipPack().days + ' дней.</p></div>'
+      : '<div class="nya-cab-card nya-vipcard"><h4>👑 Статус VIP</h4><p style="margin-bottom:12px">VIP-шаблоны для таргета и SMM, +10% кредитов к пакету.</p>' + vipPackHtml() + '</div>') + storageCard() + promoCard() + refCard();
+    if (r.db) {
+      h += '<div class="nya-cab-st"><div><b>' + fmtN(r.bought) + '</b><small>куплено кр.</small></div><div><b>' + fmtN(r.spent) + '</b><small>потрачено кр.</small></div>' +
+        '<div><b>' + fmtN(r.generations) + '</b><small>генераций</small></div><div><b>' + r.payments + '</b><small>пополнений</small></div></div>';
+      var lv = r.level;
+      if (lv && lv.next) {
+        var goal = lv.next === 'VIP' ? 5000 : 1000, pct = Math.max(3, Math.min(100, Math.round(r.bought / goal * 100)));
+        h += '<div class="nya-cab-card"><h4>' + (lv.next === 'VIP' ? '👑' : '⭐') + ' До статуса «' + esc(lv.next) + '»</h4><div class="nya-cab-pg"><i style="width:' + pct + '%"></i></div>' +
+          '<p>Осталось пополнить на ' + fmtN(lv.left) + ' кр.</p></div>';
+      }
+      var cats = r.categories || {}, keys = Object.keys(cats).filter(function (k) { return cats[k] > 0; }).sort(function (a, b) { return cats[b] - cats[a]; });
+      if (keys.length) {
+        var mx = cats[keys[0]];
+        h += '<div class="nya-cab-card"><h4>Траты по разделам</h4>' + keys.map(function (k) {
+          var c = CAT[k] || CAT.other;
+          return '<div class="nya-cab-bar"><span>' + c.i + ' ' + c.n + '</span><div><i style="width:' + Math.max(4, Math.round(cats[k] / mx * 100)) + '%;background:' + c.c + '"></i></div><b>' + fmtN(cats[k]) + ' кр.</b></div>';
+        }).join('') + '</div>';
+      }
+    }
+    h += '<div class="nya-cab-card" id="nya-cabpacks"><h4>Пополнить баланс</h4>' + packsHtml() + '</div>';
+    return h;
+  }
+  function cabHist(r) {
+    if (!r.db) return '<p class="nya-dim">История операций скоро появится.</p>';
+    var list = r.history.filter(function (t) { return S.cflt === 'all' || (S.cflt === 'in' ? t.delta > 0 && t.kind === 'payment' : t.kind === 'spend'); });
+    var h = '<div class="nya-cab-flt">' + [['all', 'Все'], ['in', 'Пополнения'], ['out', 'Траты']].map(function (f) {
+      return '<button type="button" data-cflt="' + f[0] + '" class="' + (S.cflt === f[0] ? 'on' : '') + '">' + f[1] + '</button>';
+    }).join('') + '</div>';
+    if (!list.length) return h + '<p class="nya-dim">Здесь пока пусто.</p>';
+    var last = '';
+    list.slice(0, S.accN).forEach(function (t) {
+      var d = new Date(t.ts || Date.now()), lab = dayLabel(d);
+      if (lab !== last) { h += '<div class="nya-cab-day">' + esc(lab) + '</div>'; last = lab; }
+      var c = t.kind === 'refund' ? { i: '↩️', c: '#8a80a8' } : (CAT[t.category] || CAT.other);
+      var title = t.kind === 'payment' ? 'Пополнение' : t.kind === 'refund' ? 'Возврат кредитов' : (t.note || 'Списание');
+      var sub = t.kind === 'payment' ? (t.note || '') : t.kind === 'refund' ? 'Генерация не удалась' : (CAT[t.category] ? CAT[t.category].n : '');
+      var tm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      h += '<div class="nya-cab-tx"><div class="nya-cab-ic" style="background:' + c.c + '22">' + c.i + '</div><div><b>' + esc(title) + '</b><small>' + esc((sub ? sub + ' · ' : '') + tm) + '</small></div>' +
+        '<span class="' + (t.delta >= 0 ? 'p' : 'm') + '">' + (t.delta > 0 ? '+' : '') + fmtN(t.delta) + ' кр.<em>остаток ' + fmtN(t.balance) + '</em></span></div>';
+    });
+    if (list.length > S.accN) h += '<button type="button" class="nya-ghost w" data-act="accmore" style="margin-top:12px">Показать ещё</button>';
+    return h;
+  }
+  function cabSet() {
+    return '<a class="nya-btn w" href="https://babayagaland.ru/kabinet?tab=support" style="text-decoration:none;margin-bottom:12px">💬 Написать в поддержку</a>' +
+      '<div class="nya-cab-card"><h4>📧 Почта для входа</h4><p>' + esc(S.email) + '</p></div>' +
+      '<div class="nya-cab-card"><h4>🔑 Сменить пароль</h4><div class="nya-cab-pw"><input class="nya-in" type="password" id="nya-pw0" placeholder="Текущий пароль" autocomplete="current-password">' +
+      '<input class="nya-in" type="password" id="nya-pw1" placeholder="Новый пароль (от 6 символов)" autocomplete="new-password">' +
+      '<input class="nya-in" type="password" id="nya-pw2" placeholder="Повторите новый пароль" autocomplete="new-password">' +
+      '<button type="button" class="nya-btn w" data-act="pwsave">Сохранить пароль</button></div></div>' +
+      '<button type="button" class="nya-ghost w" data-act="logout">Выйти из аккаунта</button>';
+  }
+  function pwSave(btn) {
+    var a = $('nya-pw0').value, b = $('nya-pw1').value, c = $('nya-pw2').value;
+    if (!a || !b) { toast('Заполните поля'); return; }
+    if (b.length < 6) { toast('Новый пароль — не короче 6 символов'); return; }
+    if (b !== c) { toast('Новые пароли не совпадают'); return; }
+    btn.disabled = true;
+    req('/api/account/password', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, old: a, new: b }) }).then(function (r) {
+      btn.disabled = false;
+      if (r && r.ok) { toast('Пароль изменён'); ['nya-pw0', 'nya-pw1', 'nya-pw2'].forEach(function (k) { $(k).value = ''; }); }
+      else toast((r && r.error) || 'Не удалось сменить пароль');
+    }).catch(function () { btn.disabled = false; toast('Нет связи с сервером'); });
+  }
+  function buy(btn) {
+    btn.style.opacity = '.5';
+    req('/api/create-payment', { method: 'POST', body: JSON.stringify({ email: S.email, amount: +btn.getAttribute('data-p'), credits: +btn.getAttribute('data-c') }) })
+      .then(function (r) {
+        if (r && r.success && r.confirmation_url) location.href = r.confirmation_url;
+        else { toast((r && r.error) || 'Не удалось создать платёж'); btn.style.opacity = ''; }
+      }).catch(function () { toast('Нет связи с сервером оплаты'); btn.style.opacity = ''; });
+  }
+
+  function shapeHtml(v, max) {
+    var p = v.split(':'), w = +p[0], h = +p[1], k = max / Math.max(w, h);
+    return '<i class="nya-shape" style="width:' + Math.round(w * k) + 'px;height:' + Math.round(h * k) + 'px"></i>';
+  }
+  function aspHtml(allowed, current) {
+    var list = ASPECTS.filter(function (a) { return !allowed || !allowed.length || allowed.indexOf(a.v) >= 0; });
+    if (!list.length) list = ASPECTS;
+    return '<div class="nya-asps">' + list.map(function (a) {
+      return '<button type="button" class="nya-asp' + (a.v === (current || S.aspect) ? ' on' : '') + '" data-asp="' + a.v + '">' + shapeHtml(a.v, 24) + '<b>' + a.n + '</b>' + a.v + '</button>';
+    }).join('') + '</div>';
+  }
+  function setAspect(v) {
+    if (!ASPECTS.some(function (a) { return a.v === v; })) return;
+    S.aspect = v; ls('nya_aspect', v);
+    qa('[data-asp]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-asp') === v); });
+    $('nya-asp-label').textContent = v;
+    $('nya-asp-shape').innerHTML = shapeHtml(v, 14);
+  }
+  function vmodel(id) { return S.vmodels.filter(function (x) { return x.id === id; })[0]; }
+  function isVideo(id) { var v = vmodel(id); return !!(v && v.kind !== 'image' && v.kind !== 'audio'); }
+  function isMusic(id) { var v = vmodel(id); return !!(v && v.kind === 'audio'); }
+  function isBhImg(id) { var v = vmodel(id); return !!(v && v.kind === 'image'); }
+  function qOf(vm, id) { return (vm.qualities || []).filter(function (q) { return q.id === id; })[0]; }
+  function secWord(n) { var a = n % 10, b = n % 100; return a === 1 && b !== 11 ? 'секунда' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'секунды' : 'секунд'; }
+  function durPrice(vm, d) { return vm.duration_prices ? +(vm.duration_prices[String(d)] || 0) : vm.credits * d; }
+  function qPrice(q) { return q.credits + (q.per_sec ? ' кр./сек' : ' кр.'); }
+  function optHtml(v, name, desc, price, on) {
+    return '<button type="button" class="nya-opt' + (on ? ' on' : '') + '" data-optv="' + esc(v) + '"><div><b>' + esc(name) + '</b>' + (desc ? '<small>' + esc(desc) + '</small>' : '') + '</div><span>' + price + '</span></button>';
+  }
+  function vDurs(vm) { return (vm && vm.durations && vm.durations.length) ? vm.durations : [5, 10]; }
+  function vAsps(vm) { return (vm && vm.aspects && vm.aspects.length) ? vm.aspects : VASP; }
+  function aspVisible() {
+    var vid = isVideo(S.model), bimg = isBhImg(S.model), vm = vmodel(S.model);
+    if (vid && vAsps(vm).indexOf(S.vaspect) < 0) S.vaspect = vAsps(vm)[0];
+    if (vid && (vm.per_sec || vm.duration_prices) && vDurs(vm).indexOf(S.vdur) < 0) S.vdur = vDurs(vm)[0];
+    if (bimg && vAsps(vm).indexOf(S.aspect) < 0) setAspect(vAsps(vm)[0]);
+    var cur = vid ? S.vaspect : S.aspect;
+    $('nya-asp-wrap').hidden = !(vid || bimg || /nano/.test(S.model)) || !!S.biz || !!(vm && vm.no_aspect);
+    var isAud = !!(vm && vm.audio);
+    $('nya-mic').hidden = !isAud || !!S.biz;
+    if (!isAud && S.audio) { S.audio = null; $('nya-audio').value = ''; chips(); }
+    $('nya-asp-menu').innerHTML = vid ? aspHtml(vAsps(vm), S.vaspect) : aspHtml(bimg ? vAsps(vm) : null, S.aspect);
+    $('nya-asp-label').textContent = cur;
+    $('nya-asp-shape').innerHTML = shapeHtml(cur, 14);
+    var mus = isMusic(S.model);
+    var hasDur = vid && !!(vm.per_sec || vm.duration_prices), hasQ = !!(vm && vm.qualities && vm.qualities.length && (bimg || vm.audio || mus));
+    if (hasQ && !qOf(vm, S.iq)) S.iq = vm.quality || vm.qualities[0].id;
+    $('nya-vdur').hidden = !(hasDur || hasQ) || !!S.biz;
+    $('nya-opt-btn').innerHTML = hasDur ? '⏱ ' + S.vdur + ' сек <i>▾</i>' : hasQ ? '✨ ' + esc(qOf(vm, S.iq).name) + ' <i>▾</i>' : '';
+    var qTitle = isAud ? 'Качество видео' : mus ? 'Что создать' : 'Качество картинки';
+    $('nya-opt-btn').title = hasDur ? 'Длительность видео' : qTitle;
+    $('nya-opt-menu').innerHTML = hasDur
+      ? '<div class="nya-mt">Длительность видео</div>' + vDurs(vm).map(function (d) { return optHtml(d, d + ' ' + secWord(d), '', durPrice(vm, d) + ' кр.', d === S.vdur); }).join('')
+      : hasQ ? '<div class="nya-mt">' + qTitle + '</div>' + vm.qualities.map(function (q) { return optHtml(q.id, q.name, q.desc, qPrice(q), q.id === S.iq); }).join('') : '';
+    if (hasQ) $('nya-model-cost').textContent = qPrice(qOf(vm, S.iq));
+    else if (hasDur && vm.duration_prices) $('nya-model-cost').textContent = durPrice(vm, S.vdur) + ' кр.';
+    var noPhoto = !!(vm && vm.photo === 'forbidden');
+    $('nya-clip').hidden = noPhoto;
+    if (noPhoto && S.file) { S.file = null; $('nya-file').value = ''; chips(); toast('Эта модель работает только по тексту — фото убрано'); }
+  }
+
+  function closeMenus() { qa('.nya-menu').forEach(function (m) { m.classList.remove('on'); }); }
+  function vprice(v) {
+    if (v.duration_prices) {
+      var dp = Object.keys(v.duration_prices).map(function (k) { return +v.duration_prices[k]; });
+      return 'от ' + Math.min.apply(null, dp) + ' кр.';
+    }
+    if (v.qualities && v.qualities.length) {
+      var ps = v.qualities.map(function (q) { return q.credits; }), mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
+      return (mn === mx ? '' : 'от ') + mn + (v.qualities[0].per_sec ? ' кр./сек' : ' кр.');
+    }
+    return v.per_sec ? v.credits + ' кр./сек' : v.credits + ' кр.';
+  }
+  function setModel(id) {
+    var v = vmodel(id), m = v ? null : (MODELS.filter(function (x) { return x.id === id; })[0] || MODELS[0]);
+    S.model = v ? v.id : m.id; ls('nya_model', S.model); ls('nya_mm_' + modelTab(S.model), S.model);
+    $('nya-model-name').textContent = v ? (v.kind === 'image' ? '🖼 ' : v.kind === 'audio' ? '🎵 ' : '🎬 ') + v.name : m.icon + ' ' + m.name;
+    $('nya-model-cost').textContent = v ? vprice(v) : m.cost + ' кр.';
+    S.mtab = modelTab(S.model);
+    renderModelMenu();
+    ta.placeholder = v && v.kind === 'audio' ? 'Опишите песню: о чём, жанр, настроение, голос'
+      : v && v.kind === 'image' ? 'Опишите картинку или что изменить на прикреплённом фото'
+      : v && v.audio ? 'Прикрепите фото 📎 и запись 🎙. Здесь можно описать эмоцию и жесты (необязательно)'
+      : v ? (v.photo === 'required' ? 'Прикрепите фото 📎 и опишите, как оно должно ожить'
+      : v.photo === 'forbidden' ? 'Опишите видео текстом: что происходит, камера, настроение'
+      : 'Опишите видео: что происходит, движение камеры, настроение') : /nano/.test(S.model) ? 'Опишите картинку или прикрепите фото' : 'Спросите НейроЯгу';
+    aspVisible(); renderModes();
+  }
+  function modelTab(id) {
+    var v = vmodel(id);
+    if (v) return v.kind === 'image' ? 'image' : v.kind === 'audio' ? 'audio' : 'video';
+    return /nano/.test(id) ? 'image' : 'chat';
+  }
+  function renderModelMenu() {
+    var tabs = [['chat', '💬 Чат'], ['image', '🖼 Картинки'], ['video', '🎬 Видео'], ['audio', '🎵 Музыка']].filter(function (t) {
+      return t[0] === 'chat' || t[0] === 'image' || S.vmodels.some(function (x) { return (x.kind || 'video') === t[0]; });
+    });
+    var tab = S.mtab || 'chat';
+    var own = function (x) {
+      return '<button type="button" class="nya-opt' + (x.id === S.model ? ' on' : '') + '" data-act="setmodel" data-id="' + x.id + '"><em>' + x.icon + '</em><div><b>' + x.name + '</b><small>' + x.desc + '</small></div><span>' + x.cost + ' кр.</span></button>';
+    };
+    var ext = function (icon) {
+      return function (x) {
+        return '<button type="button" class="nya-opt' + (x.id === S.model ? ' on' : '') + '" data-act="setmodel" data-id="' + esc(x.id) + '"><em>' + icon + '</em><div><b>' + esc(x.name) + '</b><small>' + esc(x.desc || '') + '</small></div><span>' + vprice(x) + '</span></button>';
+      };
+    };
+    var list = function (kind) { return S.vmodels.filter(function (x) { return (x.kind || 'video') === kind; }); };
+    var h = '<div class="nya-mtabs">' + tabs.map(function (t) {
+      return '<button type="button" class="nya-mtab' + (t[0] === tab ? ' on' : '') + '" data-mtab="' + t[0] + '">' + t[1] + '</button>';
+    }).join('') + '</div>';
+    if (tab === 'chat') h += MODELS.filter(function (x) { return !/nano/.test(x.id); }).map(own).join('');
+    else if (tab === 'image') {
+      h += '<div class="nya-mh">✨ НейроЯга</div>' + MODELS.filter(function (x) { return /nano/.test(x.id); }).map(own).join('');
+      var li = list('image'); if (li.length) h += '<div class="nya-mh">🖼 Другие нейросети</div>' + li.map(ext('🖼')).join('');
+    }
+    else if (tab === 'video') h += list('video').map(ext('🎬')).join('');
+    else if (tab === 'audio') h += list('audio').map(ext('🎵')).join('');
+    $('nya-model-menu').innerHTML = h;
+  }
+  var MODE = { chat: ['💬', 'Чат'], image: ['🖼', 'Картинка'], video: ['🎬', 'Видео'], audio: ['🎵', 'Музыка'] };
+  var REC = { chat: 'flash', image: 'nano-banana', video: 'veo-3-1-fast', audio: 'suno' };
+  var TIERS = {
+    chat: [[Infinity, 'Модели']],
+    image: [[6, 'Быстро и дёшево', 'для черновиков и простых картинок'], [20, 'Оптимально', 'лучшее соотношение цены и качества'], [Infinity, 'Максимальное качество', 'для печати и важных задач']],
+    video: [[60, 'Быстро и дёшево', 'попробовать идею'], [150, 'Оптимально', 'для соцсетей и рекламы'], [Infinity, 'Максимальное качество', 'кинематографичная картинка']],
+    audio: [[Infinity, 'Модели']]
+  };
+  function modesAvail() {
+    return ['chat', 'image', 'video', 'audio'].filter(function (k) {
+      return k === 'chat' || k === 'image' || S.vmodels.some(function (x) { return (x.kind || 'video') === k; });
+    });
+  }
+  function modeModels(mode) {
+    var own = MODELS.filter(function (x) { return mode === 'image' ? /nano/.test(x.id) : mode === 'chat' ? !/nano/.test(x.id) : false; })
+      .map(function (x) { return { id: x.id, name: x.name, desc: x.desc, price: x.cost, label: x.cost + ' кр.', tags: mode === 'image' ? ['✏️ правка фото', '💬 прямо в чате'] : [], own: true }; });
+    var ext = S.vmodels.filter(function (x) { return (x.kind || 'video') === mode; }).map(function (x) {
+      var t = [], d = (x.desc || '').toLowerCase();
+      if (x.photo === 'required') t.push('📷 нужно фото');
+      else if (x.photo === 'forbidden') t.push('✍️ только текст');
+      else if (mode === 'video') t.push('📷 можно с фото');
+      else if (mode === 'image' && /правк/.test(d)) t.push('✏️ правка фото');
+      if (x.audio) t.push('🎙 нужен голос');
+      if (/со звуком|речь/.test(d) && !/без звука/.test(d)) t.push('🔊 со звуком');
+      if (/4k/.test(d)) t.push('🖨 до 4K');
+      if (/текст на картинке/.test(d)) t.push('🔤 текст на картинке');
+      return { id: x.id, name: x.name, desc: x.desc || '', price: x.min_price || x.credits || 0, label: vprice(x), tags: t };
+    });
+    return own.concat(ext).sort(function (a, b) { return a.price - b.price; });
+  }
+  function modeDefault(mode) {
+    var list = modeModels(mode), has = function (id) { return list.some(function (x) { return x.id === id; }); };
+    var last = ls('nya_mm_' + mode);
+    if (last && has(last)) return last;
+    if (has(REC[mode])) return REC[mode];
+    return list[0] ? list[0].id : 'flash';
+  }
+  function setMode(mode) {
+    if (modelTab(S.model) !== mode) { setModel(modeDefault(mode)); if (S.biz) endBiz(); }
+    closeSheet(); ta.focus();
+  }
+  function curModel() {
+    var mode = modelTab(S.model);
+    return modeModels(mode).filter(function (x) { return x.id === S.model; })[0];
+  }
+  function renderModes() {
+    var box = $('nya-modes'); if (!box) return;
+    var mode = modelTab(S.model), cm = curModel();
+    box.innerHTML = modesAvail().map(function (k) {
+      return '<button type="button" class="nya-mode' + (k === mode ? ' on' : '') + '" data-act="mode" data-mode="' + k + '">' + MODE[k][0] + ' ' + MODE[k][1] + '</button>';
+    }).join('') + (cm ? '<button type="button" class="nya-mpick" data-act="model" title="Сменить модель"><small>Модель:</small><b>' + esc(cm.name) + '</b><i>' + esc(cm.label) + '</i>⌄</button>' : '');
+  }
+  function openSheet(mode) {
+    S.shMode = mode || modelTab(S.model); S.shFlt = 'all';
+    drawSheet(); $('nya-sheet').classList.add('on');
+  }
+  function closeSheet() { var sh = $('nya-sheet'); if (sh) sh.classList.remove('on'); }
+  function drawSheet() {
+    var mode = S.shMode, list = modeModels(mode), f = S.shFlt || 'all';
+    var h = '<div class="nya-sh-top"><h3>Выберите модель</h3><button type="button" class="nya-sh-x" data-act="shclose" aria-label="Закрыть">✕</button></div>';
+    h += '<div class="nya-sh-modes">' + modesAvail().map(function (k) {
+      return '<button type="button" class="nya-mode' + (k === mode ? ' on' : '') + '" data-act="shmode" data-mode="' + k + '">' + MODE[k][0] + ' ' + MODE[k][1] + '</button>';
+    }).join('') + '</div>';
+    if (mode === 'video') {
+      h += '<div class="nya-sh-flt">' + [['all', 'Все'], ['photo', '📷 Из фото'], ['text', '✍️ По тексту'], ['sound', '🔊 Со звуком']].map(function (x) {
+        return '<button type="button" data-act="shflt" data-f="' + x[0] + '" class="' + (f === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
+      }).join('') + '</div>';
+      list = list.filter(function (m) {
+        var t = m.tags.join(' ');
+        return f === 'all' || (f === 'photo' && /фото/.test(t) && !/только текст/.test(t)) || (f === 'text' && !/нужно фото/.test(t)) || (f === 'sound' && /звуком/.test(t));
+      });
+    }
+    var used = {};
+    TIERS[mode].forEach(function (tr) {
+      var part = list.filter(function (m) { return !used[m.id] && m.price <= tr[0]; });
+      if (!part.length) return;
+      part.forEach(function (m) { used[m.id] = 1; });
+      if (TIERS[mode].length > 1) h += '<div class="nya-tier">' + tr[1] + (tr[2] ? '<span>· ' + tr[2] + '</span>' : '') + '</div>';
+      h += '<div class="nya-mgrid">' + part.map(function (m) {
+        var on = m.id === S.model, rec = m.id === REC[mode];
+        return '<button type="button" class="nya-mc' + (on ? ' on' : '') + '" data-act="setmodel" data-id="' + esc(m.id) + '">' +
+          (on ? '<em>✓ Выбрана</em>' : rec ? '<em>⭐ Рекомендуем</em>' : '') +
+          '<div class="nya-mc-h"><b>' + esc(m.name) + '</b><i>' + esc(m.label) + '</i></div>' +
+          (m.desc ? '<p>' + esc(m.desc) + '</p>' : '') +
+          (m.tags.length ? '<div class="nya-mc-t">' + m.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' : '') + '</button>';
+      }).join('') + '</div>';
+    });
+    if (!list.length) h += '<p class="nya-dim" style="margin-top:14px">Под этот фильтр моделей нет</p>';
+    $('nya-sheet-in').innerHTML = h;
+  }
+  document.addEventListener('click', function (e) { if (e.target && e.target.id === 'nya-sheet') closeSheet(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
+  function loadVideo() {
+    req('/api/video/models').then(function (r) {
+      if (!r || !r.models || !r.models.length) return;
+      S.vmodels = r.models;
+      if (S.pendingModel && vmodel(S.pendingModel)) setModel(S.pendingModel);
+      else if (!S.modelLocked) setModel(vmodel(savedModel) ? savedModel : S.model);
+    }).catch(function () {});
+  }
+  function toolsHtml(cls) {
+    return Object.keys(BIZ).map(function (k) {
+      var b = BIZ[k];
+      return cls === 'opt'
+        ? '<button type="button" class="nya-opt" data-biz="' + k + '"><em>' + b.icon + '</em><div><b>' + b.title + '</b><small>' + b.desc + '</small></div><span>' + BIZ_COST + ' кр.</span></button>'
+        : '<button type="button" class="nya-tool" data-biz="' + k + '">' + b.icon + ' ' + b.title + '<small>' + BIZ_COST + ' кр.</small></button>';
+    }).join('');
+  }
+
+  function bottom() { requestAnimationFrame(function () { scroller.scrollTop = scroller.scrollHeight; }); }
+  function welcome() {
+    S.hasMsgs = false;
+    var name = S.email ? S.email.split('@')[0] : '';
+    var cards = ['<button type="button" class="nya-card" data-go="biz"><em>💼</em><b>Бизнес-помощник</b><small>Бизнес-план, конкуренты, цены, скрипты продаж</small></button>'];
+    cards.splice(0, 0, '<button type="button" class="nya-card" data-act="musicmode"><em>🎵</em><b>Создать песню</b><small>Песня с вашим текстом-идеей, 2 варианта</small></button>');
+    cards.unshift('<button type="button" class="nya-card" data-act="videomode"><em>🎬</em><b>Создать видео</b><small>Из текста или оживить фото</small></button>');
+    cards.unshift('<button type="button" class="nya-card" data-act="imgmode"><em>🎨</em><b>Создать картинку</b><small>Опишите идею или загрузите фото</small></button>');
+    cards.push('<button type="button" class="nya-card" data-go="tpl"><em>✨</em><b>Готовые шаблоны</b><small>Картинка за пару кликов</small></button>');
+    scroller.scrollTop = 0;
+    col.innerHTML = '<div class="nya-hello"><h1>Привет' + (name ? ', ' + esc(name) : '') + '!</h1><p>Чем займёмся сегодня?</p><div class="nya-sugg">' + cards.join('') + '</div></div>';
+  }
+  function clearWelcome() { if (!S.hasMsgs) { col.innerHTML = ''; S.hasMsgs = true; } }
+  function addUser(text, fileName) {
+    clearWelcome();
+    var d = document.createElement('div'); d.className = 'nya-u';
+    d.textContent = text || '';
+    if (fileName) { var s = document.createElement('small'); s.textContent = '📎 ' + fileName; d.appendChild(s); }
+    col.appendChild(d); bottom();
+  }
+  function loadStorage() {
+    if (!S.email || !S.token) { S.st = null; return; }
+    req('/api/storage/' + encodeURIComponent(S.email)).then(function (r) {
+      S.st = r && r.ok ? r : null; refreshKeepNotes();
+      if (S.acc && $('nya-cabmark') && $('nya-modal').classList.contains('on')) accDraw(S.acc);
+      if (S.view === 'works') worksDraw();
+    }).catch(function () {});
+  }
+  function keepHtml() {
+    if (S.st && S.st.active) return '💾 Сохранено в вашем хранилище до ' + esc(S.st.until) + '. Все работы — в <span class="nya-lnk" data-go="works">«Моих работах»</span>';
+    return '⏳ Хранится 10 дней — скачайте, чтобы не потерять, или <span class="nya-lnk" data-act="storage">подключите хранилище</span>. Все работы — в <span class="nya-lnk" data-go="works">«Моих работах»</span>';
+  }
+  function refreshKeepNotes() {
+    S.sw = null;
+    qa('.nya-keep').forEach(function (k) { k.innerHTML = keepHtml(); k.classList.toggle('ok', !!(S.st && S.st.active)); });
+  }
+  function keepNote() {
+    var k = document.createElement('div'); k.className = 'nya-keep' + (S.st && S.st.active ? ' ok' : '');
+    k.innerHTML = keepHtml();
+    return k;
+  }
+  function addBot(text, img) {
+    clearWelcome();
+    if (text && text.indexOf(MUSIC_MARK) === 0) {
+      var tracks = text.split('\n').slice(1).map(function (x) { return x.trim(); }).filter(function (x) { return /^https?:\/\//.test(x); });
+      if (tracks.length) {
+        var dm = document.createElement('div'); dm.className = 'nya-b';
+        dm.innerHTML = '<div class="nya-bav">' + IC.star + '</div><div><div class="nya-md"><p>' + MUSIC_MARK + ' — ' + tracks.length + ' ' + (tracks.length === 1 ? 'вариант' : 'варианта') + '</p></div></div>';
+        var box = dm.querySelector('.nya-md').parentNode;
+        tracks.forEach(function (u, i) {
+          var l = document.createElement('div'); l.className = 'nya-aud-l'; l.textContent = 'Вариант ' + (i + 1); box.appendChild(l);
+          var au = document.createElement('audio'); au.className = 'nya-aud'; au.controls = true; au.preload = 'none'; au.src = u; box.appendChild(au);
+          var ac = document.createElement('div'); ac.className = 'nya-acts';
+          var al = document.createElement('a'); al.href = fileUrl(u, 'neyroyaga-' + (i + 1) + '.mp3');
+          al.innerHTML = IC.dl + 'Скачать'; ac.appendChild(al); box.appendChild(ac);
+        });
+        box.appendChild(keepNote());
+        col.appendChild(dm); bottom(); return;
+      }
+    }
+    if (text && text.indexOf(IMAGE_MARK) === 0) {
+      var il = text.split('\n'), iu = il[il.length - 1].trim();
+      if (/^https?:\/\//.test(iu)) { img = iu; text = ''; }
+    }
+    var vurl = null;
+    if (text && text.indexOf(VIDEO_MARK) === 0) {
+      var vl = text.split('\n'); vurl = vl[vl.length - 1].trim();
+      if (!/^https?:\/\//.test(vurl)) vurl = null; else text = VIDEO_MARK;
+    }
+    var d = document.createElement('div'); d.className = 'nya-b';
+    d.innerHTML = '<div class="nya-bav">' + IC.star + '</div><div><div class="nya-md"></div><div class="nya-acts"></div></div>';
+    var body = d.querySelector('.nya-md'), acts = d.querySelector('.nya-acts');
+    if (text) body.innerHTML = md(text);
+    if (img) {
+      var im = document.createElement('img'); im.className = 'nya-img'; im.src = img; im.alt = 'Картинка';
+      body.parentNode.insertBefore(im, acts);
+      var b2 = document.createElement('button'); b2.type = 'button'; b2.innerHTML = IC.dl + 'Скачать';
+      b2.addEventListener('click', function () { download(img, 'neyroyaga'); }); acts.appendChild(b2);
+    }
+    if (vurl) {
+      var vd = document.createElement('video'); vd.className = 'nya-vid'; vd.controls = true; vd.preload = 'metadata';
+      vd.setAttribute('playsinline', ''); vd.src = vurl;
+      body.parentNode.insertBefore(vd, acts);
+      var a3 = document.createElement('a'); a3.href = fileUrl(vurl, 'neyroyaga.mp4');
+      a3.innerHTML = IC.dl + 'Скачать'; acts.appendChild(a3);
+    }
+    if (text && !vurl) {
+      var b1 = document.createElement('button'); b1.type = 'button'; b1.innerHTML = IC.copy + 'Копировать';
+      b1.addEventListener('click', function () {
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Скопировано'); }, function () { toast('Не удалось скопировать'); });
+      }); acts.appendChild(b1);
+    }
+    if (img || vurl) acts.parentNode.appendChild(keepNote());
+    col.appendChild(d); bottom();
+  }
+  function think(on, label) {
+    var t = $('nya-think');
+    if (!on) { if (t) t.remove(); return; }
+    if (!t) {
+      clearWelcome();
+      t = document.createElement('div'); t.className = 'nya-b nya-think'; t.id = 'nya-think';
+      t.innerHTML = '<div class="nya-bav">' + IC.star + '</div><div class="nya-md"></div>';
+      col.appendChild(t);
+    }
+    t.querySelector('.nya-md').textContent = label || 'НейроЯга думает…';
+    bottom();
+  }
+  function stopWaiting() { S.waiting = false; clearTimeout(S.waitT); think(false); updSend(); }
+
+  var GREET = /Приветствую в НейроЯге/;
+  function splitSaved(text) {
+    var mark = '\n\n[[nya-model]]\n';
+    var i = String(text || '').indexOf(mark);
+    if (i < 0) return { show: text || '', model: text || '' };
+    return { show: text.slice(0, i), model: text.slice(i + mark.length) };
+  }
+  function modelHist() {
+    var h = S.hist || [];
+    if (h.length <= 8) return h.slice();
+    var longFirst = h[0] && h[0].role === 'user' && String(h[0].text || '').length > 700;
+    var tail = h.slice(-8);
+    return longFirst ? [h[0]].concat(tail) : tail;
+  }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function chatsHtml() {
+    if (!S.email) return '<div class="nya-chats-empty">Войдите, чтобы сохранять чаты</div>';
+    if (!S.chats.length) return '<div class="nya-chats-empty">Здесь появятся ваши чаты</div>';
+    return S.chats.map(function (c) {
+      return '<div class="nya-ci' + (c.id === S.chatId ? ' on' : '') + '"><button type="button" data-chat="' + esc(c.id) + '" title="' + esc(c.title) + '">' + esc(c.title || 'Без названия') + '</button>' +
+        (c.id === 'legacy' ? '' : '<button type="button" class="nya-del" data-delchat="' + esc(c.id) + '" aria-label="Удалить чат">' + IC.trash + '</button>') + '</div>';
+    }).join('');
+  }
+  function drawChats() {
+    var h = chatsHtml();
+    $('nya-chats').innerHTML = h;
+    var m = $('nya-chats-m'); if (m) m.innerHTML = h;
+  }
+  function chatsView() {
+    open('<h3>Мои чаты</h3><p>Все ваши переписки сохраняются и доступны на любом устройстве</p>' +
+      '<button type="button" class="nya-btn w" data-act="newchat">+ Новый чат</button><div class="nya-chats" id="nya-chats-m" style="margin-top:14px">' + chatsHtml() + '</div>');
+  }
+  function loadChats() {
+    if (!S.email) { drawChats(); return; }
+    req('/api/chats/' + encodeURIComponent(S.email)).then(function (r) {
+      var list = (r && r.chats) || [];
+      S.chats = list.concat(S.chats.filter(function (c) { return c.id === 'legacy'; }));
+      drawChats();
+    }).catch(function () { drawChats(); });
+    req('/api/history/' + encodeURIComponent(S.email)).then(function (d) {
+      var msgs = ((d && d.messages) || []).filter(function (m) { return m.text && !GREET.test(m.text); });
+      if (!msgs.length || S.chats.some(function (c) { return c.id === 'legacy'; })) return;
+      S.legacyMsgs = msgs;
+      S.chats.push({ id: 'legacy', title: '🗂 Прошлая переписка' });
+      drawChats();
+    }).catch(function () {});
+  }
+  function renderMsgs(msgs) {
+    col.innerHTML = ''; S.hasMsgs = true; S.hist = [];
+    msgs.forEach(function (m) {
+      if (!m.text || GREET.test(m.text)) return;
+      var saved = splitSaved(m.text);
+      if (m.role === 'user') addUser(saved.show); else addBot(saved.show, m.image || null);
+      S.hist.push({ role: m.role === 'user' ? 'user' : 'model', text: saved.model });
+    });
+    if (!col.children.length) welcome();
+    if (S.vjob && S.vjob.chat === S.chatId) vPending(true);
+    bottom();
+  }
+  function openChat(id) {
+    if ($('nya-modal').classList.contains('on')) close();
+    go('chat');
+    if (id === S.chatId && S.hasMsgs) return;
+    endBiz();
+    S.chatId = id; drawChats();
+    if (id === 'legacy') { renderMsgs(S.legacyMsgs || []); return; }
+    col.innerHTML = ''; S.hasMsgs = true; think(true, 'Открываю чат…');
+    req('/api/chats/' + encodeURIComponent(S.email) + '/' + encodeURIComponent(id)).then(function (r) {
+      if (S.chatId !== id) return;
+      think(false);
+      if (!r || !r.ok) { toast((r && r.error) || 'Не удалось открыть чат'); welcome(); return; }
+      renderMsgs(r.messages || []);
+    }).catch(function () { if (S.chatId === id) { think(false); welcome(); toast('Нет связи с сервером'); } });
+  }
+  function newChat() {
+    if ($('nya-modal').classList.contains('on')) close();
+    S.chatId = null; S.hist = []; S.pendingChat = S.waiting ? S.pendingChat : null;
+    if (S.biz) endBiz();
+    welcome(); drawChats(); go('chat');
+    if (!coarse) ta.focus();
+  }
+  function delChat(id) {
+    var c = S.chats.filter(function (x) { return x.id === id; })[0];
+    if (!c || !window.confirm('Удалить чат «' + (c.title || 'Без названия') + '»?')) return;
+    S.chats = S.chats.filter(function (x) { return x.id !== id; });
+    if (S.chatId === id) newChat(); else drawChats();
+    req('/api/chats/delete', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, chat_id: id }) })
+      .then(function (r) { if (!r || !r.ok) toast('Не удалось удалить чат на сервере'); }, function () { toast('Нет связи с сервером'); });
+  }
+  function ensureChat(firstText) {
+    if (S.chatId && S.chatId !== 'legacy') return S.chatId;
+    var id = newId(), title = (firstText || 'Новый чат').replace(/\s+/g, ' ').trim().slice(0, 60);
+    S.chatId = id;
+    S.chats.unshift({ id: id, title: title, updated: Date.now() });
+    drawChats();
+    return id;
+  }
+  function saveMsg(chatId, role, text) {
+    if (!S.email || !text || !chatId || chatId === 'legacy') return;
+    var c = S.chats.filter(function (x) { return x.id === chatId; })[0];
+    if (c && S.chats[0] !== c) { S.chats = [c].concat(S.chats.filter(function (x) { return x !== c; })); drawChats(); }
+    req('/api/chats/message', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, chat_id: chatId, title: c ? c.title : '', role: role, text: text }) })
+      .catch(function () {});
+  }
+
+  function setDot(ok) { var d = $('nya-dot'); d.classList.toggle('ok', ok); d.title = ok ? 'Подключено' : 'Нет соединения'; }
+  function connect() {
+    if (!S.email || S.stopWs) return;
+    if (S.ws && (S.ws.readyState === 0 || S.ws.readyState === 1)) return;
+    var url = API.replace(/^http/, 'ws') + '/ws/' + encodeURIComponent(S.email) + (S.token ? '?token=' + encodeURIComponent(S.token) : '');
+    var ws;
+    try { ws = new WebSocket(url); } catch (e) { retry(); return; }
+    S.ws = ws;
+    ws.onopen = function () { S.tries = 0; setDot(true); };
+    ws.onmessage = function (ev) {
+      var d; try { d = JSON.parse(ev.data); } catch (e) { d = { type: 'text', text: String(ev.data) }; }
+      setCredits(d.credits);
+      if (d.auth === false) { logout(true); return; }
+      var txt = d.text || '';
+      if (d.type === 'text' && /создается|создаётся/.test(txt)) { think(true, 'Рисую картинку…'); return; }
+      if (!S.waiting && d.type === 'text' && /Приветствую/.test(txt)) return;
+      var target = S.pendingChat;
+      stopWaiting();
+      var img = d.type === 'image' && d.data ? 'data:' + (d.mimeType || 'image/png') + ';base64,' + d.data : null;
+      if (target && target !== S.chatId) {
+        var tc = S.chats.filter(function (x) { return x.id === target; })[0];
+        toast('Ответ пришёл в чат «' + (tc ? tc.title : 'другой') + '»');
+      } else {
+        addBot(txt, img);
+        if (txt) S.hist.push({ role: 'model', text: txt });
+      }
+      S.pendingChat = null;
+      saveMsg(target, 'bot', txt || (img ? '🎨 Картинка создана' : ''));
+    };
+    ws.onclose = function () {
+      setDot(false);
+      if (S.waiting) { stopWaiting(); toast('Связь прервалась. Если кредиты списались, они вернутся'); }
+      retry();
+    };
+    ws.onerror = function () { try { ws.close(); } catch (e) {} };
+  }
+  function retry() {
+    if (S.stopWs || !S.email) return;
+    S.tries++;
+    setTimeout(connect, Math.min(15000, 1000 * Math.pow(2, S.tries)));
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) connect(); });
+
+  function startBiz(k) {
+    var b = BIZ[k]; if (!b) return;
+    go('chat'); closeMenus();
+    S.biz = k; S.bizFirst = true; root.classList.add('nya-bizmode');
+    qa('[data-go]').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-go') === 'biz'); });
+    if (!S.hasMsgs) col.innerHTML = '<div class="nya-bizintro"><em>' + b.icon + '</em><h2>' + esc(b.title) + '</h2><p>' + esc(b.desc) + '</p><small>' +
+      (b.fields.length ? 'Заполните поля внизу и нажмите отправить. Потом можно задавать уточняющие вопросы' : 'Опишите вопрос внизу — ответ придёт как от опытного консультанта') +
+      ' · ' + BIZ_COST + ' кр. за сообщение</small><button type="button" class="nya-ghost" data-go="biz">← Все бизнес-инструменты</button></div>';
+    $('nya-bizform').innerHTML = '<div class="nya-biz"><div class="nya-biz-h">' + b.icon + ' ' + b.title + ' <small>· ' + BIZ_COST + ' кр. за сообщение</small><button type="button" data-act="endbiz" aria-label="Закрыть">' + IC.x + '</button></div><div class="nya-biz-g">' +
+      b.fields.map(function (f) { return '<div><label for="nya-bf-' + f.id + '">' + f.label + '</label><input class="nya-in" id="nya-bf-' + f.id + '" placeholder="' + esc(f.ph) + '"></div>'; }).join('') + '</div></div>';
+    chips();
+    ta.placeholder = b.fields.length ? 'Пожелания (необязательно)' : 'Опишите ваш вопрос или ситуацию';
+    aspVisible();
+    updSend();
+    setTimeout(function () { var f = b.fields.length ? $('nya-bf-' + b.fields[0].id) : ta; if (f) f.focus(); }, 60);
+  }
+  function endBiz() {
+    S.biz = null; S.bizFirst = false; root.classList.remove('nya-bizmode'); $('nya-bizform').innerHTML = ''; chips(); setModel(S.model); updSend();
+    if (!S.hasMsgs && S.view === 'chat') welcome();
+    qa('[data-go]').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-go') === S.view); });
+  }
+  function bizDraw() {
+    var vip = S.tpl.filter(function (t) { return t.vip; });
+    var img = vip.filter(function (t) { return t.kind !== 'text'; }), txt = vip.filter(function (t) { return t.kind === 'text'; });
+    var vh = '';
+    if (!S.tpl.length) { loadTemplates(); vh = '<p class="nya-dim" style="margin-top:20px">Загружаю VIP-инструменты…</p>'; }
+    else if (vip.length) {
+      vh = '<div class="nya-bizvip-h"><span>👑</span><div><b>Для VIP: визуал и тексты для бизнеса</b><small>' +
+        (S.vip ? 'Ваш VIP активен до ' + esc(S.vipUntil || '') + '. Цены — как в каталоге шаблонов' : 'Креативы для рекламы, карточки товаров и готовые тексты. Доступны со статусом VIP — цены как в каталоге шаблонов') +
+        '</small></div>' + (S.vip ? '' : '<button type="button" class="nya-btn" data-act="pay">👑 Получить VIP</button>') + '</div>';
+      if (img.length) vh += '<h3 class="nya-bizsub">🖼 Картинки для рекламы</h3><div class="nya-grid">' + img.map(tCard).join('') + '</div>';
+      if (txt.length) vh += '<h3 class="nya-bizsub">✍️ Готовые тексты</h3><div class="nya-grid">' + txt.map(tCard).join('') + '</div>';
+    }
+    $('nya-bizvip').innerHTML = vh;
+    $('nya-bizgrid').innerHTML = Object.keys(BIZ).map(function (k) {
+      var b = BIZ[k];
+      return '<button type="button" class="nya-bizcard" data-biz="' + k + '"><em>' + b.icon + '</em><b>' + b.title + '</b><small>' + b.desc + '</small><span>' + BIZ_COST + ' кр. за сообщение</span></button>';
+    }).join('');
+  }
+  function chips() {
+    var html = '';
+    if (S.biz && !S.bizFirst) html += '<span class="nya-chip"><span>' + BIZ[S.biz].icon + ' ' + BIZ[S.biz].title + '</span><button type="button" data-act="endbiz" aria-label="Выйти из режима">' + IC.x + '</button></span>';
+    if (S.file) html += '<span class="nya-chip"><span>📎 ' + esc(S.file.name) + '</span><button type="button" data-act="unfile" aria-label="Убрать файл">' + IC.x + '</button></span>';
+    if (S.audio) html += '<span class="nya-chip"><span>🎙 ' + esc(S.audio.name) + ' · ' + Math.ceil(S.audio.sec) + ' сек</span><button type="button" data-act="unaudio" aria-label="Убрать запись">' + IC.x + '</button></span>';
+    $('nya-chips').innerHTML = html; $('nya-chips').hidden = !html;
+  }
+
+  function updSend() { sendBtn.disabled = S.waiting || !(ta.value.trim() || S.file || S.bizFirst); }
+  function autosize() { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'; }
+  function vPending(on, label) {
+    var w = $('nya-vwait');
+    if (!on) { if (w) w.remove(); return; }
+    if (!w) {
+      clearWelcome();
+      w = document.createElement('div'); w.className = 'nya-b nya-think'; w.id = 'nya-vwait';
+      w.innerHTML = '<div class="nya-bav">' + IC.star + '</div><div class="nya-md"></div>';
+    }
+    col.appendChild(w);
+    w.querySelector('.nya-md').textContent = label || (S.vjob && S.vjob.kind === 'audio'
+      ? '🎵 Сочиняю музыку… обычно 1–3 минуты. Можно пользоваться чатом — треки появятся в этом чате.'
+      : S.vjob && S.vjob.kind === 'image'
+      ? '🖼 Рисую картинку… обычно 20–60 секунд. Результат появится в этом чате.'
+      : '🎬 Видео создаётся… обычно 1–5 минут. Можно пользоваться чатом или закрыть страницу — видео появится в этом чате.');
+    bottom();
+  }
+  function pollVideo() {
+    clearTimeout(S.vT);
+    if (!S.vjob || !S.email) return;
+    S.vT = setTimeout(function () {
+      if (!S.vjob) return;
+      req('/api/video/status/' + S.vjob.id + '?email=' + encodeURIComponent(S.email), {}, 20000).then(function (r) {
+        if (!S.vjob) return;
+        if (r && r.status === 'running') { pollVideo(); return; }
+        var job = S.vjob; S.vjob = null; ls('nya_vjob', null); vPending(false);
+        var here = S.chatId === job.chat, txt;
+        if (r && r.status === 'done' && r.url) {
+          var isI = job.kind === 'image', isM = job.kind === 'audio';
+          txt = isM ? MUSIC_MARK + '\n' + (r.urls || [r.url]).join('\n') : (isI ? IMAGE_MARK : VIDEO_MARK) + '\n' + r.url;
+          if (here) addBot(txt); else toast(isM ? '🎵 Музыка готова — откройте чат, где вы её заказывали' : isI ? '🖼 Картинка готова — откройте чат, где вы её заказывали' : '🎬 Видео готово — откройте чат, где вы его заказывали');
+        } else {
+          if (r && typeof r.credits === 'number') setCredits(r.credits);
+          txt = '⚠️ ' + ((r && r.error) || 'Не получилось');
+          if (here) addBot(txt); else toast(txt);
+        }
+        saveMsg(job.chat, 'bot', txt);
+        loadBalance();
+      }).catch(function () { pollVideo(); });
+    }, 6000);
+  }
+  function sendVideo() {
+    var v = vmodel(S.model), text = ta.value.trim(), file = S.file, isImg = v.kind === 'image', isMus = v.kind === 'audio';
+    if (isMus && text.length < 3) { toast('Опишите песню или звук: о чём, жанр, настроение'); return; }
+    if (isImg && text.length < 2) { toast(file ? 'Напишите, что сделать с фото' : 'Опишите, какую картинку сделать'); return; }
+    if (!text && !file) { if (v.photo === 'required') { toast('Прикрепите фото 📎'); $('nya-file').click(); } return; }
+    if (file && !/^image\//.test(file.mimeType)) { toast('Можно прикрепить только фото'); return; }
+    if (v.photo === 'required' && !file) { toast('Для ' + v.name + ' прикрепите фото 📎'); $('nya-file').click(); return; }
+    if (v.photo === 'forbidden' && file) { toast(v.name + ' делает видео только по тексту — уберите фото'); return; }
+    if (S.vjob) { toast('Предыдущая задача ещё выполняется, дождитесь её'); return; }
+    if (v.audio) {
+      if (!file) { toast('Прикрепите фото человека 📎'); $('nya-file').click(); return; }
+      if (!S.audio) { toast('Прикрепите голосовую запись 🎙'); $('nya-audio').click(); return; }
+    }
+    var vq = v.qualities ? qOf(v, S.iq) : null;
+    var asec = S.audio ? Math.max(1, Math.ceil(S.audio.sec)) : 1;
+    var cost = vq ? (vq.per_sec ? vq.credits * asec : vq.credits) : v.duration_prices ? durPrice(v, S.vdur) : v.per_sec ? v.credits * S.vdur : v.credits;
+    if (S.credits != null && S.credits < cost) { toast('Не хватает кредитов: нужно ' + cost + ' кр.'); payView(); return; }
+    var shown = isMus ? '🎵 ' + text + ' · ' + v.name + (vq ? ' (' + vq.name + ')' : '')
+      : v.audio ? '🎙 Говорящее фото · ' + v.name + (vq ? ' (' + vq.name + ')' : '') + ', ' + asec + ' сек' + (text ? '\n' + text : '')
+      : isImg ? '🖼 ' + text + ' · ' + v.name + (vq ? ' (' + vq.name + ')' : '') + ', ' + S.aspect
+      : '🎬 ' + (text || 'Оживить фото') + ' · ' + v.name + (v.no_aspect ? '' : ', ' + S.vaspect) + (v.per_sec || v.duration_prices ? ', ' + S.vdur + ' сек' : '');
+    addUser(shown, file && file.name);
+    var cid = ensureChat(text || (v.audio ? 'Говорящее фото' : 'Видео из фото'));
+    var aud = S.audio;
+    saveMsg(cid, 'user', shown + (file ? ' [Фото: ' + file.name + ']' : ''));
+    ta.value = ''; autosize(); S.file = null; $('nya-file').value = ''; S.audio = null; $('nya-audio').value = ''; chips(); updSend();
+    vPending(true, aud ? 'Загружаю фото и запись…' : 'Отправляю задание…');
+    req('/api/video/start', { method: 'POST', body: JSON.stringify({
+      email: S.email, token: S.token, model: v.id, prompt: text, aspect: isMus ? null : isImg ? S.aspect : S.vaspect, duration: !isImg && !isMus && (v.per_sec || v.duration_prices) ? S.vdur : null, quality: vq ? vq.id : null, audio: aud ? 'data:' + aud.mime + ';base64,' + aud.data : null,
+      image: file ? 'data:' + file.mimeType + ';base64,' + file.data : null }) }, 90000)
+      .then(function (r) {
+        if (r && typeof r.credits === 'number') setCredits(r.credits);
+        if (!r || !r.ok) {
+          vPending(false);
+          var msg = '⚠️ ' + ((r && r.error) || 'Не удалось запустить задачу');
+          addBot(msg); saveMsg(cid, 'bot', msg);
+          if (r && r.need) payView();
+          return;
+        }
+        S.vjob = { id: r.job_id, chat: cid, kind: isImg ? 'image' : isMus ? 'audio' : 'video' }; ls('nya_vjob', JSON.stringify(S.vjob));
+        vPending(true); pollVideo();
+      }).catch(function (e) { vPending(false); if (!(e && e.auth)) addBot('⚠️ Нет связи с сервером, задача не запущена. Кредиты не списаны'); });
+  }
+  function send() {
+    if (send._lock && Date.now() - send._lock < 400) return;
+    send._lock = Date.now();
+    if (coarse && ta) ta.blur();
+    if (S.waiting) return;
+    if (!S.email) { authView(); return; }
+    if (!S.biz && (isVideo(S.model) || isBhImg(S.model) || isMusic(S.model))) { sendVideo(); return; }
+    var text = ta.value.trim();
+    if (!text && !S.file && !S.bizFirst) return;
+    if (!S.ws || S.ws.readyState !== 1) { toast('Подключаемся к серверу, попробуйте через пару секунд'); S.tries = 0; connect(); return; }
+    var prompt = text, shown = text, modelKey = S.model, bizId = null;
+    if (S.biz) {
+      var b = BIZ[S.biz]; bizId = S.biz; modelKey = 'pro';
+      if (S.bizFirst) {
+        var vals = {}, any = false;
+        b.fields.forEach(function (f) { var el = $('nya-bf-' + f.id); vals[f.id] = el ? el.value.trim() : ''; if (vals[f.id]) any = true; });
+        if (!b.fields.length && text) any = true;
+        if (!any) { toast(b.fields.length ? 'Заполните хотя бы одно поле' : 'Напишите ваш вопрос'); return; }
+        prompt = b.tpl;
+        b.fields.forEach(function (f) { prompt = prompt.split('{' + f.id + '}').join(vals[f.id] || 'не указано'); });
+        prompt = prompt.split('{user_prompt}').join(text || 'нет');
+        shown = b.icon + ' ' + b.title + '\n' + b.fields.filter(function (f) { return vals[f.id]; }).map(function (f) { return f.label + ': ' + vals[f.id]; }).join('\n') + (text ? '\n' + text : '');
+        S.bizFirst = false; $('nya-bizform').innerHTML = ''; chips();
+      }
+    }
+    var file = S.file;
+    addUser(shown, file && file.name);
+    var cid = ensureChat(shown);
+    S.pendingChat = cid;
+    var shownSave = shown + (file ? ' [Файл: ' + file.name + ']' : '');
+    saveMsg(cid, 'user', prompt && prompt !== shown ? shownSave + '\n\n[[nya-model]]\n' + prompt : shownSave);
+    var payload = { prompt: prompt, modelKey: modelKey, history: modelHist() };
+    if (file) payload.file = { mimeType: file.mimeType, data: file.data };
+    if (bizId) payload.biz_tool_id = bizId;
+    else if (/nano/.test(modelKey)) payload.aspect = S.aspect;
+    S.hist.push({ role: 'user', text: prompt || shown });
+    try { S.ws.send(JSON.stringify(payload)); } catch (e) { toast('Не удалось отправить, попробуйте ещё раз'); return; }
+    S.waiting = true; think(true);
+    clearTimeout(S.waitT);
+    S.waitT = setTimeout(function () { if (S.waiting) { stopWaiting(); toast('Ответ задерживается. Попробуйте ещё раз'); } }, 180000);
+    ta.value = ''; autosize(); S.file = null; $('nya-file').value = ''; chips(); updSend();
+  }
+  var AUD_MIME = { m4a: 'audio/x-m4a', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/opus', aac: 'audio/aac', flac: 'audio/flac' };
+  function pickAudio(input) {
+    var f = input.files && input.files[0]; if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { toast('Запись больше 10 МБ'); input.value = ''; return; }
+    var ext = (f.name.split('.').pop() || '').toLowerCase();
+    var mime = AUD_MIME[ext] || f.type || 'audio/mpeg';
+    if (mime === 'audio/mp4') mime = 'audio/x-m4a';
+    var url = URL.createObjectURL(f), a = new Audio();
+    a.preload = 'metadata';
+    a.onloadedmetadata = function () {
+      var sec = a.duration; URL.revokeObjectURL(url);
+      var vm = vmodel(S.model), lim = (vm && vm.max_audio_sec) || 60;
+      if (!isFinite(sec) || sec <= 0) sec = 1;
+      if (sec > lim) { toast('Запись длиннее ' + lim + ' секунд. Обрежьте её'); input.value = ''; return; }
+      var r = new FileReader();
+      r.onload = function (e) {
+        S.audio = { name: f.name, mime: mime, data: String(e.target.result).split(',')[1], sec: sec };
+        chips(); updSend();
+        var q = vm && vm.qualities ? qOf(vm, S.iq) : null;
+        if (q) toast('Запись ' + Math.ceil(sec) + ' сек — ' + (q.credits * Math.ceil(sec)) + ' кр.');
+      };
+      r.readAsDataURL(f);
+    };
+    a.onerror = function () { URL.revokeObjectURL(url); toast('Не получилось открыть запись. Подойдут mp3, m4a, wav'); input.value = ''; };
+    a.src = url;
+  }
+  function pickFile(input) {
+    var f = input.files && input.files[0]; if (!f) return;
+    if (f.size > 14 * 1024 * 1024) { toast('Файл больше 14 МБ'); input.value = ''; return; }
+    if (/^image\//.test(f.type) && f.size > 1.5 * 1024 * 1024) {
+      readImg(f, 1600).then(function (d) { if (d) { S.file = { name: f.name, mimeType: 'image/jpeg', data: d.split(',')[1] }; chips(); updSend(); } });
+      return;
+    }
+    var r = new FileReader();
+    r.onload = function (e) { S.file = { name: f.name, mimeType: f.type || 'application/octet-stream', data: String(e.target.result).split(',')[1] }; chips(); updSend(); };
+    r.readAsDataURL(f);
+  }
+
+  function tCard(t, flag) {
+    return '<button type="button" class="nya-t" data-tpl="' + esc(t.id) + '">' + (t.vip ? '<span class="nya-vipbadge">👑 VIP' + (S.vip ? '' : ' 🔒') + '</span>' : '') + (flag ? '<span class="nya-flag">' + flag + '</span>' : '') +
+      '<div class="nya-tp' + (t.kind === 'text' && !t.image ? ' nya-tp-txt' : '') + '">' + (t.image ? '<img src="' + esc(t.image) + '" alt="" loading="lazy" decoding="async">' : (t.kind === 'text' ? '<span>✍️</span><small>Текст</small>' : '🪄')) + '</div>' +
+      '<div class="nya-tb"><b>' + esc(t.title) + '</b><span>' + esc(t.price) + ' кр.</span></div></button>';
+  }
+  function catsDraw() {
+    var have = {};
+    S.tpl.forEach(function (t) { (t.cats || []).forEach(function (c) { have[c] = 1; }); });
+    var cats = CAT_ORDER.filter(function (c) { return have[c]; }).concat(Object.keys(have).filter(function (c) { return CAT_ORDER.indexOf(c) < 0; }));
+    $('nya-cats').innerHTML = cats.length ? '<button type="button" class="nya-cat' + (S.cat ? '' : ' on') + '" data-cat="">Все</button>' +
+      cats.map(function (c) { var v = c === 'VIP'; return '<button type="button" class="nya-cat' + (v ? ' nya-cat-vip' : '') + (S.cat === c ? ' on' : '') + '" data-cat="' + esc(c) + '">' + (v ? '👑 VIP' : esc(c)) + '</button>'; }).join('') : '';
+  }
+  function tplDraw() {
+    var hot = S.tpl.filter(function (t) { return t.trend || t.runs > 0; }).sort(function (a, b) { return (b.trend - a.trend) || (b.runs - a.runs); }).slice(0, 8);
+    if (S.cat === 'VIP' && !S.q) { $('nya-hot').innerHTML = vipBanner(); } else
+    $('nya-hot').innerHTML = (!S.cat && !S.q && hot.length > 2) ? '<div class="nya-h3">🔥 Сейчас популярно</div><div class="nya-strip">' + hot.map(function (t, i) { return tCard(t, '#' + (i + 1)); }).join('') + '</div>' : '';
+    var q = S.q.toLowerCase();
+    var list = S.tpl.filter(function (t) { return (!S.cat || (t.cats || []).indexOf(S.cat) >= 0) && (!q || (t.title + ' ' + (t.desc || '')).toLowerCase().indexOf(q) >= 0); });
+    $('nya-grid').innerHTML = list.length ? list.map(function (t) { return tCard(t, t.trend ? 'Хит' : ''); }).join('')
+      : '<div class="nya-empty">' + (S.q ? 'Ничего не нашлось. Попробуйте другое слово' : 'В этой теме пока нет шаблонов') + '</div>';
+  }
+  function loadTemplates() {
+    try { var c = JSON.parse(ls('nyt_cache') || 'null'); if (c && c.length && !S.tpl.length) { S.tpl = c; catsDraw(); tplDraw(); } } catch (e) {}
+    req('/api/templates', {}, 30000).then(function (r) {
+      if (!r || !r.ok) throw { msg: r && r.error };
+      S.tpl = r.templates || []; S.eco = r.eco && r.eco.on ? r.eco : null;
+      ls('nyt_cache', JSON.stringify(S.tpl)); catsDraw(); tplDraw(); deepLink();
+      if (S.pendingTpl) { openTpl(S.pendingTpl); S.pendingTpl = null; }
+      if (S.view === 'biz') bizDraw();
+    }).catch(function (e) {
+      if (!S.tpl.length) $('nya-grid').innerHTML = '<div class="nya-empty">' + esc((e && e.msg) || 'Не удалось загрузить шаблоны. Проверьте интернет') + '<br><button type="button" class="nya-ghost" data-act="reload">Обновить</button></div>';
+    });
+  }
+  var LINKS = {
+    cabinet: function () { profileView(); }, kabinet: function () { profileView(); }, lk: function () { profileView(); }, account: function () { profileView(); },
+    pay: function () { payView(); }, popolnit: function () { payView(); }, topup: function () { payView(); },
+    templates: function () { close(); go('tpl'); }, shablony: function () { close(); go('tpl'); }, tpl: function () { close(); go('tpl'); },
+    works: function () { close(); go('works'); }, raboty: function () { close(); go('works'); },
+    chat: function () { close(); go('chat'); },
+    forum: function () { location.href = 'https://babayagaland.ru/lenta'; },
+    notes: function () { close(); S.fmode = 'notes'; go('forum'); },
+    dm: function () { close(); S.fmode = 'dm'; S.dwith = ''; go('forum'); },
+    me: function () { location.href = 'https://babayagaland.ru/lenta' + (S.nick ? '?nick=' + encodeURIComponent(S.nick) : ''); }
+  };
+  function linkKey(u) {
+    var k = (u.hash || '').replace(/^#/, '').toLowerCase();
+    if (LINKS[k]) return k;
+    var sp = new URLSearchParams(u.search);
+    k = (sp.get('open') || '').toLowerCase();
+    if (LINKS[k]) return k;
+    return sp.get('t') === 'all' ? 'templates' : '';
+  }
+  function cleanUrl() {
+    try {
+      var sp = new URLSearchParams(location.search); sp.delete('open');
+      var q = sp.toString();
+      history.replaceState(null, '', location.pathname + (q ? '?' + q : ''));
+    } catch (e) {}
+  }
+  function hashAction() {
+    var k = linkKey(location);
+    if (!k) return false;
+    LINKS[k](); cleanUrl(); return true;
+  }
+  function samePage(u) { return u.origin === location.origin && (u.pathname.replace(/\/+$/, '') || '/') === (location.pathname.replace(/\/+$/, '') || '/'); }
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+    var u; try { u = new URL(a.getAttribute('href'), location.href); } catch (x) { return; }
+    if (!samePage(u)) return;
+    var k = linkKey(u);
+    if (!k) return;
+    e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    LINKS[k]();
+  }, true);
+  window.addEventListener('hashchange', function () { hashAction(); });
+  function deepLink() {
+    if (S.deepDone) return;
+    if (hashAction()) { S.deepDone = true; return; }
+    var sp = new URLSearchParams(location.search);
+    var id = sp.get('template') || (sp.get('t') && sp.get('t') !== 'all' ? sp.get('t') : '');
+    if (id && S.tpl.some(function (t) { return t.id === id; })) { S.deepDone = true; go('tpl'); openTpl(id); return; }
+    if (sp.get('tab') === 'templates' || sp.get('open') === 'templates' || sp.get('t') === 'all') { S.deepDone = true; go('tpl'); }
+  }
+  function photoBox(i) {
+    var f = S.cur.fields[i], arr = S.photos[i] || [], max = f.multi || 1;
+    return arr.map(function (src, k) {
+      return '<div class="nya-th"><img src="' + src + '" alt=""><button type="button" data-act="delph" data-i="' + i + '" data-k="' + k + '" aria-label="Убрать фото">' + IC.x + '</button></div>';
+    }).join('') + (arr.length < max ? '<label class="nya-add">＋<span>' + (max > 1 ? arr.length + ' из ' + max : 'Фото') + '</span><input type="file" accept="image/*" data-ph="' + i + '"' + (max > 1 ? ' multiple' : '') + '></label>' : '');
+  }
+  function openTpl(id) {
+    var t = S.tpl.filter(function (x) { return x.id === id; })[0]; if (!t) return;
+    if (t.vip && !S.vip) { if (!S.email) { authView(function () { openTpl(id); }); return; } vipView(); return; }
+    S.cur = t; S.photos = {};
+    var isTxt = t.kind === 'text';
+    var h = (t.image ? '<div class="nya-hero"><img src="' + esc(t.image) + '" alt=""></div>' : '') + '<h3>' + esc(t.title) + '</h3><p>' + esc(t.desc || (isTxt ? 'Готовый текст появится здесь — его можно сразу скопировать' : 'Готовая картинка появится здесь, её можно сразу скачать')) + '</p>';
+    (t.fields || []).forEach(function (f, i) {
+      var lab = '<label class="nya-lab">' + esc(f.label) + (f.optional ? ' (по желанию)' : '') + '</label>';
+      if (f.type === 'фото') { h += lab + '<div class="nya-photos" id="nya-ph' + i + '"></div>'; return; }
+      if (f.type === 'выбор') { h += lab + '<select class="nya-in" data-k="' + esc(f.key) + '"><option value="">Выберите…</option>' + (f.options || []).map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('') + '</select>'; return; }
+      if (isTxt && f.type === 'текст') { h += lab + '<textarea class="nya-in nya-tarea" data-k="' + esc(f.key) + '" maxlength="600" rows="2"></textarea>'; return; }
+      h += lab + '<input class="nya-in" data-k="' + esc(f.key) + '" maxlength="600" type="' + (f.type === 'число' ? 'number' : f.type === 'дата' ? 'date' : 'text') + '">';
+    });
+    if (isTxt) {
+      S.tplEng = 'std';
+      h += '<div id="nya-ferr"></div><button type="button" class="nya-btn w" id="nya-go" data-act="run">✍️ Написать за ' + esc(t.price) + ' кр.</button>' +
+        '<button type="button" class="nya-ghost w" data-act="share">Скопировать ссылку на шаблон</button>';
+      open(h); return;
+    }
+    var fm = (t.formats || []).filter(function (v) { return ASPECTS.some(function (a) { return a.v === v; }); });
+    S.tplAspect = fm.length && fm.indexOf(S.aspect) < 0 ? fm[0] : S.aspect;
+    if (fm.length === 1) {
+      var one = ASPECTS.filter(function (a) { return a.v === fm[0]; })[0];
+      h += '<label class="nya-lab">Размер картинки</label><p style="margin:0 0 16px">' + one.n + ' ' + one.v + '</p>';
+    } else {
+      var keep = S.aspect; S.aspect = S.tplAspect;
+      h += '<label class="nya-lab">Размер картинки</label>' + aspHtml(fm);
+      S.aspect = keep;
+    }
+    S.tplEng = 'std';
+    if (S.eco) {
+      h += '<label class="nya-lab">Нейросеть</label><div class="nya-engs">' +
+        '<button type="button" class="nya-eng on" data-eng="std"><b>✨ Стандарт</b><small>Лучшее сходство и качество</small><span>' + esc(t.price) + ' кр.</span></button>' +
+        '<button type="button" class="nya-eng" data-eng="eco"><b>💸 Эконом</b><small>' + esc(S.eco.name) + ', дешевле</small><span>' + esc(S.eco.price) + ' кр.</span></button></div>';
+    }
+    h += '<div id="nya-ferr"></div><button type="button" class="nya-btn w" id="nya-go" data-act="run">Создать за ' + esc(t.price) + ' кр.</button>' +
+      '<button type="button" class="nya-ghost w" data-act="share">Скопировать ссылку на шаблон</button>';
+    open(h);
+    (t.fields || []).forEach(function (f, i) { if (f.type === 'фото') $('nya-ph' + i).innerHTML = photoBox(i); });
+  }
+  function readImg(file, maxSide) {
+    return new Promise(function (ok) {
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onload = function () {
+        var k = Math.min(1, (maxSide || 1280) / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); ok(c.toDataURL('image/jpeg', 0.86));
+      };
+      img.onerror = function () { URL.revokeObjectURL(u); toast('Не получилось открыть фото. Выберите JPG или PNG'); ok(null); };
+      img.src = u;
+    });
+  }
+  function pickPhotos(input) {
+    var i = +input.getAttribute('data-ph'), f = S.cur.fields[i], max = f.multi || 1, arr = S.photos[i] || (S.photos[i] = []);
+    Array.prototype.slice.call(input.files || []).reduce(function (p, file) {
+      return p.then(function () { if (arr.length >= max) return; return readImg(file).then(function (d) { if (d) arr.push(d); }); });
+    }, Promise.resolve()).then(function () { $('nya-ph' + i).innerHTML = photoBox(i); });
+  }
+  function ferr(m, withPay) {
+    $('nya-ferr').innerHTML = '<div class="nya-err">' + esc(m) + '</div>' + (withPay ? '<button type="button" class="nya-ghost w" data-act="pay" style="margin:0 0 12px">Пополнить баланс</button>' : '');
+  }
+  function runTpl() {
+    var t = S.cur; if (!t || S.busy) return;
+    if (!S.email) { var id = t.id; authView(function () { openTpl(id); }); return; }
+    var answers = {}, photos = [];
+    qa('#nya-mb [data-k]').forEach(function (el) { answers[el.getAttribute('data-k')] = el.value.trim(); });
+    for (var i = 0; i < (t.fields || []).length; i++) {
+      var f = t.fields[i];
+      if (f.type === 'фото') {
+        var got = S.photos[i] || [];
+        if (!got.length && !f.optional) return ferr('Добавьте фото: ' + f.label);
+        photos = photos.concat(got);
+      } else if (!answers[f.key] && !f.optional) return ferr('Заполните: ' + f.label);
+    }
+    var price = tplPrice(t);
+    if (S.credits != null && S.credits < price) return ferr('Не хватает кредитов: нужно ' + price + ', на балансе ' + S.credits, true);
+    var b = $('nya-go'); S.busy = true; b.disabled = true; b.textContent = 'Яга колдует…';
+    $('nya-ferr').innerHTML = '<p class="nya-wait">' + (t.kind === 'text' ? 'Обычно это 10–30 секунд' : 'Обычно это 20–60 секунд') + '. Не закрывайте окно</p>';
+    req('/api/templates/run', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, templateId: t.id, answers: answers, photos: photos, aspect: S.tplAspect || S.aspect, engine: S.tplEng || 'std' }) }, 300000)
+      .then(function (r) {
+        S.busy = false;
+        if (r && typeof r.credits === 'number') setCredits(r.credits);
+        if (r && r.vip_required) { S.vip = false; vipView(); return; }
+        if (!r || !r.ok) { b.disabled = false; b.textContent = (t.kind === 'text' ? '✍️ Написать за ' : 'Создать за ') + price + ' кр.'; return ferr((r && r.error) || 'Не получилось, попробуйте ещё раз', r && r.need); }
+        if (r.kind === 'text') { showText(t, r.text || ''); return; }
+        showResult(t, 'data:' + (r.mimeType || 'image/png') + ';base64,' + r.image);
+      }).catch(function (e) {
+        S.busy = false;
+        if (e && e.auth) { authView(function () { openTpl(t.id); }); return; }
+        b.disabled = false; b.textContent = 'Создать за ' + price + ' кр.';
+        ferr(e && e.name === 'AbortError' ? 'Сервер долго не отвечает. Если кредиты списались, а картинки нет, они вернутся' : 'Нет связи с сервером, попробуйте ещё раз');
+      });
+  }
+  function tplPrice(t) { return S.tplEng === 'eco' && S.eco ? S.eco.price : t.price; }
+  function showText(t, text) {
+    S.lastText = text;
+    open('<h3>✅ Готово: ' + esc(t.title) + '</h3><div class="nya-txtres" id="nya-txtres">' + esc(text) + '</div>' +
+      '<p class="nya-txtmeta">' + text.length + ' знаков · текст не сохраняется в «Моих работах» — скопируйте его</p>' +
+      '<button type="button" class="nya-btn w" data-act="copytext">📋 Скопировать текст</button>' +
+      '<button type="button" class="nya-ghost w" data-tpl="' + esc(t.id) + '">✍️ Написать ещё вариант</button>');
+  }
+  function showResult(t, src) {
+    S.lastSrc = src; saveWork(t, src);
+    open('<img class="nya-res" src="' + src + '" alt=""><h3>Готово!</h3><p class="nya-keep' + (S.st && S.st.active ? ' ok' : '') + '" style="font-size:13.5px">' + keepHtml() + '</p><p>На телефоне можно нажать на картинку и удерживать, чтобы сохранить</p>' +
+      '<button type="button" class="nya-btn w" data-act="dl" data-name="' + esc(t.title) + '">Скачать</button>' +
+      '<button type="button" class="nya-ghost w" data-tpl="' + esc(t.id) + '">Создать ещё раз</button>');
+  }
+  function fileUrl(u, name) { return API + '/api/file?url=' + encodeURIComponent(u) + '&name=' + encodeURIComponent(name || 'neyroyaga'); }
+  function download(src, name) {
+    if (!/^data:/.test(src || '')) {
+      var ext = (/\.(png|jpe?g|webp)(\?|$)/i.exec(src || '') || [0, 'jpg'])[1];
+      var a = document.createElement('a'); a.href = fileUrl(src, 'neyroyaga.' + ext.replace('jpeg', 'jpg'));
+      document.body.appendChild(a); a.click(); a.remove(); return;
+    }
+    try {
+      var parts = src.split(','), mime = parts[0].slice(5).split(';')[0], bin = atob(parts[1]), arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([arr], { type: mime })), a = document.createElement('a');
+      a.href = url; a.download = (name || 'neyroyaga').replace(/[^\wа-яё -]+/gi, '').trim() + '.' + (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    } catch (e) { window.open(src, '_blank'); }
+  }
+  function saveWork() {}
+
+  function wSrc(w, dl) {
+    if (w.dl && dl) return w.dl;
+    if (w.own) return API + '/api/works/file/' + w.id + '?email=' + encodeURIComponent(S.email) + '&token=' + encodeURIComponent(S.token) + (dl ? '&dl=1' : '');
+    if (dl) {
+      var ext = w.kind === 'video' ? 'mp4' : w.kind === 'audio' ? 'mp3' : ((/\.(png|jpe?g|webp)(\?|$)/i.exec(w.url || '') || [0, 'jpg'])[1]).replace('jpeg', 'jpg');
+      return API + '/api/file?url=' + encodeURIComponent(w.url) + '&name=' + encodeURIComponent('neyroyaga-' + w.id + '.' + ext);
+    }
+    return w.url;
+  }
+  function daysWord(n) { var a = n % 10, b = n % 100; return a === 1 && b !== 11 ? 'день' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'дня' : 'дней'; }
+  function loadSW() {
+    if (S.swBusy || !S.email) return;
+    S.swBusy = true;
+    req('/api/works/' + encodeURIComponent(S.email)).then(function (r) {
+      S.swBusy = false; S.sw = (r && r.works) || [];
+      if (S.view === 'works') worksDraw();
+    }).catch(function (e) { S.swBusy = false; if (!(e && e.auth)) { S.sw = S.sw || []; if (S.view === 'works') worksDraw(); } });
+  }
+  function worksDraw() {
+    var top = $('nya-wtop'), box = $('nya-works');
+    if (!S.email) { top.innerHTML = ''; box.innerHTML = '<div class="nya-empty">Войдите, чтобы видеть свои работы<br><button type="button" class="nya-btn" data-act="profile">Войти</button></div>'; return; }
+    if (!S.sw) { top.innerHTML = ''; box.innerHTML = '<div class="nya-empty">Загружаю работы…</div>'; loadSW(); return; }
+    var st = S.st, f = S.wflt || 'all';
+    var note = st && st.active ? '<div class="nya-wnote ok">💾 Хранилище активно до ' + esc(st.until) + ' — работы не удаляются, пока подписка активна.</div>'
+      : '<div class="nya-wnote">⏳ Работы хранятся 10 дней, потом удаляются автоматически. Скачайте нужные или <span class="nya-lnk" data-act="storage">подключите хранилище</span>.</div>';
+    top.innerHTML = note + '<div class="nya-wflt">' + [['all', 'Все'], ['image', '🖼 Картинки'], ['video', '🎬 Видео'], ['audio', '🎵 Музыка']].map(function (x) {
+      return '<button type="button" data-wflt="' + x[0] + '" class="' + (f === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
+    }).join('') + '</div>';
+    var list = S.sw.filter(function (w) { return f === 'all' || w.kind === f; });
+    if (!list.length) {
+      box.innerHTML = '<div class="nya-empty">' + (S.sw.length ? 'В этом разделе пока пусто' : 'Здесь появятся ваши картинки, видео и песни') + '<br><button type="button" class="nya-btn" data-go="tpl">Открыть шаблоны</button></div>';
+      return;
+    }
+    box.innerHTML = list.map(function (w) {
+      var media = w.kind === 'image' ? '<img src="' + esc(wSrc(w)) + '" alt="" loading="lazy">'
+        : w.kind === 'video' ? '<video src="' + esc(wSrc(w)) + '#t=0.5" preload="metadata" muted playsinline></video><i class="nya-wplay">▶</i>'
+        : '<div class="nya-waud">🎵</div>';
+      var badge = w.extended && st && st.active ? '<i class="nya-wleft keep">💾</i>' : '<i class="nya-wleft' + (w.days_left <= 2 ? ' warn' : '') + '">' + w.days_left + ' ' + daysWord(w.days_left) + '</i>';
+      return '<div class="nya-t" data-work="' + w.id + '"><div class="nya-tp nya-wm">' + media + badge + '</div><div class="nya-tb"><b>' + esc(w.title || 'Работа') + '</b></div>' +
+        (w.forum_id ? '<span class="nya-wshared">Уже в ленте</span>' : '<button type="button" class="nya-wshare" data-act="wforum" data-id="' + w.id + '">📣 В ленту</button>') +
+        '</div>';
+    }).join('');
+  }
+  function viewSW(id) {
+    var w = (S.sw || []).filter(function (x) { return String(x.id) === String(id); })[0]; if (!w) return;
+    var media = w.kind === 'image' ? '<img class="nya-res" src="' + esc(wSrc(w)) + '" alt="">'
+      : w.kind === 'video' ? '<video src="' + esc(wSrc(w)) + '" controls autoplay playsinline></video>'
+      : '<div class="nya-waud">🎵</div><audio src="' + esc(wSrc(w)) + '" controls autoplay></audio>';
+    var keep = w.extended && S.st && S.st.active ? '💾 В вашем хранилище до ' + esc(S.st.until) : '⏳ Удалится через ' + w.days_left + ' ' + daysWord(w.days_left) + ' — скачайте или <span class="nya-lnk" data-act="storage">подключите хранилище</span>';
+    open('<div class="nya-wview">' + media + '</div><h3>' + esc(w.title || 'Работа') + '</h3><p class="nya-keep" style="font-size:13px">' + keep + '</p>' +
+      '<a class="nya-btn w" href="' + esc(wSrc(w, true)) + '" style="text-decoration:none">⬇ Скачать</a>' +
+      (w.forum_id ? '<p class="nya-keep" style="font-size:13px">Уже в ленте</p>' : '<button type="button" class="nya-ghost w" data-act="wforum" data-id="' + w.id + '" style="margin-top:8px">📣 В ленту</button>') +
+      '<button type="button" class="nya-ghost w" data-act="wdel" data-id="' + w.id + '" style="margin-top:8px">🗑 Удалить</button>');
+  }
+  function delSW(id) {
+    if (!confirm('Удалить эту работу? Вернуть её будет нельзя.')) return;
+    req('/api/works/delete', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, id: +id }) }).then(function () {
+      S.sw = (S.sw || []).filter(function (x) { return String(x.id) !== String(id); });
+      close(); worksDraw(); toast('Работа удалена');
+    }).catch(function () { toast('Не получилось удалить'); });
+  }
+
+  function fMedia(p) {
+    var m = p.media || {}, kind = m.kind || p.kind || '';
+    if (m.expired || (!m.url && !m.path)) return '<div class="nya-fexpired">Файл уже удалён. Лайки и подпись остались.</div>';
+    var src = m.url || (API + m.path);
+    if (kind === 'video') return '<video src="' + esc(src) + '" controls playsinline></video>';
+    if (kind === 'audio') return '<audio src="' + esc(src) + '" controls></audio>';
+    return '<img src="' + esc(src) + '" alt="" decoding="async">';
+  }
+  function fRepeat(p) {
+    var r = p.repeat;
+    if (!r) return '';
+    if (r.type === 'prompt') {
+      var mn = r.model_name ? ' · ' + esc(r.model_name) : '';
+      return (r.model_name ? '<p class="nya-ps">Модель: ' + esc(r.model_name) + '</p>' : '') + '<button type="button" class="nya-btn" data-act="frepeat" data-id="' + p.id + '">Повторить промт' + mn + '</button>';
+    }
+    var tid = '';
+    try { tid = new URL(r.url, location.href).searchParams.get('template') || ''; } catch (e) {}
+    return '<button type="button" class="nya-btn" data-act="ftpl" data-tid="' + esc(tid) + '">✨ Сделать так же</button>';
+  }
+  function commentTree(list, postId) {
+    var kids = {};
+    (list || []).forEach(function (c) {
+      var key = c.parent_id || 0;
+      (kids[key] = kids[key] || []).push(c);
+    });
+    function one(c, nested) {
+      var replies = (kids[c.id] || []).map(function (x) { return one(x, true); }).join('');
+      var who = (nested && c.reply_to) ? '<span class="nya-ps">↳ ' + esc(c.reply_to) + '</span> ' : '';
+      return '<div class="nya-fcom' + (nested ? ' reply' : '') + '">' + who + '<button type="button" class="nya-fnickbtn" data-act="fprofile" data-nick="' + esc(c.nick) + '">' + esc(c.nick || 'без ника') + '</button> ' +
+        esc(c.text) + ' <button type="button" class="nya-ghost" data-act="freply" data-id="' + postId + '" data-cid="' + c.id + '" data-nick="' + esc(c.nick) + '">Ответить</button>' + replies + '</div>';
+    }
+    return (kids[0] || []).map(function (c) { return one(c, false); }).join('');
+  }
+  function forumCard(p) {
+    var badge = p.badge ? '<span title="Топ недели">' + p.badge + '</span> ' : '';
+    var comments = commentTree(p.comments || [], p.id);
+    var reply = (S.freply && String(S.freply.post) === String(p.id)) ? '<p class="nya-ps">Ответ для ' + esc(S.freply.nick) + ' <button type="button" class="nya-ghost" data-act="funreply">отмена</button></p>' : '';
+    var form = S.email
+      ? reply + '<form class="nya-fcomf" data-act="fcom" data-id="' + p.id + '"><input class="nya-in" maxlength="300" placeholder="' + (reply ? 'Ответ' : 'Комментарий') + '"><button type="button" data-act="emo">😊</button><button type="submit" class="nya-ghost">Отправить</button></form>'
+      : '';
+    return '<article class="nya-fcard"><header><button type="button" class="nya-fnickbtn" data-act="fprofile" data-nick="' + esc(p.nick) + '"><b>' + badge + esc(p.nick || 'без ника') + '</b></button><span>' + (p.author_likes || 0) + ' лайков</span><time>' + esc(p.date || '') + '</time></header>' +
+      fMedia(p) + (p.caption ? '<p class="nya-fcap">' + esc(p.caption) + '</p>' : '') +
+      (p.title ? '<p class="nya-ps" style="margin:0">' + esc(p.title) + (p.source ? ' · ' + esc(p.source) : '') + '</p>' : (p.source ? '<p class="nya-ps" style="margin:0">' + esc(p.source) + '</p>' : '')) +
+      '<div class="nya-facts"><button type="button" class="nya-ghost" data-act="flike" data-id="' + p.id + '">' + (p.liked ? '♥' : '♡') + ' ' + (p.likes || 0) + '</button>' +
+      '<span class="nya-ghost">👁 ' + (p.views || 0) + '</span>' +
+      (p.mine ? '<button type="button" class="nya-ghost" data-act="fhide" data-id="' + p.id + '">Снять</button>' : '<button type="button" class="nya-ghost" data-act="fdon" data-id="' + p.id + '">🎁 Донат</button>') +
+      (!p.mine ? '<button type="button" class="nya-ghost" data-act="freport" data-id="' + p.id + '">⚠️</button>' : '') +
+      fRepeat(p) + '</div>' + (comments ? '<div class="nya-fcoms">' + comments + '</div>' : '') + form + '</article>';
+  }
+  function forumBar() {
+    var badge = S.nunread ? ' (' + S.nunread + ')' : '';
+    return '<div class="nya-ftools"><button type="button" class="nya-ghost" data-act="fnotes">🔔 Уведомления' + badge + '</button><button type="button" class="nya-ghost" data-act="fdm">✉️ Сообщения</button>' +
+      (S.nick ? '<button type="button" class="nya-ghost" data-act="fme">Мой профиль</button>' : '') + '</div>';
+  }
+  function forumDraw() {
+    var box = $('nya-forum'); if (!box) return;
+    if (S.fmode === 'profile') { profileDraw(); return; }
+    if (S.fmode === 'notes') { notesDraw(); return; }
+    if (S.fmode === 'dm') { dmDraw(); return; }
+    var sort = S.fsort || 'new';
+    var nick = S.email
+      ? (S.nick
+        ? '<p class="nya-ps">Ваш ник: <button type="button" class="nya-fnickbtn" data-act="fme">' + esc(S.nick) + '</button> <button type="button" class="nya-ghost" data-act="nickchg">Сменить</button></p>'
+        : '<p class="nya-ps">Ник выдаётся сам при входе. Если пусто — обновите страницу.</p>')
+      : '<p class="nya-ps">Лента видна всем. Лайкать и публиковать можно после входа. <button type="button" class="nya-btn" data-act="profile">Войти</button></p>';
+    var tabs = '<div class="nya-fnick"><button type="button" class="nya-ghost' + (sort === 'new' ? ' on' : '') + '" data-act="fsort" data-sort="new">Новые</button><button type="button" class="nya-ghost' + (sort === 'popular' ? ' on' : '') + '" data-act="fsort" data-sort="popular">Популярные за неделю</button><button type="button" class="nya-ghost' + (sort === 'subs' ? ' on' : '') + '" data-act="fsort" data-sort="subs">Подписки</button></div>';
+    var left = S.fweek ? ' · до обнуления <b class="nya-raceleft">' + esc(raceLeftText()) + '</b>' : '';
+    var top = (S.ftop && S.ftop.length) ? '<p class="nya-ps">🏆 Топ недели: ' + S.ftop.filter(function (a) { return !a.pin; }).slice(0, 3).map(function (a) { return (a.badge || '') + ' <button type="button" class="nya-fnickbtn" data-act="fprofile" data-nick="' + esc(a.nick) + '">' + esc(a.nick) + '</button> (' + a.likes + ')'; }).join(' · ') + left + '</p>' : (S.fweek ? '<p class="nya-ps">🏆 Топ недели пуст' + left + '</p>' : '');
+    var empty = sort === 'subs' ? 'Пока пусто. Подпишитесь на авторов в их профиле.' : 'Пока пусто. В «Моих работах» нажмите «В ленту».';
+    var list = (S.fposts || []).map(forumCard).join('') || '<div class="nya-empty">' + empty + '</div>';
+    var more = (sort === 'new' && S.fmore) ? '<button type="button" class="nya-ghost w" data-act="fmore">Показать ещё</button>' : '';
+    box.innerHTML = '<h2 class="nya-ph">🔥 Лента</h2>' + forumBar() + '<p class="nya-ps">Ник открывает профиль. Ответ на комментарий идёт веткой.</p>' + nick + top + tabs + list + more;
+    forumSeen();
+  }
+  function forumLoad(before) {
+    var sort = S.fsort || 'new';
+    var q = '/api/forum?sort=' + sort + '&before=' + (sort === 'new' ? (before || 0) : 0) + (S.email ? '&email=' + encodeURIComponent(S.email) : '');
+    req(q).then(function (r) {
+      var posts = (r && r.posts) || [];
+      S.fposts = (sort === 'new' && before) ? (S.fposts || []).concat(posts) : posts;
+      S.fmore = sort === 'new' && posts.length >= 20;
+      if (r && r.need_login) toast('Войдите, чтобы видеть подписки');
+      forumDraw();
+    }).catch(function () { if (!before) { S.fposts = []; forumDraw(); } });
+  }
+  function raceLeftText() {
+    var end = +S.fweek || 0;
+    if (!end) return '';
+    var s = Math.max(0, end - Math.floor(Date.now() / 1000));
+    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d) return d + ' д ' + h + ' ч ' + m + ' мин';
+    if (h) return h + ' ч ' + m + ' мин ' + sec + ' с';
+    return m + ' мин ' + sec + ' с';
+  }
+  function forumTop() {
+    req('/api/forum/top').then(function (r) {
+      S.ftop = (r && r.authors) || [];
+      S.fweek = (r && r.week_ends) || 0;
+      S.fweekDone = false;
+      if (S.fmode !== 'profile' && S.fmode !== 'notes' && S.fmode !== 'dm') forumDraw();
+    }).catch(function () {});
+  }
+  setInterval(function () {
+    var t = (typeof raceLeftText === 'function') ? raceLeftText() : '';
+    document.querySelectorAll('.nya-raceleft').forEach(function (el) { el.textContent = t; });
+    if (S.fweek && Date.now() / 1000 >= S.fweek && !S.fweekDone) { S.fweekDone = true; forumTop(); }
+  }, 1000);
+  function forumSeen() {
+    var ids = (S.fposts || []).map(function (p) { return p.id; }).filter(function (id) { return !(S.fseen || {})[id]; });
+    if (!ids.length) return;
+    S.fseen = S.fseen || {};
+    ids.forEach(function (id) { S.fseen[id] = 1; });
+    var vid = ls('nya_vid');
+    if (!vid) { vid = Math.random().toString(36).slice(2) + Date.now().toString(36); ls('nya_vid', vid); }
+    req('/api/forum/view', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, vid: vid, ids: ids }) }).catch(function () {});
+  }
+  function notesPing() {
+    if (!S.email) return;
+    req('/api/notify/' + encodeURIComponent(S.email)).then(function (r) { S.nunread = (r && r.unread) || 0; S.notes = (r && r.items) || S.notes; }).catch(function () {});
+  }
+  function forumOpen() {
+    if (S.email && S.nick == null) {
+      req('/api/account/' + encodeURIComponent(S.email)).then(function (r) { S.nick = (r && r.nick) || ''; if (S.fmode === 'profile' && !S.fnick) S.fnick = S.nick; forumDraw(); }).catch(function () { S.nick = ''; });
+    }
+    notesPing();
+    if (S.fmode === 'notes') { loadNotes(); return; }
+    if (S.fmode === 'dm') { loadDm(); return; }
+    if (S.fmode === 'profile') { loadProfile(S.fnick || S.nick || ''); return; }
+    forumTop();
+    if (!S.fposts) forumLoad(0); else forumDraw();
+  }
+  function loadProfile(nick) {
+    S.fmode = 'profile'; S.fnick = nick || S.nick || '';
+    if (!S.fnick) { toast('Ник ещё не выдан'); S.fmode = 'feed'; forumDraw(); return; }
+    var q = '/api/forum/profile/' + encodeURIComponent(S.fnick) + (S.email ? '?email=' + encodeURIComponent(S.email) : '');
+    req(q).then(function (r) {
+      if (!r || !r.ok) { toast((r && r.error) || 'Профиль не найден'); S.fmode = 'feed'; forumDraw(); return; }
+      S.fprof = r; profileDraw();
+    }).catch(function () { toast('Нет связи с сервером'); });
+  }
+  function profileDraw() {
+    var box = $('nya-forum'); if (!box || !S.fprof) return;
+    var p = S.fprof;
+    var follow = p.mine ? '' : (S.email ? '<button type="button" class="nya-btn" data-act="ffollow" data-nick="' + esc(p.nick) + '">' + (p.followed ? 'Вы подписаны' : 'Подписаться') + '</button> <button type="button" class="nya-ghost" data-act="ffriend" data-nick="' + esc(p.nick) + '" data-st="' + esc(p.friend || 'none') + '">' + (p.friend === 'friend' ? 'В друзьях' : p.friend === 'out' ? 'Заявка отправлена' : p.friend === 'in' ? 'Принять в друзья' : 'В друзья') + '</button> <button type="button" class="nya-ghost" data-act="fdmopen" data-nick="' + esc(p.nick) + '">Написать</button>' : '');
+    var posts = (p.posts || []).map(forumCard).join('') || '<div class="nya-empty">В ленте пока нет работ</div>';
+    box.innerHTML = '<button type="button" class="nya-ghost" data-act="fback">← Лента</button><h2 class="nya-ph">' + esc(p.nick) + '</h2>' +
+      '<p class="nya-ps">' + p.followers + ' подписчиков · ' + p.following + ' подписок · ' + p.likes + ' лайков</p>' + follow + posts;
+  }
+  function loadNotes() {
+    S.fmode = 'notes';
+    if (!S.email) { authView(function () { go('forum'); }); return; }
+    req('/api/notify/' + encodeURIComponent(S.email)).then(function (r) {
+      S.notes = (r && r.items) || []; S.nunread = (r && r.unread) || 0; notesDraw();
+      req('/api/notify/read', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token }) }).then(function () { S.nunread = 0; });
+    }).catch(function () { toast('Нет связи с сервером'); });
+  }
+  function notesDraw() {
+    var box = $('nya-forum'); if (!box) return;
+    var list = (S.notes || []).map(function (n) {
+      return '<button type="button" class="nya-ghost w" data-act="nopen" data-kind="' + esc(n.kind || '') + '" data-nick="' + esc(n.nick || '') + '" style="margin-bottom:8px;text-align:left"><b>' + esc(n.nick || '') + '</b> ' + esc(n.title || '') + (n.text ? ' — ' + esc(n.text) : '') + ' <span class="nya-ps">' + esc(n.at || '') + '</span></button>';
+    }).join('') || '<div class="nya-empty">Пока тихо</div>';
+    box.innerHTML = '<button type="button" class="nya-ghost" data-act="fback">← Лента</button><h2 class="nya-ph">🔔 Уведомления</h2>' + list;
+  }
+  function loadDm() {
+    S.fmode = 'dm';
+    if (!S.email) { authView(function () { go('forum'); }); return; }
+    if (S.dwith) {
+      req('/api/dm/chat/' + encodeURIComponent(S.dwith) + '?email=' + encodeURIComponent(S.email)).then(function (r) {
+        if (!r || !r.ok) { toast((r && r.error) || 'Диалог не открылся'); S.dwith = ''; loadDm(); return; }
+        S.dchat = r; dmDraw();
+      }).catch(function () { toast('Нет связи с сервером'); });
+      return;
+    }
+    req('/api/dm/inbox/' + encodeURIComponent(S.email)).then(function (r) {
+      S.dthreads = (r && r.threads) || []; dmDraw();
+    }).catch(function () { toast('Нет связи с сервером'); });
+  }
+  function dmDraw() {
+    var box = $('nya-forum'); if (!box) return;
+    if (S.dwith && S.dchat) {
+      var msgs = (S.dchat.messages || []).map(function (m) {
+        return '<p class="nya-fcom' + (m.mine ? '' : ' reply') + '">' + esc(m.text) + ' <span class="nya-ps">' + esc(m.at || '') + '</span></p>';
+      }).join('') || '<div class="nya-empty">Напишите первое сообщение</div>';
+      box.innerHTML = '<button type="button" class="nya-ghost" data-act="fdm">← Диалоги</button><h2 class="nya-ph"><a href="https://babayagaland.ru/lenta?nick=' + encodeURIComponent(S.dchat.nick) + '">' + esc(S.dchat.nick) + '</a></h2>' + msgs +
+        '<form class="nya-fcomf" data-act="dmsend"><input class="nya-in" maxlength="1000" placeholder="Сообщение"><button type="button" data-act="emo">😊</button><button type="submit" class="nya-ghost">Отправить</button></form>';
+      return;
+    }
+    var list = (S.dthreads || []).map(function (t) {
+      return '<button type="button" class="nya-ghost w" data-act="fdmopen" data-nick="' + esc(t.nick) + '" style="margin-bottom:8px;text-align:left"><b>' + esc(t.nick) + '</b>' + (t.unread ? ' •' : '') + '<br><span class="nya-ps">' + esc(t.text || '') + '</span></button>';
+    }).join('') || '<div class="nya-empty">Диалогов нет. Написать можно другу, после того как он примет заявку.</div>';
+    box.innerHTML = '<button type="button" class="nya-ghost" data-act="fback">← Лента</button><h2 class="nya-ph">✉️ Сообщения</h2>' + list;
+  }
+  function applyForumPrompt() {
+    var p = ls('nya_forum_prompt');
+    if (!p) return;
+    var mk = ls('nya_forum_model') || '';
+    var mn = ls('nya_forum_model_name') || '';
+    ls('nya_forum_prompt', null); ls('nya_forum_model', null); ls('nya_forum_model_name', null);
+    go('chat');
+    ta.value = p; autosize(); updSend();
+    S.modelLocked = true;
+    S.pendingModel = mk;
+    function told(ok) {
+      var label = mn || (ok ? (($('nya-model-name').textContent || '').trim()) : '');
+      toast(label ? ('Модель: ' + label + '. Промт вставлен — можно отправлять') : 'Промт вставлен. Выберите модель и отправьте');
+    }
+    function trySet() {
+      if (!mk) { told(false); S.pendingModel = ''; return true; }
+      var known = MODELS.some(function (x) { return x.id === mk; }) || (S.vmodels || []).some(function (x) { return x.id === mk; });
+      if (!known) return false;
+      setModel(mk); S.pendingModel = ''; told(true); return true;
+    }
+    if (trySet()) return;
+    var n = 0;
+    var timer = setInterval(function () {
+      n += 1;
+      if (trySet() || n > 25) {
+        clearInterval(timer);
+        if (S.pendingModel) { S.pendingModel = ''; told(false); }
+      }
+    }, 200);
+  }
+  function forumPublishView(id) {
+    var w = (S.sw || []).filter(function (x) { return String(x.id) === String(id); })[0]; if (!w) return;
+    if (!S.email) { authView(function () { forumPublishView(id); }); return; }
+    var share = w.can_share_prompt
+      ? '<label class="nya-lab"><input type="checkbox" id="nya-fshare"> Показать мой промт</label><p class="nya-ps">Его увидят другие и смогут нажать «Повторить промт».' + ((w.model_name || w.source) ? ' Модель: <b>' + esc(w.model_name || w.source) + '</b> — она откроется вместе с промтом.' : '') + '</p>'
+      : (w.origin === 'template' ? '<p class="nya-ps">Это шаблон. Текст промта не покажется — на карточке будет «Сделать так же».</p>' : '<p class="nya-ps">Промт этой работы не сохранился. Выложить можно без него.</p>');
+    open('<h3>В ленту</h3><label class="nya-lab">Подпись, до 150 символов</label><textarea class="nya-in nya-tarea" id="nya-fcap" maxlength="150" rows="3" placeholder="Коротко, о чём работа"></textarea>' + share +
+      '<button type="button" class="nya-btn w" data-act="fpub" data-id="' + w.id + '">Опубликовать</button>');
+  }
+
+  root.addEventListener('submit', function (e) {
+    var form = e.target.closest && e.target.closest('form');
+    if (!form || !root.contains(form)) return;
+    var act = form.getAttribute('data-act');
+    if (act !== 'fcom' && act !== 'dmsend') return;
+    e.preventDefault();
+    if (!S.email) { authView(function () { go('forum'); }); return; }
+    var input = form.querySelector('input');
+    var text = (input && input.value || '').trim();
+    if (!text) return;
+    if (act === 'dmsend') {
+      req('/api/dm', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, nick: S.dwith, text: text }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        input.value = ''; loadDm();
+      }).catch(function () { toast('Нет связи с сервером'); });
+      return;
+    }
+    var id = form.getAttribute('data-id');
+    var parent = (S.freply && String(S.freply.post) === String(id)) ? S.freply.cid : 0;
+    req('/api/forum/comment', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, post_id: +id, parent_id: parent || 0, text: text }) }).then(function (x) {
+      if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+      (S.fposts || []).forEach(function (p) {
+        if (String(p.id) === id) { p.comments = (p.comments || []).concat([x.comment]); }
+      });
+      if (S.fprof && S.fprof.posts) S.fprof.posts.forEach(function (p) {
+        if (String(p.id) === id) { p.comments = (p.comments || []).concat([x.comment]); }
+      });
+      S.freply = null; input.value = ''; forumDraw();
+    }).catch(function () { toast('Нет связи с сервером'); });
+  });
+
+  root.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t.id === 'nya-modal') { close(); return; }
+    if (t.closest('#nya-zoom')) { $('nya-zoom').classList.remove('on'); return; }
+    if (t.classList.contains('nya-img')) { $('nya-zoom').querySelector('img').src = t.src; $('nya-zoom').classList.add('on'); return; }
+    var el = t.closest('[data-go],[data-act],[data-biz],[data-tpl],[data-cat],[data-work],[data-chat],[data-delchat],[data-asp],[data-optv],[data-eng],[data-mtab],[data-ctab],[data-cflt],[data-wflt]');
+    if (!el || !root.contains(el)) { if (!t.closest('.nya-menu')) closeMenus(); return; }
+    if (el.hasAttribute('data-go')) {
+      if (el.getAttribute('data-go') === 'forum') S.fmode = 'feed';
+      if ($('nya-modal').classList.contains('on')) close(); go(el.getAttribute('data-go')); return;
+    }
+    if (el.hasAttribute('data-asp')) {
+      var av = el.getAttribute('data-asp');
+      if (el.closest('#nya-mb')) { S.tplAspect = av; qa('#nya-mb [data-asp]').forEach(function (b) { b.classList.toggle('on', b === el); }); return; }
+      if (el.closest('#nya-asp-menu') && isVideo(S.model)) { S.vaspect = av; ls('nya_vaspect', av); aspVisible(); closeMenus(); return; }
+      setAspect(av); closeMenus(); return;
+    }
+    if (el.hasAttribute('data-ctab')) { S.ctab = el.getAttribute('data-ctab'); if (S.acc) accDraw(S.acc); var mbc = $('nya-mb'); if (mbc) mbc.scrollTop = 0; return; }
+    if (el.hasAttribute('data-cflt')) { S.cflt = el.getAttribute('data-cflt'); S.accN = 30; if (S.acc) accDraw(S.acc); return; }
+    if (el.hasAttribute('data-mtab')) {
+      S.mtab = el.getAttribute('data-mtab'); renderModelMenu();
+      var mm = $('nya-model-menu'); if (mm) mm.scrollTop = 0;
+      return;
+    }
+    if (el.hasAttribute('data-eng')) {
+      if (S.busy) return;
+      S.tplEng = el.getAttribute('data-eng');
+      qa('#nya-mb [data-eng]').forEach(function (x) { x.classList.toggle('on', x === el); });
+      var gb = $('nya-go'); if (gb && S.cur) gb.textContent = 'Создать за ' + tplPrice(S.cur) + ' кр.';
+      return;
+    }
+    if (el.hasAttribute('data-optv')) {
+      var ov = el.getAttribute('data-optv');
+      var vmo = vmodel(S.model);
+      if (vmo && vmo.qualities && vmo.qualities.length) { S.iq = ov; ls('nya_iq', ov); } else { S.vdur = +ov; ls('nya_vdur', ov); }
+      aspVisible(); closeMenus(); return;
+    }
+    if (el.hasAttribute('data-delchat')) { delChat(el.getAttribute('data-delchat')); return; }
+    if (el.hasAttribute('data-chat')) { openChat(el.getAttribute('data-chat')); return; }
+    if (el.hasAttribute('data-biz')) { startBiz(el.getAttribute('data-biz')); return; }
+    if (el.hasAttribute('data-tpl')) { openTpl(el.getAttribute('data-tpl')); return; }
+    if (el.hasAttribute('data-cat')) { S.cat = el.getAttribute('data-cat'); catsDraw(); tplDraw(); return; }
+    if (el.hasAttribute('data-work')) { viewSW(el.getAttribute('data-work')); return; }
+    if (el.hasAttribute('data-wflt')) { S.wflt = el.getAttribute('data-wflt'); worksDraw(); return; }
+    var a = el.getAttribute('data-act');
+    if (a === 'tobot') {
+      var tgEl = $('nya-tg'), sumEl = $('nya-tc');
+      var tg = (tgEl && tgEl.value || '').trim();
+      var credits = parseInt(String(sumEl && sumEl.value || '').replace(/\s/g, ''), 10);
+      if (!S.email) { authView(); return; }
+      if (!tg) { toast('Укажите @username или числовой id Telegram'); return; }
+      if (!(credits > 0)) { toast('Укажите, сколько кредитов перенести'); return; }
+      if (S.credits != null && credits > S.credits) { toast('На сайте ' + S.credits + ' кр. — больше перенести нельзя'); return; }
+      if (!window.confirm('Перенести ' + credits + ' кр. в Telegram ' + tg + '?')) return;
+      req('/api/cabinet/transfer-to-bot', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, telegram: tg, credits: credits }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось. Кредиты остались на сайте.'); if (x && typeof x.credits === 'number') setCredits(x.credits); return; }
+        if (typeof x.credits === 'number') setCredits(x.credits);
+        toast('Готово. В боте ' + (x.botBalance != null ? x.botBalance + ' кр.' : 'кредиты зачислены') + '. На сайте осталось ' + x.credits + ' кр.');
+        if (S.acc) { S.acc.credits = x.credits; accDraw(S.acc); }
+      }).catch(function () { toast('Нет связи. Если сумма исчезла, она вернётся на сайт.'); });
+      return;
+    }
+    if (a === 'model') { closeMenus(); openSheet(); }
+    else if (a === 'mode') setMode(el.getAttribute('data-mode'));
+    else if (a === 'shmode') { S.shMode = el.getAttribute('data-mode'); S.shFlt = 'all'; drawSheet(); }
+    else if (a === 'shflt') { S.shFlt = el.getAttribute('data-f'); drawSheet(); }
+    else if (a === 'shclose') closeSheet();
+    else if (a === 'aspmenu') { var am = $('nya-asp-menu'), on3 = am.classList.contains('on'); closeMenus(); if (!on3) am.classList.add('on'); }
+    else if (a === 'tools') { var tm = $('nya-tools-menu'), on2 = tm.classList.contains('on'); closeMenus(); if (!on2) tm.classList.add('on'); }
+    else if (a === 'setmodel') { setModel(el.getAttribute('data-id')); closeMenus(); closeSheet(); if (S.biz) endBiz(); ta.focus(); }
+    else if (a === 'imgmode') setMode('image');
+    else if (a === 'musicmode') { if (!S.vmodels.some(function (x) { return x.kind === 'audio'; })) toast('Музыка пока недоступна'); else setMode('audio'); }
+    else if (a === 'videomode') { if (!S.vmodels.some(function (x) { return (x.kind || 'video') === 'video'; })) toast('Видео пока недоступно'); else setMode('video'); }
+    else if (a === 'optmenu') { var om = $('nya-opt-menu'), on4 = om.classList.contains('on'); closeMenus(); if (!on4) om.classList.add('on'); }
+    else if (a === 'endbiz') endBiz();
+    else if (a === 'newchat') newChat();
+    else if (a === 'chats') { if (!S.email) authView(chatsView); else chatsView(); }
+    else if (a === 'unfile') { S.file = null; $('nya-file').value = ''; chips(); updSend(); }
+    else if (a === 'unaudio') { S.audio = null; $('nya-audio').value = ''; chips(); updSend(); }
+    else if (a === 'close') close();
+    else if (a === 'pay') { S.busy = false; payView(); }
+    else if (a === 'profile') profileView();
+    else if (a === 'accmore') { S.accN += 30; if (S.acc) accDraw(S.acc); }
+    else if (a === 'cabtop') payView(true);
+    else if (a === 'pwsave') pwSave(el);
+    else if (a === 'forgot') forgotView();
+    else if (a === 'forgotsend') forgotSend(el);
+    else if (a === 'tologin') authView(S.after);
+    else if (a === 'stbuy') stBuy(el);
+    else if (a === 'copytext') copyTxt(S.lastText || '', 'Текст скопирован');
+    else if (a === 'promoapply') {
+      var pv = ($('nya-promoin').value || '').trim(); if (!pv) { toast('Введите код'); return; }
+      req('/api/promo/apply', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, code: pv }) }).then(function (x) {
+        toast(x && x.ok ? x.message : (x && x.error) || 'Не получилось');
+        if (x && x.ok) { $('nya-promoin').value = ''; if (x.credits != null) { setCredits(x.credits); if (S.acc) { S.acc.credits = x.credits; accDraw(S.acc); } } }
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'refcopy') copyTxt(S.ref.code, 'Код скопирован');
+    else if (a === 'reflink') copyTxt(S.ref.link, 'Ссылка скопирована');
+    else if (a === 'refapply') {
+      var rv = ($('nya-refin').value || '').trim(); if (!rv) { toast('Введите код друга'); return; }
+      req('/api/referral/apply', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, code: rv }) }).then(function (x) {
+        toast(x && x.ok ? '🎁 ' + x.message : (x && x.error) || 'Не получилось применить код'); if (x && x.ok) loadRef();
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'wdel') delSW(el.getAttribute('data-id'));
+    else if (a === 'wforum') forumPublishView(el.getAttribute('data-id'));
+    else if (a === 'fsort') {
+      S.fmode = 'feed';
+      S.fsort = el.getAttribute('data-sort') || 'new';
+      S.fposts = null; forumLoad(0);
+    }
+    else if (a === 'fback') { location.href = 'https://babayagaland.ru/lenta'; }
+    else if (a === 'nopen') {
+      var nk = el.getAttribute('data-kind') || '', nn = el.getAttribute('data-nick') || '';
+      if (nk === 'dm' && nn) { S.dwith = nn; loadDm(); }
+      else if (nn) location.href = 'https://babayagaland.ru/lenta?nick=' + encodeURIComponent(nn);
+    }
+    else if (a === 'emo') {
+      var pop = $('nya-emo');
+      if (pop && !pop.childNodes.length) pop.innerHTML = '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 😉 😊 😇 🥰 😍 🤩 😘 😗 😋 😛 😜 🤪 😝 🤗 🤔 😐 😏 😒 🙄 😮 😳 🥺 😢 😭 😱 😤 😡 👍 👎 👏 🙏 💪 👀 ❤️ 🧡 💛 💚 💙 💜 🖤 💔 🔥 ✨ ⭐ 💫 ⚡ 🎉 🎁 ✅ ❌ 💬 💯 🌹 💎 📷 🎬 🎵 🚀 🌈 🍀 ☕'.split(' ').map(function (e) { return '<button type="button" data-act="emopick">' + e + '</button>'; }).join('');
+      S.emoEl = (el.closest && el.closest('form') && el.closest('form').querySelector('input,textarea')) || ta;
+      if (pop) pop.hidden = !pop.hidden;
+    }
+    else if (a === 'emopick') {
+      var inp = S.emoEl || ta, ch = el.textContent || '';
+      if (inp && ch) {
+        var stt = inp.selectionStart, v = inp.value || '';
+        if (stt == null) inp.value = v + ch;
+        else { inp.value = v.slice(0, stt) + ch + v.slice(inp.selectionEnd); try { inp.selectionStart = inp.selectionEnd = stt + ch.length; } catch (err) {} }
+        inp.focus();
+        if (inp === ta) updSend();
+      }
+      var pop2 = $('nya-emo'); if (pop2) pop2.hidden = true;
+    }
+    else if (a === 'fprofile') { loadProfile(el.getAttribute('data-nick')); }
+    else if (a === 'fme') { loadProfile(S.nick || ''); }
+    else if (a === 'fnotes') loadNotes();
+    else if (a === 'fdm') { S.dwith = ''; loadDm(); }
+    else if (a === 'fdmopen') { S.dwith = el.getAttribute('data-nick'); loadDm(); }
+    else if (a === 'freply') {
+      S.freply = { post: el.getAttribute('data-id'), cid: +el.getAttribute('data-cid'), nick: el.getAttribute('data-nick') };
+      forumDraw();
+    }
+    else if (a === 'funreply') { S.freply = null; forumDraw(); }
+    else if (a === 'ffriend') {
+      var st = el.getAttribute('data-st') || 'none';
+      var actf = st === 'out' ? 'cancel' : st === 'in' ? 'accept' : st === 'friend' ? 'remove' : 'ask';
+      if (st === 'friend' && !window.confirm('Убрать из друзей?')) return;
+      req('/api/forum/friend', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, nick: el.getAttribute('data-nick'), action: actf }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        toast(x.friend === 'friend' ? 'Теперь вы друзья' : x.friend === 'out' ? 'Заявка отправлена' : 'Готово');
+        if (S.fprof) S.fprof.friend = x.friend;
+        profileDraw();
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'ffollow') {
+      if (!S.email) { authView(function () { go('forum'); }); return; }
+      req('/api/forum/follow', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, nick: el.getAttribute('data-nick') }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        if (S.fprof) { S.fprof.followed = x.followed; S.fprof.followers = x.followers; }
+        toast(x.followed ? 'Подписка оформлена' : 'Подписка снята');
+        profileDraw();
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'freport') {
+      if (!S.email) { authView(function () { go('forum'); }); return; }
+      req('/api/forum/report', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, post_id: +el.getAttribute('data-id') }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        toast(x.reports >= 3 ? 'Работа скрыта' : 'Жалоба отправлена');
+        if (x.reports >= 3) { S.fposts = (S.fposts || []).filter(function (p) { return String(p.id) !== el.getAttribute('data-id'); }); forumDraw(); }
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'nickchg') {
+      if (!S.email) { authView(); return; }
+      open('<h3>Сменить ник</h3><p class="nya-ps">3–20 символов, буквы, цифры и _. Раз в сутки.</p><input class="nya-in" id="nya-nick" maxlength="20" placeholder="' + esc(S.nick || '') + '"><button type="button" class="nya-btn w" data-act="nickset">Сохранить</button>');
+    }
+    else if (a === 'nickset' || a === 'fpub') {
+      var nickEl = $('nya-nick') || $('nya-nick2');
+      var goPub = a === 'fpub';
+      var afterNick = function () {
+        if (!goPub) { toast('Ник сохранён'); close(); forumDraw(); return; }
+        var cap = ($('nya-fcap') && $('nya-fcap').value || '').trim();
+        var share = !!($('nya-fshare') && $('nya-fshare').checked);
+        req('/api/forum/publish', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, work_id: +el.getAttribute('data-id'), caption: cap, share_prompt: share }) }).then(function (x) {
+          if (!x || !x.ok) { toast((x && x.error) || 'Не получилось выложить'); return; }
+          var w = (S.sw || []).filter(function (i) { return String(i.id) === el.getAttribute('data-id'); })[0];
+          if (w) w.forum_id = x.post_id;
+          S.fposts = null; close(); toast('Работа в ленте'); location.href = 'https://babayagaland.ru/lenta';
+        }).catch(function () { toast('Нет связи с сервером'); });
+      };
+      if (a === 'nickset' && nickEl) {
+        req('/api/account/nick', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, nick: nickEl.value.trim() }) }).then(function (x) {
+          if (!x || !x.ok) { toast((x && x.error) || 'Ник не сохранился'); return; }
+          S.nick = x.nick; afterNick();
+        }).catch(function () { toast('Нет связи с сервером'); });
+      } else afterNick();
+    }
+    else if (a === 'flike') {
+      if (!S.email) { authView(function () { go('forum'); }); return; }
+      req('/api/forum/like', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, post_id: +el.getAttribute('data-id') }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        (S.fposts || []).forEach(function (p) { if (String(p.id) === el.getAttribute('data-id')) { p.liked = x.liked; p.likes = x.likes; } });
+        forumDraw();
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'fhide') {
+      req('/api/forum/hide', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, post_id: +el.getAttribute('data-id') }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        S.fposts = (S.fposts || []).filter(function (p) { return String(p.id) !== el.getAttribute('data-id'); });
+        forumDraw(); toast('Снято с ленты');
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'fdon') {
+      if (!S.email) { authView(function () { go('forum'); }); return; }
+      var raw = window.prompt('Сколько кредитов отправить автору? От 10 до 5000', '50');
+      if (!raw) return;
+      req('/api/forum/donate', { method: 'POST', body: JSON.stringify({ email: S.email, token: S.token, post_id: +el.getAttribute('data-id'), amount: parseInt(raw, 10) }) }).then(function (x) {
+        if (!x || !x.ok) { toast((x && x.error) || 'Не получилось'); return; }
+        if (x.credits != null) setCredits(x.credits);
+        toast('Отправлено ' + x.amount + ' кр.');
+      }).catch(function () { toast('Нет связи с сервером'); });
+    }
+    else if (a === 'frepeat') {
+      var post = (S.fposts || []).filter(function (p) { return String(p.id) === el.getAttribute('data-id'); })[0];
+      if (!post || !post.repeat || !post.repeat.prompt) return;
+      ls('nya_forum_prompt', post.repeat.prompt);
+      ls('nya_forum_model', post.repeat.model_key || '');
+      ls('nya_forum_model_name', post.repeat.model_name || '');
+      close(); applyForumPrompt();
+    }
+    else if (a === 'ftpl') { close(); go('tpl'); var tid = el.getAttribute('data-tid'); if (tid) { if (S.tpl.length) openTpl(tid); else S.pendingTpl = tid; } }
+    else if (a === 'fmore') { var last = (S.fposts || [])[(S.fposts || []).length - 1]; if (last) forumLoad(last.id); }
+    else if (a === 'storage') { if (!S.email) { authView(); return; } S.ctab = 'over'; profileView(); }
+    else if (a === 'login') doLogin(el);
+    else if (a === 'logout') { close(); logout(false); toast('Вы вышли'); }
+    else if (a === 'buy') buy(el);
+    else if (a === 'run') runTpl();
+    else if (a === 'delph') { S.photos[el.getAttribute('data-i')].splice(+el.getAttribute('data-k'), 1); $('nya-ph' + el.getAttribute('data-i')).innerHTML = photoBox(+el.getAttribute('data-i')); }
+    else if (a === 'dl') download(S.lastSrc, el.getAttribute('data-name'));
+    else if (a === 'reload') loadTemplates();
+    else if (a === 'share' && S.cur) {
+      var link = location.origin + location.pathname + '?t=' + encodeURIComponent(S.cur.id);
+      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(function () { toast('Ссылка скопирована'); }, function () { window.prompt('Скопируйте ссылку:', link); });
+    }
+  });
+  root.addEventListener('change', function (e) {
+    if (e.target.id === 'nya-file') pickFile(e.target);
+    else if (e.target.id === 'nya-audio') pickAudio(e.target);
+    else if (e.target.hasAttribute('data-ph')) pickPhotos(e.target);
+  });
+  root.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.target.id === 'nya-em' || e.target.id === 'nya-pw')) { e.preventDefault(); doLogin(root.querySelector('[data-act="login"]')); }
+    if (e.key === 'Escape') { closeMenus(); $('nya-zoom').classList.remove('on'); if ($('nya-modal').classList.contains('on')) close(); }
+  });
+  ta.addEventListener('input', function () { autosize(); updSend(); });
+  ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+  ta.addEventListener('focus', function () { setTimeout(bottom, 300); });
+  sendBtn.addEventListener('pointerdown', function (e) { if (sendBtn.disabled) return; e.preventDefault(); send(); });
+  var qt; $('nya-q').addEventListener('input', function (e) { clearTimeout(qt); qt = setTimeout(function () { S.q = e.target.value.trim(); tplDraw(); }, 200); });
+
+  $('nya-tools-menu').innerHTML = toolsHtml('opt');
+  setAspect(S.aspect);
+  setModel(S.model);
+  loadVideo();
+  if (S.vjob && S.email) { pollVideo(); toast(S.vjob.kind === 'image' ? '🖼 Картинка ещё рисуется' : S.vjob.kind === 'audio' ? '🎵 Музыка ещё сочиняется' : '🎬 Видео ещё создаётся'); }
+  account(); welcome();
+  drawChats();
+  if (S.email) { loadChats(); connect(); loadBalance(); loadStorage(); }
+  loadTemplates();
+  var boot = new URLSearchParams(location.search);
+  if (boot.get('open') === 'forum' || boot.get('tab') === 'forum') location.href = 'https://babayagaland.ru/lenta';
+  else if (boot.get('tab') === 'templates' || boot.get('open') === 'templates' || boot.get('t') || boot.get('template')) go('tpl');
+  else go('chat');
+  applyForumPrompt();
+  if (hashAction()) S.deepDone = true;
+})();
+</script> </section> 
