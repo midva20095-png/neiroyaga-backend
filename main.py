@@ -2151,6 +2151,102 @@ async def telegram_pull_refund(request: Request):
     return result
 
 
+BOT_API_URL = os.getenv("BOT_API_URL", "https://neirozhiga-ai-telegram-bot-production-7ae5.up.railway.app").rstrip("/")
+
+
+def _bot_credit(payload: dict, key: str):
+    return requests.post(
+        BOT_API_URL + "/api/internal/credit",
+        json=payload,
+        headers={"X-Transfer-Key": key, "Content-Type": "application/json"},
+        timeout=20,
+    )
+
+
+@app.post("/api/cabinet/transfer-to-bot")
+async def cabinet_transfer_to_bot(request: Request):
+    """Кнопка в кабинете на Тильде. Вход по токену кабинета, секретный ключ из браузера не нужен."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    email = norm_email(data.get("email"))
+    token = token_from_request(request, data)
+    if not email or "@" not in email or not check_token(email, token):
+        return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
+    try:
+        credits = int(data.get("credits") or 0)
+    except (TypeError, ValueError):
+        credits = 0
+    tg = str(data.get("telegram") or "").strip()[:40]
+    if credits <= 0 or credits > 1_000_000:
+        return {"ok": False, "error": "Укажите, сколько кредитов перенести"}
+    if not tg:
+        return {"ok": False, "error": "Укажите @username или числовой id Telegram"}
+    key = os.getenv("SITE_TRANSFER_KEY", "").strip()
+    if not key:
+        return {"ok": False, "error": "Перенос в бот ещё не включён"}
+    if not db_ready():
+        return JSONResponse({"ok": False, "error": "База сайта недоступна"}, status_code=503)
+
+    transfer_id = str(uuid.uuid4())
+    async with db_pool.acquire() as con:
+        await _ensure_telegram_pulls(con)
+        user = await con.fetchrow("SELECT blocked FROM users WHERE email=$1", email)
+        if not user:
+            return {"ok": False, "error": "Аккаунт не найден"}
+        if user["blocked"]:
+            return {"ok": False, "error": "Аккаунт заблокирован"}
+        try:
+            async with con.transaction():
+                await con.execute(
+                    "INSERT INTO telegram_pulls (id, email, credits, telegram_user) VALUES ($1,$2,$3,$4)",
+                    transfer_id, email, credits, tg)
+                bal = await con.fetchval(
+                    "UPDATE users SET credits = credits - $2 WHERE email=$1 AND credits >= $2 RETURNING credits",
+                    email, credits)
+                if bal is None:
+                    raise _PullAbort()
+                await db_log(con, email, -credits, int(bal), "migration", f"Перенос в Telegram −{credits}")
+                site_balance = int(bal)
+        except _PullAbort:
+            have = int(await con.fetchval("SELECT credits FROM users WHERE email=$1", email) or 0)
+            return {"ok": False, "error": f"На сайте {have} кр. — больше списать нельзя", "credits": have}
+
+    payload = {"email": email, "credits": credits, "transferId": transfer_id, "telegram": tg}
+    response = None
+    body = {}
+    for _ in range(2):
+        try:
+            response = await asyncio.to_thread(_bot_credit, payload, key)
+            body = response.json() if response.content else {}
+            if response.status_code < 500:
+                break
+        except Exception as e:
+            print(f"⚠️ Бот не принял перенос {email}: {e}")
+            response = None
+            body = {}
+
+    if response is not None and 200 <= response.status_code < 300 and isinstance(body, dict) and body.get("ok"):
+        print(f"↗️ Кабинет → бот: {email} −{credits} кр. tg {body.get('telegram') or tg}. На сайте: {site_balance}")
+        return {"ok": True, "credits": site_balance, "botBalance": body.get("balance"), "telegram": body.get("telegram") or tg}
+
+    async with db_pool.acquire() as con:
+        async with con.transaction():
+            row = await con.fetchrow("SELECT refunded FROM telegram_pulls WHERE id=$1 FOR UPDATE", transfer_id)
+            if row and not row["refunded"]:
+                bal = await con.fetchval(
+                    "UPDATE users SET credits = credits + $2 WHERE email=$1 RETURNING credits", email, credits)
+                await con.execute("UPDATE telegram_pulls SET refunded = TRUE WHERE id=$1", transfer_id)
+                if bal is not None:
+                    await db_log(con, email, credits, int(bal), "refund", f"Возврат переноса в Telegram +{credits}")
+                    site_balance = int(bal)
+    err = body.get("error") if isinstance(body, dict) else ""
+    if response is not None and response.status_code == 404:
+        err = "Бот ещё не принимает перенос из кабинета. Кредиты остались на сайте."
+    return {"ok": False, "error": err or "Бот не принял перевод. Кредиты остались на сайте.", "credits": site_balance}
+
+
 @app.post("/api/admin/vip")
 async def admin_vip(request: Request):
     data = await _admin_body(request)
