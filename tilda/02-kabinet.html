@@ -730,6 +730,8 @@
 .nyk-app{display:grid;grid-template-columns:250px minmax(0,1fr);gap:26px;align-items:start}
 .nyk-side{position:sticky;top:calc(var(--vb-q8m-h,72px) + 12px);max-height:calc(100dvh - var(--vb-q8m-h,72px) - 24px);display:flex;flex-direction:column;gap:8px;overflow:hidden}
 .nyk-me{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid var(--ln2);border-radius:18px;background:rgba(255,255,255,.03);flex:none}
+.nyk-me > div{min-width:0;flex:1}
+.nyk-me b,.nyk-me small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nyk-me .nyk-av{width:44px;height:44px;border-radius:14px;font-size:19px}
 .nyk-look{position:relative;height:auto;aspect-ratio:1600/520;border-radius:16px;overflow:hidden;margin-bottom:28px;background:#14081f center/cover no-repeat;border:1px solid var(--ln2)}
 @keyframes nyk-shift{0%{background-position:0% 40%}100%{background-position:100% 60%}}
@@ -857,6 +859,22 @@
 .nyk-links a:hover{border-color:var(--pu)}
 .nyk-monly{display:none}
 .nyk-tabbar{display:none!important}
+.nyk-apk{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:14px 16px;border-radius:18px;border:1px solid rgba(157,77,255,.55);background:linear-gradient(135deg,rgba(0,212,255,.14),rgba(157,77,255,.18) 55%,rgba(255,46,196,.14));text-decoration:none!important;color:var(--tx)!important;box-shadow:0 10px 28px rgba(157,77,255,.18)}
+.nyk-apk i{font-style:normal;font-size:28px;flex:none;width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:rgba(255,255,255,.06)}
+.nyk-apk div{flex:1;min-width:0}
+.nyk-apk b{display:block;font-size:15px;font-weight:800}
+.nyk-apk small{display:block;margin-top:2px;color:var(--mut);font-size:12.5px;line-height:1.35}
+.nyk-apk span{flex:none;padding:10px 14px;border-radius:12px;background:var(--grad);color:#fff;font-weight:800;font-size:14px;white-space:nowrap}
+.nyk-apk-guest{max-width:420px;margin:14px auto 0}
+@media(max-width:1100px) and (min-width:861px){
+  .nyk{padding:24px 16px 48px}
+  .nyk-quick{grid-template-columns:1fr 1fr}
+  .nyk-st{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:560px){
+  .nyk-apk{align-items:flex-start}
+  .nyk-apk span{margin-left:56px}
+}
 @media(max-width:860px){
   .nyk-app{grid-template-columns:1fr;gap:0}
   .nyk-side{display:none}
@@ -864,6 +882,7 @@
   .nyk{padding-bottom:120px}
   .nyk-ph{font-size:21px;margin-bottom:12px}
   .nyk-quick{grid-template-columns:1fr 1fr}
+  .nyk-st{grid-template-columns:repeat(2,1fr)}
   .nyk-tabbar{position:fixed!important;left:12px!important;right:12px!important;bottom:calc(10px + env(safe-area-inset-bottom,0px));width:auto!important;max-width:none!important;margin:0!important;transform:none!important;z-index:9000;display:flex!important;gap:6px;overflow:hidden;align-items:stretch;padding:8px;border-radius:22px;background:rgba(14,8,26,.94);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid rgba(157,77,255,.5);box-shadow:0 14px 40px rgba(0,0,0,.5),0 0 24px rgba(157,77,255,.28);box-sizing:border-box}
   .nyk-tabbar button,.nyk-tabbar a{display:flex;flex:1 1 0;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:auto!important;min-width:0!important;max-width:none!important;margin:0!important;padding:7px 2px!important;min-height:58px;border-radius:16px;border:1px solid transparent;font-size:11px;font-weight:800;color:#cfc4ea!important;line-height:1.15;text-decoration:none;text-align:center;background:transparent!important;box-shadow:none!important}
   .nyk-tabbar span{display:block}
@@ -962,7 +981,7 @@
       '<input class="nyk-in" type="password" id="nyk-pw" placeholder="Пароль" autocomplete="current-password">' +
       '<div class="nyk-err" id="nyk-err">' + esc(msg || '') + '</div>' +
       '<button type="button" class="nyk-btn nyk-w" data-a="login">Войти</button>' +
-      '<button type="button" class="nyk-link" data-a="forgot">Забыли пароль?</button></div>';
+      '<button type="button" class="nyk-link" data-a="forgot">Забыли пароль?</button></div>' + apkCard(true);
     var pw = document.getElementById('nyk-pw');
     pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(root.querySelector('[data-a="login"]')); });
   }
@@ -1353,6 +1372,10 @@
   }
   var AI_URL = 'https://babayagaland.ru/aiayaga';
   var LENTA_URL = 'https://babayagaland.ru/lenta';
+  var APK_URL = 'https://raw.githubusercontent.com/midva20095-png/neiroyaga-backend/cursor/android-app-057c/android/NeyroYaga.apk';
+  function apkCard(guest) {
+    return '<a class="nyk-apk' + (guest ? ' nyk-apk-guest' : '') + '" href="' + APK_URL + '"><i>📲</i><div><b>Приложение для Android</b><small>Телефон и планшет. Чат, кабинет и лента. Android 8 и новее.</small></div><span>Скачать</span></a>';
+  }
   var MAIL_EMO = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😭 😡 👍 👎 👏 🙏 🔥 ✨ ❤️ 💜 💔 🎉 👑 ⭐ 💯 🌹 💎 🚀 🐱 👻 🤖'.split(' ');
   var MAIL_STICK = '🎉 🔥 ❤️ 😂 👍 👑 ✨ 🎁 💯 🚀 😭 😡 👏 🙏 💪 🌹 💎 ⭐ 🍀 🍕 ☕ 🐱 🐶 👻 🤖 💀 😎 🥰 🤩 💜 ⚡ 🏆'.split(' ');
   var MENU = [
@@ -1360,7 +1383,7 @@
     ['Люди', [['mail', '✉️', 'Сообщения'], ['mates', '👥', 'Друзья'], ['notes', '🔔', 'Оповещения']]],
     ['Творчество', [['works', '🖼', 'Работы'], ['wall', '📝', 'Посты']]],
     ['Счёт', [['move', '↗️', 'В бота'], ['hist', '🧾', 'История'], ['store', '💾', 'Хранилище'], ['gift', '🎟', 'Промокоды'], ['ref', '🎁', 'Пригласить']]],
-    ['Перейти', [['go-lenta', '📰', 'Лента'], ['go-ai', '🤖', 'ИИ'], ['go-bot', '✈️', 'Бот']]],
+    ['Перейти', [['go-lenta', '📰', 'Лента'], ['go-ai', '🤖', 'ИИ'], ['go-bot', '✈️', 'Бот'], ['go-apk', '📲', 'Приложение']]],
     ['', [['support', '💬', 'Поддержка'], ['set', '⚙️', 'Настройки']]]
   ];
   var NAV = MENU.reduce(function (all, g) { return all.concat(g[1]); }, []);
@@ -1385,6 +1408,7 @@
           if (t[0] === 'go-lenta') return '<a href="' + LENTA_URL + '"><i>' + t[1] + '</i>' + t[2] + '</a>';
           if (t[0] === 'go-ai') return '<a class="nyk-outlink" href="' + AI_URL + '"><i>' + t[1] + '</i>ИИ-чат ↗</a>';
           if (t[0] === 'go-bot') return '<a href="https://t.me/NeyroYaga_ai_bot" target="_blank" rel="noopener"><i>' + t[1] + '</i>@NeyroYaga_ai_bot</a>';
+          if (t[0] === 'go-apk') return '<a href="' + APK_URL + '"><i>' + t[1] + '</i>Скачать Android</a>';
           return '<button type="button" data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '"><i>' + t[1] + '</i>' + t[2] + extra + '</button>';
         }).join('');
       }).join('') + '</nav><div class="nyk-sidefoot"><button type="button" class="nyk-ghost nyk-w" data-a="logout">Выйти</button></div></aside>';
@@ -1466,6 +1490,7 @@
     if (bal) h += '<div class="nyk-en"><span>≈ ' + fmtN(bal / 4) + ' сообщений</span><span>≈ ' + fmtN(bal / 20) + ' картинок</span><span>≈ ' + fmtN(bal / 6) + ' сек видео</span></div>';
     h += '</div>';
     h += '<button type="button" class="nyk-ghost nyk-w" data-tab="move" style="margin:0 0 12px">Перенести кредиты в Telegram или из бота</button>';
+    h += apkCard();
     h += vipCard(r);
     h += promoBox();
     if (S.pay) h += '<div class="nyk-card nyk-payfocus" id="nyk-packs"><h4>💎 Выберите пакет пополнения</h4>' + packs() +
