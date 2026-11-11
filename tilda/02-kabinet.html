@@ -866,12 +866,6 @@
 .nyk-apk small{display:block;margin-top:2px;color:var(--mut);font-size:12.5px;line-height:1.35}
 .nyk-apk span{flex:none;padding:10px 14px;border-radius:12px;background:var(--grad);color:#fff;font-weight:800;font-size:14px;white-space:nowrap}
 .nyk-apk-guest{max-width:420px;margin:14px auto 0}
-.nyk-msg{cursor:default;flex-wrap:wrap;align-items:center}
-.nyk-msg > div{flex:1 1 180px;min-width:140px}
-.nyk-msgacts{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;margin-left:auto!important}
-.nyk-msgacts a,.nyk-msgacts button{display:block;padding:10px 14px;border-radius:12px;background:var(--grad);color:#fff!important;font-weight:800;font-size:14px;white-space:nowrap;text-decoration:none!important;text-align:center;border:0;cursor:pointer}
-.nyk-msgacts button{background:transparent;border:1px solid rgba(255,255,255,.35)!important}
-[data-ny-widget] .ny-btn{display:none!important}
 @media(max-width:1100px) and (min-width:861px){
   .nyk{padding:24px 16px 48px}
   .nyk-quick{grid-template-columns:1fr 1fr}
@@ -880,9 +874,6 @@
 @media(max-width:560px){
   .nyk-apk{align-items:flex-start}
   .nyk-apk span{margin-left:56px}
-  .nyk-msg{align-items:flex-start}
-  .nyk-msgacts{flex-direction:row;width:100%;margin:8px 0 0!important}
-  .nyk-msgacts a,.nyk-msgacts button{flex:1}
 }
 @media(max-width:860px){
   .nyk-app{grid-template-columns:1fr;gap:0}
@@ -1383,29 +1374,11 @@
   var LENTA_URL = 'https://babayagaland.ru/lenta';
   var APK_URL = 'https://raw.githubusercontent.com/midva20095-png/neiroyaga-backend/cursor/android-app-057c/android/NeyroYaga.apk';
   var MSG_APK = 'https://neuroyaga-messenger-production.up.railway.app/neuroyaga.apk';
-  var MSG_WIDGET = 'https://neuroyaga-messenger-production.up.railway.app/widget.js';
   function apkCard(guest) {
     return '<a class="nyk-apk' + (guest ? ' nyk-apk-guest' : '') + '" href="' + APK_URL + '"><i>📲</i><div><b>Приложение для Android</b><small>Телефон и планшет. Чат, кабинет и лента. Android 8 и новее.</small></div><span>Скачать</span></a>';
   }
   function msgCard(guest) {
-    return '<div class="nyk-apk nyk-msg' + (guest ? ' nyk-apk-guest' : '') + '"><i>💬</i><div><b>Мессенджер для Android</b><small>Чат Нейрояги. Файл ставится на телефон без магазина.</small></div><span class="nyk-msgacts"><a href="' + MSG_APK + '">Скачать</a><button type="button" data-a="msgopen">Войти</button></span></div>';
-  }
-  function openMessenger() {
-    window.NY_MESSENGER_URL = 'https://neuroyaga-messenger-production.up.railway.app';
-    function poke() {
-      var box = document.querySelector('[data-ny-widget]');
-      var btn = box && box.querySelector('.ny-btn');
-      if (!box || !btn) return false;
-      btn.textContent = 'Войти';
-      btn.setAttribute('aria-label', 'Войти');
-      if (!box.classList.contains('on')) btn.click();
-      return true;
-    }
-    if (poke()) return;
-    var s = document.createElement('script');
-    s.src = MSG_WIDGET;
-    s.onload = function () { setTimeout(poke, 0); };
-    document.body.appendChild(s);
+    return '<a class="nyk-apk' + (guest ? ' nyk-apk-guest' : '') + '" href="' + MSG_APK + '"><i>💬</i><div><b>Мессенджер для Android</b><small>Чат Нейрояги. Файл ставится на телефон без магазина.</small></div><span>Скачать</span></a>';
   }
   var MAIL_EMO = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😭 😡 👍 👎 👏 🙏 🔥 ✨ ❤️ 💜 💔 🎉 👑 ⭐ 💯 🌹 💎 🚀 🐱 👻 🤖'.split(' ');
   var MAIL_STICK = '🎉 🔥 ❤️ 😂 👍 👑 ✨ 🎁 💯 🚀 😭 😡 👏 🙏 💪 🌹 💎 ⭐ 🍀 🍕 ☕ 🐱 🐶 👻 🤖 💀 😎 🥰 🤩 💜 ⚡ 🏆'.split(' ');
@@ -2385,7 +2358,6 @@
     if (a === 'reflink') { copyText(S.ref.link, 'Ссылка скопирована'); return; }
     if (a === 'refshare') { try { navigator.share({ title: 'НейроЯга', text: 'Попробуй НейроЯгу — картинки, видео и песни с ИИ. Мой код: ' + S.ref.code, url: S.ref.link }); } catch (e) {} return; }
     if (a === 'refapply') { var v = (document.getElementById('nyk-refin').value || '').trim(); if (!v) { toast('Введите код'); return; } applyRef(v, false); return; }
-    if (a === 'msgopen') { openMessenger(); return; }
     if (a === 'login') doLogin(el);
     else if (a === 'forgot') forgotView();
     else if (a === 'forgotsend') forgotSend(el);
@@ -2442,18 +2414,5 @@
   });
 
   if (params.get('reset')) resetView(params.get('reset')); else load();
-})();
-</script>
-<script src="https://neuroyaga-messenger-production.up.railway.app/widget.js"></script>
-<script>
-(function () {
-  function label() {
-    var btn = document.querySelector('[data-ny-widget] .ny-btn');
-    if (!btn) return;
-    btn.textContent = 'Войти';
-    btn.setAttribute('aria-label', 'Войти');
-  }
-  label();
-  window.addEventListener('load', label);
 })();
 </script> 
