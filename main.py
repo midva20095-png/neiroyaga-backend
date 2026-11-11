@@ -1881,6 +1881,75 @@ async def admin_credits(request: Request):
     return {"ok": True, "credits": bal}
 
 
+_transfer_table_ready = False
+
+
+async def _ensure_telegram_transfers(con):
+    global _transfer_table_ready
+    if _transfer_table_ready:
+        return
+    await con.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_transfers (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL,
+            credits INTEGER NOT NULL,
+            telegram_user TEXT,
+            created_at TIMESTAMP DEFAULT now()
+        )
+    """)
+    _transfer_table_ready = True
+
+
+@app.post("/api/telegram/transfer")
+async def telegram_transfer(request: Request):
+    expected = os.getenv("SITE_TRANSFER_KEY", "").strip()
+    given = request.headers.get("x-transfer-key", "") or ""
+    if not expected or not isinstance(given, str) or not hmac.compare_digest(given, expected):
+        return JSONResponse({"ok": False, "error": "Перенос не настроен"}, status_code=403)
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    email = norm_email(data.get("email"))
+    try:
+        credits = int(data.get("credits") or 0)
+    except (TypeError, ValueError):
+        credits = 0
+    transfer_id = str(data.get("transferId") or "").strip()[:80]
+    tg_user = str(data.get("telegramUserId") or "")[:40]
+    if not email or "@" not in email or credits <= 0 or credits > 1_000_000 or len(transfer_id) < 8:
+        return {"ok": False, "error": "Некорректные данные перевода"}
+    if not db_ready():
+        return JSONResponse({"ok": False, "error": "База сайта недоступна"}, status_code=503)
+    async with db_pool.acquire() as con:
+        await _ensure_telegram_transfers(con)
+        async with con.transaction():
+            known = await con.fetchrow("SELECT email FROM telegram_transfers WHERE id=$1", transfer_id)
+            if known:
+                bal = await con.fetchval("SELECT credits FROM users WHERE email=$1", known["email"])
+                result = {"ok": True, "credits": int(bal or 0), "duplicate": True}
+            else:
+                user = await con.fetchrow("SELECT blocked FROM users WHERE email=$1", email)
+                if not user:
+                    result = {"ok": False, "error": "На сайте нет аккаунта с этой почтой. Зарегистрируйтесь на сайте и повторите."}
+                elif user["blocked"]:
+                    result = {"ok": False, "error": "Аккаунт на сайте заблокирован"}
+                else:
+                    inserted = await con.fetchrow(
+                        "INSERT INTO telegram_transfers (id, email, credits, telegram_user) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING RETURNING id",
+                        transfer_id, email, credits, tg_user)
+                    if not inserted:
+                        bal = await con.fetchval("SELECT credits FROM users WHERE email=$1", email)
+                        result = {"ok": True, "credits": int(bal or 0), "duplicate": True}
+                    else:
+                        bal = await con.fetchval(
+                            "UPDATE users SET credits = credits + $2 WHERE email=$1 RETURNING credits",
+                            email, credits)
+                        await db_log(con, email, credits, bal, "migration", f"Перенос из Telegram +{credits}")
+                        result = {"ok": True, "credits": int(bal)}
+    return result
+
+
 @app.post("/api/admin/vip")
 async def admin_vip(request: Request):
     data = await _admin_body(request)
