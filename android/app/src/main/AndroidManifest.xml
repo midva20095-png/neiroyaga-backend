@@ -39,6 +39,10 @@
         android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true">
 
+        <meta-data
+            android:name="android.webkit.WebView.EnableSafeBrowsing"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

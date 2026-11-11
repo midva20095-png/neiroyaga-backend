@@ -15,6 +15,8 @@ import android.os.Message
 import android.provider.MediaStore
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -23,6 +25,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.net.http.SslError
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -86,6 +89,7 @@ class MainActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         offline = findViewById(R.id.offline)
         findViewById<View>(R.id.retry).setOnClickListener { reloadHome() }
+        findViewById<View>(R.id.browser).setOnClickListener { openInBrowser() }
 
         try {
             configureWeb(savedInstanceState)
@@ -123,9 +127,10 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = false
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = userAgentString + " NeyroYagaAndroid/" + appVersion()
+            // Метка «wv» и свой суффикс заставляют DDoS-Guard обрывать адрес на Samsung.
+            userAgentString = browserUserAgent(userAgentString)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                safeBrowsingEnabled = true
+                safeBrowsingEnabled = false
             }
         }
         web.isVerticalScrollBarEnabled = true
@@ -137,17 +142,60 @@ class MainActivity : AppCompatActivity() {
             startDownload(url, userAgent, contentDisposition, mime)
         }
 
-        if (savedInstanceState != null) {
-            web.restoreState(savedInstanceState)
-        } else {
-            web.loadUrl(getString(R.string.home_url))
+        web.post {
+            if (savedInstanceState != null) {
+                web.restoreState(savedInstanceState)
+            } else {
+                web.loadUrl(getString(R.string.home_url))
+            }
         }
+    }
+
+    private fun browserUserAgent(raw: String?): String {
+        val chrome = Regex("Chrome/([\\d.]+)").find(raw.orEmpty())?.groupValues?.getOrNull(1) ?: "120.0.0.0"
+        val tablet = resources.configuration.smallestScreenWidthDp >= 600
+        val mobile = if (tablet) "" else " Mobile"
+        val model = Build.MODEL.orEmpty().replace(";", " ").ifBlank { "Android" }
+        return "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; $model) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chrome$mobile Safari/537.36"
     }
 
     private fun reloadHome() {
         offline.visibility = View.GONE
         pageFailed = false
-        web.loadUrl(getString(R.string.home_url))
+        try {
+            web.loadUrl(getString(R.string.home_url))
+        } catch (_: Throwable) {
+            showFailure(WebViewClient.ERROR_UNKNOWN)
+        }
+    }
+
+    private fun openInBrowser() {
+        val uri = Uri.parse(getString(R.string.home_url))
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (_: ActivityNotFoundException) {
+            toast(R.string.open_failed)
+        }
+    }
+
+    private fun showFailure(code: Int) {
+        val title = findViewById<TextView>(R.id.offline_title)
+        val body = findViewById<TextView>(R.id.offline_body)
+        when (code) {
+            WebViewClient.ERROR_HOST_LOOKUP -> {
+                title.setText(R.string.lookup_title)
+                body.setText(R.string.lookup_body)
+            }
+            WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> {
+                title.setText(R.string.ssl_title)
+                body.setText(R.string.ssl_body)
+            }
+            else -> {
+                title.setText(R.string.offline_title)
+                body.setText(R.string.offline_body)
+            }
+        }
+        offline.visibility = View.VISIBLE
     }
 
     private fun showMissingWebView() {
@@ -158,20 +206,6 @@ class MainActivity : AppCompatActivity() {
             textSize = 16f
             setPadding(48, 48, 48, 48)
         })
-    }
-
-    private fun appVersion(): String {
-        return try {
-            val info = if (Build.VERSION.SDK_INT >= 33) {
-                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(packageName, 0)
-            }
-            info.versionName ?: "1"
-        } catch (_: Exception) {
-            "1"
-        }
     }
 
     private fun shouldLeaveApp(uri: Uri): Boolean {
@@ -340,14 +374,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            if (url != null && (url.startsWith("chrome-error://") || url.contains("chromewebdata"))) {
+                if (!pageFailed) {
+                    pageFailed = true
+                    showFailure(WebViewClient.ERROR_CONNECT)
+                }
+                return
+            }
             if (!pageFailed) offline.visibility = View.GONE
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (request.isForMainFrame) {
-                pageFailed = true
-                offline.visibility = View.VISIBLE
-            }
+            if (!request.isForMainFrame) return
+            val code = error.errorCode
+            if (code == WebViewClient.ERROR_UNKNOWN) return
+            pageFailed = true
+            showFailure(code)
+        }
+
+        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+            handler.cancel()
+            val current = view.url
+            val failedMain = current.isNullOrBlank() || current == "about:blank" || current == error.url
+            if (!failedMain) return
+            pageFailed = true
+            showFailure(WebViewClient.ERROR_FAILED_SSL_HANDSHAKE)
+        }
+
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            pageFailed = true
+            showFailure(WebViewClient.ERROR_UNKNOWN)
+            return true
         }
     }
 

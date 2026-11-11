@@ -29,14 +29,17 @@
         android:visibility="gone">
 
         <TextView
+            android:id="@+id/offline_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:gravity="center"
             android:text="@string/offline_title"
             android:textColor="@color/text"
             android:textSize="22sp"
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/offline_body"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -52,6 +55,15 @@
             android:layout_marginTop="20dp"
             android:backgroundTint="@color/pink"
             android:text="@string/retry"
+            android:textColor="@android:color/white" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/browser"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="@color/purple"
+            android:text="@string/open_browser"
             android:textColor="@android:color/white" />
     </LinearLayout>
 </FrameLayout>
