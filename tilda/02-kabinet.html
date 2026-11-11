@@ -866,6 +866,12 @@
 .nyk-apk small{display:block;margin-top:2px;color:var(--mut);font-size:12.5px;line-height:1.35}
 .nyk-apk span{flex:none;padding:10px 14px;border-radius:12px;background:var(--grad);color:#fff;font-weight:800;font-size:14px;white-space:nowrap}
 .nyk-apk-guest{max-width:420px;margin:14px auto 0}
+.nyk-msg{cursor:default;flex-wrap:wrap;align-items:center}
+.nyk-msg > div{flex:1 1 180px;min-width:140px}
+.nyk-msgacts{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;margin-left:auto!important}
+.nyk-msgacts a,.nyk-msgacts button{display:block;padding:10px 14px;border-radius:12px;background:var(--grad);color:#fff!important;font-weight:800;font-size:14px;white-space:nowrap;text-decoration:none!important;text-align:center;border:0;cursor:pointer}
+.nyk-msgacts button{background:transparent;border:1px solid rgba(255,255,255,.35)!important}
+[data-ny-widget] .ny-btn{display:none!important}
 @media(max-width:1100px) and (min-width:861px){
   .nyk{padding:24px 16px 48px}
   .nyk-quick{grid-template-columns:1fr 1fr}
@@ -874,6 +880,9 @@
 @media(max-width:560px){
   .nyk-apk{align-items:flex-start}
   .nyk-apk span{margin-left:56px}
+  .nyk-msg{align-items:flex-start}
+  .nyk-msgacts{flex-direction:row;width:100%;margin:8px 0 0!important}
+  .nyk-msgacts a,.nyk-msgacts button{flex:1}
 }
 @media(max-width:860px){
   .nyk-app{grid-template-columns:1fr;gap:0}
@@ -981,7 +990,7 @@
       '<input class="nyk-in" type="password" id="nyk-pw" placeholder="Пароль" autocomplete="current-password">' +
       '<div class="nyk-err" id="nyk-err">' + esc(msg || '') + '</div>' +
       '<button type="button" class="nyk-btn nyk-w" data-a="login">Войти</button>' +
-      '<button type="button" class="nyk-link" data-a="forgot">Забыли пароль?</button></div>' + apkCard(true);
+      '<button type="button" class="nyk-link" data-a="forgot">Забыли пароль?</button></div>' + apkCard(true) + msgCard(true);
     var pw = document.getElementById('nyk-pw');
     pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(root.querySelector('[data-a="login"]')); });
   }
@@ -1373,8 +1382,30 @@
   var AI_URL = 'https://babayagaland.ru/aiayaga';
   var LENTA_URL = 'https://babayagaland.ru/lenta';
   var APK_URL = 'https://raw.githubusercontent.com/midva20095-png/neiroyaga-backend/cursor/android-app-057c/android/NeyroYaga.apk';
+  var MSG_APK = 'https://neuroyaga-messenger-production.up.railway.app/neuroyaga.apk';
+  var MSG_WIDGET = 'https://neuroyaga-messenger-production.up.railway.app/widget.js';
   function apkCard(guest) {
     return '<a class="nyk-apk' + (guest ? ' nyk-apk-guest' : '') + '" href="' + APK_URL + '"><i>📲</i><div><b>Приложение для Android</b><small>Телефон и планшет. Чат, кабинет и лента. Android 8 и новее.</small></div><span>Скачать</span></a>';
+  }
+  function msgCard(guest) {
+    return '<div class="nyk-apk nyk-msg' + (guest ? ' nyk-apk-guest' : '') + '"><i>💬</i><div><b>Мессенджер для Android</b><small>Чат Нейрояги. Файл ставится на телефон без магазина.</small></div><span class="nyk-msgacts"><a href="' + MSG_APK + '">Скачать</a><button type="button" data-a="msgopen">Войти</button></span></div>';
+  }
+  function openMessenger() {
+    window.NY_MESSENGER_URL = 'https://neuroyaga-messenger-production.up.railway.app';
+    function poke() {
+      var box = document.querySelector('[data-ny-widget]');
+      var btn = box && box.querySelector('.ny-btn');
+      if (!box || !btn) return false;
+      btn.textContent = 'Войти';
+      btn.setAttribute('aria-label', 'Войти');
+      if (!box.classList.contains('on')) btn.click();
+      return true;
+    }
+    if (poke()) return;
+    var s = document.createElement('script');
+    s.src = MSG_WIDGET;
+    s.onload = function () { setTimeout(poke, 0); };
+    document.body.appendChild(s);
   }
   var MAIL_EMO = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😭 😡 👍 👎 👏 🙏 🔥 ✨ ❤️ 💜 💔 🎉 👑 ⭐ 💯 🌹 💎 🚀 🐱 👻 🤖'.split(' ');
   var MAIL_STICK = '🎉 🔥 ❤️ 😂 👍 👑 ✨ 🎁 💯 🚀 😭 😡 👏 🙏 💪 🌹 💎 ⭐ 🍀 🍕 ☕ 🐱 🐶 👻 🤖 💀 😎 🥰 🤩 💜 ⚡ 🏆'.split(' ');
@@ -1383,7 +1414,7 @@
     ['Люди', [['mail', '✉️', 'Сообщения'], ['mates', '👥', 'Друзья'], ['notes', '🔔', 'Оповещения']]],
     ['Творчество', [['works', '🖼', 'Работы'], ['wall', '📝', 'Посты']]],
     ['Счёт', [['move', '↗️', 'В бота'], ['hist', '🧾', 'История'], ['store', '💾', 'Хранилище'], ['gift', '🎟', 'Промокоды'], ['ref', '🎁', 'Пригласить']]],
-    ['Перейти', [['go-lenta', '📰', 'Лента'], ['go-ai', '🤖', 'ИИ'], ['go-bot', '✈️', 'Бот'], ['go-apk', '📲', 'Приложение']]],
+    ['Перейти', [['go-lenta', '📰', 'Лента'], ['go-ai', '🤖', 'ИИ'], ['go-bot', '✈️', 'Бот'], ['go-apk', '📲', 'Приложение'], ['go-msg', '💬', 'Мессенджер']]],
     ['', [['support', '💬', 'Поддержка'], ['set', '⚙️', 'Настройки']]]
   ];
   var NAV = MENU.reduce(function (all, g) { return all.concat(g[1]); }, []);
@@ -1409,6 +1440,7 @@
           if (t[0] === 'go-ai') return '<a class="nyk-outlink" href="' + AI_URL + '"><i>' + t[1] + '</i>ИИ-чат ↗</a>';
           if (t[0] === 'go-bot') return '<a href="https://t.me/NeyroYaga_ai_bot" target="_blank" rel="noopener"><i>' + t[1] + '</i>@NeyroYaga_ai_bot</a>';
           if (t[0] === 'go-apk') return '<a href="' + APK_URL + '"><i>' + t[1] + '</i>Скачать Android</a>';
+          if (t[0] === 'go-msg') return '<a href="' + MSG_APK + '"><i>' + t[1] + '</i>Скачать мессенджер</a>';
           return '<button type="button" data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '"><i>' + t[1] + '</i>' + t[2] + extra + '</button>';
         }).join('');
       }).join('') + '</nav><div class="nyk-sidefoot"><button type="button" class="nyk-ghost nyk-w" data-a="logout">Выйти</button></div></aside>';
@@ -1491,6 +1523,7 @@
     h += '</div>';
     h += '<button type="button" class="nyk-ghost nyk-w" data-tab="move" style="margin:0 0 12px">Перенести кредиты в Telegram или из бота</button>';
     h += apkCard();
+    h += msgCard();
     h += vipCard(r);
     h += promoBox();
     if (S.pay) h += '<div class="nyk-card nyk-payfocus" id="nyk-packs"><h4>💎 Выберите пакет пополнения</h4>' + packs() +
@@ -2352,6 +2385,7 @@
     if (a === 'reflink') { copyText(S.ref.link, 'Ссылка скопирована'); return; }
     if (a === 'refshare') { try { navigator.share({ title: 'НейроЯга', text: 'Попробуй НейроЯгу — картинки, видео и песни с ИИ. Мой код: ' + S.ref.code, url: S.ref.link }); } catch (e) {} return; }
     if (a === 'refapply') { var v = (document.getElementById('nyk-refin').value || '').trim(); if (!v) { toast('Введите код'); return; } applyRef(v, false); return; }
+    if (a === 'msgopen') { openMessenger(); return; }
     if (a === 'login') doLogin(el);
     else if (a === 'forgot') forgotView();
     else if (a === 'forgotsend') forgotSend(el);
@@ -2408,5 +2442,18 @@
   });
 
   if (params.get('reset')) resetView(params.get('reset')); else load();
+})();
+</script>
+<script src="https://neuroyaga-messenger-production.up.railway.app/widget.js"></script>
+<script>
+(function () {
+  function label() {
+    var btn = document.querySelector('[data-ny-widget] .ny-btn');
+    if (!btn) return;
+    btn.textContent = 'Войти';
+    btn.setAttribute('aria-label', 'Войти');
+  }
+  label();
+  window.addEventListener('load', label);
 })();
 </script> 
