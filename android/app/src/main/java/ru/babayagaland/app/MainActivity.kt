@@ -93,13 +93,6 @@ class MainActivity : AppCompatActivity() {
         keepPageInsideScreen()
         findViewById<View>(R.id.retry).setOnClickListener { reloadHome() }
         findViewById<View>(R.id.browser).setOnClickListener { openInBrowser() }
-        val messengers = findViewById<View>(R.id.messengers)
-        if (resources.getBoolean(R.bool.show_messengers)) {
-            messengers.visibility = View.VISIBLE
-            findViewById<View>(R.id.open_vk).setOnClickListener { openExternal(getString(R.string.vk_bot_url)) }
-            findViewById<View>(R.id.open_max).setOnClickListener { openExternal(getString(R.string.max_bot_url)) }
-            findViewById<View>(R.id.open_site).setOnClickListener { openExternal(getString(R.string.site_url)) }
-        }
 
         try {
             configureWeb(savedInstanceState)
@@ -181,12 +174,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openInBrowser() {
-        openExternal(getString(R.string.home_url))
-    }
-
-    private fun openExternal(url: String) {
+        val uri = Uri.parse(getString(R.string.home_url))
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
         } catch (_: ActivityNotFoundException) {
             toast(R.string.open_failed)
         }
