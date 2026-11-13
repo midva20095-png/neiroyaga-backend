@@ -1714,6 +1714,17 @@ def _admin_denied():
     return JSONResponse({"ok": False, "error": "Нужно войти в админ-панель"}, status_code=401)
 
 
+@app.get("/privacy")
+async def privacy_page():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "privacy.html")
+    if not os.path.exists(path):
+        return JSONResponse({"ok": False, "error": "privacy.html не найден"}, status_code=404)
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    return Response(content=html, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=3600", "X-Robots-Tag": "index"})
+
+
 @app.get("/admin")
 async def admin_page():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_panel.html")
