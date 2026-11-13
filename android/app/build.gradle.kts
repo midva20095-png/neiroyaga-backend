@@ -26,11 +26,10 @@ android {
         create("site") {
             dimension = "kind"
             applicationId = "ru.babayagaland.app"
-            versionCode = 6
-            versionName = "1.5.0"
+            versionCode = 4
+            versionName = "1.3.0"
             resValue("string", "app_name", "НейроЯга")
             resValue("string", "home_url", "https://babayagaland.ru/")
-            resValue("bool", "show_messengers", "true")
         }
         create("adminbot") {
             dimension = "kind"
@@ -39,7 +38,6 @@ android {
             versionName = "1.0.0"
             resValue("string", "app_name", "Админ бота")
             resValue("string", "home_url", "https://neirozhiga-ai-telegram-bot-production-7ae5.up.railway.app/admin")
-            resValue("bool", "show_messengers", "false")
         }
         create("adminsite") {
             dimension = "kind"
@@ -48,7 +46,6 @@ android {
             versionName = "1.0.0"
             resValue("string", "app_name", "Админ сайта")
             resValue("string", "home_url", "https://neiroyaga-backend-production.up.railway.app/admin")
-            resValue("bool", "show_messengers", "false")
         }
     }
 
