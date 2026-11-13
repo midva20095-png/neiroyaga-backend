@@ -8,6 +8,10 @@
     <string name="ssl_body">Встроенный браузер планшета не принял защиту сайта. Откройте НейроЯгу в Samsung Internet или Chrome — там сайт откроется.</string>
     <string name="retry">Повторить</string>
     <string name="open_browser">Открыть в браузере</string>
+    <string name="open_vk">ВК</string>
+    <string name="open_max">Макс</string>
+    <string name="vk_bot_url">https://vk.ru/write-236645486</string>
+    <string name="max_bot_url">https://max.ru/se14387925_bot</string>
     <string name="choose_file">Выберите файл</string>
     <string name="download_started">Файл сохраняется в «Загрузки»</string>
     <string name="download_unsupported">Этот файл можно сохранить со страницы сайта</string>
