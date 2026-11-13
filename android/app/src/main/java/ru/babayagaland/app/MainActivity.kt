@@ -98,6 +98,7 @@ class MainActivity : AppCompatActivity() {
             messengers.visibility = View.VISIBLE
             findViewById<View>(R.id.open_vk).setOnClickListener { openExternal(getString(R.string.vk_bot_url)) }
             findViewById<View>(R.id.open_max).setOnClickListener { openExternal(getString(R.string.max_bot_url)) }
+            findViewById<View>(R.id.open_site).setOnClickListener { openExternal(getString(R.string.site_url)) }
         }
 
         try {
