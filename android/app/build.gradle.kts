@@ -26,8 +26,8 @@ android {
         create("site") {
             dimension = "kind"
             applicationId = "ru.babayagaland.app"
-            versionCode = 5
-            versionName = "1.4.0"
+            versionCode = 6
+            versionName = "1.5.0"
             resValue("string", "app_name", "НейроЯга")
             resValue("string", "home_url", "https://babayagaland.ru/")
             resValue("bool", "show_messengers", "true")
