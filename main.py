@@ -881,11 +881,11 @@ def _shrink_image(data: bytes, mime: str):
 
 
 async def save_work(email: str, kind: str, title: str, source: str, url: str = None, data: bytes = None, mime: str = None,
-                    origin: str = None, template_id: str = None, prompt: str = None, model_key: str = None):
+                    origin: str = None, template_id: str = None, prompt: str = None, model_key: str = None, shrink: bool = True):
     if not db_ready() or not email:
-        return
+        return None
     try:
-        if data:
+        if data and shrink:
             data, mime = await asyncio.to_thread(_shrink_image, data, mime)
         origin_store = origin if origin in ("template", "prompt") else None
         # Промт шаблона сюда не передаём и не храним. В колонке только свой текст клиента.
@@ -908,8 +908,10 @@ async def save_work(email: str, kind: str, title: str, source: str, url: str = N
                     "(SELECT id FROM works WHERE email=$1 ORDER BY created_at DESC LIMIT $2)", norm_email(email), WORKS_MAX_PER_USER)
         if until and wid:
             await secure_work(norm_email(email), wid, until)
+        return wid
     except Exception as e:
         print(f"⚠️ Не удалось сохранить работу {email}: {e}")
+        return None
 
 
 def remember_work(*args, **kwargs):
@@ -3848,11 +3850,41 @@ import math as _math
 
 BRATUKHA_API_URL = os.getenv("BRATUKHA_API_URL", "https://bratuha.ru/api/v1").rstrip("/")
 BRATUKHA_API_KEY = (os.getenv("BRATUKHA_API_KEY") or os.getenv("BRATUKHA_TOKEN") or "").strip()
+OPENROUTER_API_KEY = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+OPENROUTER_IMAGES = "https://openrouter.ai/api/v1/images"
+# 1 кр. = 1 ₽. Курс с запасом 100 ₽/$, комиссия OpenRouter 5,5% при покупке кредитов, наценка ×3.
+# Кредиты округлены вверх и записаны явно: списание не зависит от длины текста.
+# $0.007 → 3, $0.009 → 3, $0.014 → 5, $0.015 → 5, $0.018 → 6, $0.0184 → 6.
 
 # Цена в кредитах НейроЯги (1 кр. = 1 ₽) = цена Братухи × 2. per_sec — цена за секунду видео.
 VIDEO_MODELS = {
     # photo: "required" — только с фото, "forbidden" — только по тексту, None — как угодно
     # Порядок = порядок в меню (от дешёвых к дорогим). 1 кр. = 1 ₽.
+    # ---------------- картинки OpenRouter: цена за одну картинку фиксированная ----------------
+    "or-recraft-flash": {"kind": "image", "provider": "openrouter", "or_model": "recraft/recraft-v4.1-flash",
+                         "or_provider": "recraft", "name": "Recraft Flash", "credits": 3, "usd": 0.007,
+                         "desc": "Быстрая картинка по тексту. Всегда 3 кр.", "photo": "forbidden",
+                         "aspects": ["1:1", "4:3", "3:4", "16:9", "9:16"]},
+    "or-flux-klein": {"kind": "image", "provider": "openrouter", "or_model": "black-forest-labs/flux-3-image-klein",
+                      "or_provider": "black-forest-labs", "name": "Flux Klein", "credits": 3,
+                      "desc": "Картинка и правка фото. Цена за штуку, не за длину текста", "photo": None,
+                      "output_format": "jpeg", "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"],
+                      "qualities": [
+                          {"id": "1K", "name": "1K", "desc": "Для соцсетей", "credits": 3, "usd": 0.009},
+                          {"id": "2K", "name": "2K", "desc": "Чётче, для печати на небольшом формате", "credits": 5, "usd": 0.014},
+                      ], "quality": "1K"},
+    "or-krea-turbo": {"kind": "image", "provider": "openrouter", "or_model": "krea/krea-2-medium-turbo",
+                      "or_provider": "krea", "name": "Krea Turbo", "credits": 5, "usd": 0.015, "resolution": "1K",
+                      "desc": "Яркая картинка и правка одного фото. Всегда 5 кр.", "photo": None,
+                      "aspects": ["1:1", "4:3", "16:9", "4:5", "9:16"]},
+    "or-seedream-flash": {"kind": "image", "provider": "openrouter", "or_model": "bytedance-seed/seedream-5-0-flash",
+                          "or_provider": "seed", "name": "Seedream Flash", "credits": 6, "usd": 0.018, "resolution": "2K",
+                          "desc": "Seedream 5 Flash, картинка 2K. Всегда 6 кр.", "photo": None,
+                          "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"]},
+    "or-qwen-turbo": {"kind": "image", "provider": "openrouter", "or_model": "qwen/qwen-image-2.1-turbo",
+                      "or_provider": "alibaba", "name": "Qwen Turbo", "credits": 6, "usd": 0.0184, "resolution": "2K",
+                      "desc": "Картинка 2K и правка фото. Всегда 6 кр.", "photo": None,
+                      "aspects": ["1:1", "4:5", "3:4", "9:16", "4:3", "16:9"]},
     # ---------------- картинки Братухи (цена Братухи × 3) ----------------
     "nano-banana": {"kind": "image", "tool": "nano-banana", "name": "Nano Banana", "credits": 6,
                     "desc": "Быстрые картинки и правка фото", "photo": None,
@@ -4264,9 +4296,153 @@ async def _bh_wait_all(op_id: str, timeout: int, every: int) -> list:
     raise RuntimeError("слишком долгое ожидание")
 
 
+_or_mem = {}  # token -> (bytes, mime, expires)
+
+
+def _or_sig(work_id: int) -> str:
+    secret = APP_SECRET or "neyroyaga-or-image"
+    return hmac.new(secret.encode(), f"orimg|{int(work_id)}".encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def _fit_or_image(data: bytes, mime: str):
+    """Оставляем картинку до 2048 px: так 1K и 2K не сжимаются в превью кабинета."""
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        im = im.convert("RGB")
+        im.thumbnail((2048, 2048))
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=90, optimize=True)
+        return out.getvalue(), "image/jpeg"
+    except Exception:
+        return data, mime or "image/jpeg"
+
+
+def _or_expected_usd(slug: str, quality) -> float:
+    m = VIDEO_MODELS[slug]
+    q = _video_quality(slug, quality) if m.get("qualities") else None
+    if q and q.get("usd"):
+        return float(q["usd"])
+    return float(m.get("usd") or 0)
+
+
+def _or_prompt(prompt: str, has_image: bool) -> str:
+    text = (prompt or "").strip().rstrip(".") + "."
+    quoted = [q.strip() for q in VIDEO_QUOTES.findall(prompt or "") if q.strip()]
+    if quoted:
+        text += " Текст на изображении — дословно, без ошибок: " + "; ".join(f"«{q}»" for q in quoted[:3]) + "."
+    elif not VIDEO_TEXT_WORDS.search(prompt or ""):
+        text += " Без лишних надписей и водяных знаков."
+    if has_image:
+        text = "Используй приложенное изображение: " + text + " Сохрани лица и узнаваемые детали с исходного фото."
+    return text[:4000]
+
+
+def _or_generate(slug: str, prompt: str, image: bytes, mime: str, aspect: str, quality: str) -> tuple:
+    m = VIDEO_MODELS[slug]
+    aspects = m.get("aspects") or ["1:1"]
+    body = {
+        "model": m["or_model"],
+        "prompt": _or_prompt(prompt, bool(image)),
+        "n": 1,
+        "aspect_ratio": aspect if aspect in aspects else aspects[0],
+        "provider": {"only": [m["or_provider"]], "allow_fallbacks": False},
+    }
+    resolution = quality if quality in ("512", "768", "1K", "1.5K", "2K", "4K") else m.get("resolution")
+    if resolution:
+        body["resolution"] = resolution
+    if m.get("output_format"):
+        body["output_format"] = m["output_format"]
+    if image:
+        raw = base64.b64encode(image).decode()
+        body["input_references"] = [{"type": "image_url", "image_url": {"url": f"data:{mime or 'image/jpeg'};base64,{raw}"}}]
+    r = requests.post(OPENROUTER_IMAGES, headers={
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://babayagaland.ru",
+        "X-OpenRouter-Title": "НейроЯга",
+    }, json=body, timeout=120)
+    try:
+        d = r.json()
+    except Exception:
+        d = {}
+    if r.status_code >= 400:
+        err = d.get("error") if isinstance(d.get("error"), dict) else {}
+        print(f"OpenRouter {slug}: {r.status_code} {str(err.get('message') or d)[:300]}")
+        if r.status_code in (401, 402, 403):
+            raise RuntimeError("сервис картинок сейчас недоступен")
+        raise RuntimeError("нейросеть не приняла запрос")
+    item = (d.get("data") or [None])[0] or {}
+    b64 = item.get("b64_json")
+    if not b64:
+        raise RuntimeError("нейросеть не вернула картинку")
+    cost = (d.get("usage") or {}).get("cost")
+    expected = _or_expected_usd(slug, quality)
+    if isinstance(cost, (int, float)) and expected and cost > expected * 1.5 + 0.002:
+        print(f"OpenRouter {slug}: счёт ${cost} выше фиксированных ${expected}")
+        raise RuntimeError("цена модели изменилась")
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise RuntimeError("нейросеть вернула повреждённую картинку")
+    return raw, item.get("media_type") or "image/jpeg"
+
+
+async def _or_publish(email: str, data: bytes, mime: str, title: str, prompt: str, model_key: str) -> str:
+    data, mime = await asyncio.to_thread(_fit_or_image, data, mime)
+    if s3():
+        key = f"works/or/{hashlib.sha1(norm_email(email).encode()).hexdigest()[:12]}/{uuid.uuid4().hex}.jpg"
+        await asyncio.to_thread(_s3_put_bytes, data, key, mime)
+        url = _s3_url(key)
+        await save_work(email, "image", title, title, url=url, origin="prompt", prompt=prompt, model_key=model_key)
+        return url
+    wid = await save_work(email, "image", title, title, data=data, mime=mime, shrink=False,
+                          origin="prompt", prompt=prompt, model_key=model_key)
+    if wid:
+        return f"{PUBLIC_API}/api/orimg/{wid}.{_or_sig(wid)}"
+    token = uuid.uuid4().hex
+    _or_mem[token] = (data, mime, time.time() + 6 * 3600)
+    return f"{PUBLIC_API}/api/orimg/{token}"
+
+
+async def _or_image_job(job: dict):
+    m = VIDEO_MODELS[job["model"]]
+    raw, mime = await asyncio.to_thread(
+        _or_generate, job["model"], job.get("prompt"), job.get("image"), job.get("mime"), job.get("aspect"), job.get("quality"))
+    url = await _or_publish(job["email"], raw, mime, m["name"], job.get("prompt"), job["model"])
+    job.update(status="done", url=url, urls=[url])
+    print(f"✅ {job['model']} готово для {job['email']}")
+
+
+@app.get("/api/orimg/{token}")
+async def or_image(token: str):
+    token = (token or "").strip()
+    data, mime = None, "image/jpeg"
+    if "." in token:
+        wid, sig = token.split(".", 1)
+        if not wid.isdigit() or len(sig) != 24 or not hmac.compare_digest(_or_sig(int(wid)), sig) or not db_ready():
+            return JSONResponse({"ok": False}, status_code=404)
+        async with db_pool.acquire() as con:
+            row = await con.fetchrow("SELECT data, mime FROM works WHERE id=$1 AND expires_at > now()", int(wid))
+        if not row or row["data"] is None:
+            return JSONResponse({"ok": False}, status_code=404)
+        data, mime = bytes(row["data"]), row["mime"] or mime
+    else:
+        item = _or_mem.get(token)
+        if not item or item[2] < time.time():
+            _or_mem.pop(token, None)
+            return JSONResponse({"ok": False}, status_code=404)
+        data, mime = item[0], item[1]
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def _video_worker(job_id: str):
     job = _video_jobs[job_id]
     try:
+        if VIDEO_MODELS[job["model"]].get("provider") == "openrouter":
+            await _or_image_job(job)
+            return
         image_url = None
         if job.get("image"):
             ext = "png" if "png" in str(job.get("mime")) else "webp" if "webp" in str(job.get("mime")) else "jpg"
@@ -4323,7 +4499,8 @@ async def _video_worker(job_id: str):
         raise last_err or RuntimeError("не получилось")
     except Exception as e:
         print(f"❌ {job['model']} для {job['email']} не получилось: {e}")
-        _bh_watch_error(str(e))
+        if VIDEO_MODELS[job["model"]].get("provider") != "openrouter":
+            _bh_watch_error(str(e))
         balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0),
                                        {"image": "image", "audio": "audio"}.get(VIDEO_MODELS[job["model"]].get("kind"), "video"))
         what = "Картинка" if VIDEO_MODELS[job["model"]].get("kind") == "image" else "Видео"
@@ -4383,11 +4560,27 @@ def _min_price(slug: str) -> int:
     return m["credits"]
 
 
+def _public_model(slug: str) -> dict:
+    src = VIDEO_MODELS[slug]
+    item = {k: v for k, v in src.items() if k not in ("usd", "or_model", "or_provider", "output_format")}
+    if src.get("qualities"):
+        item["qualities"] = [{k: v for k, v in q.items() if k != "usd"} for q in src["qualities"]]
+    item["id"] = slug
+    item["min_price"] = _min_price(slug)
+    return item
+
+
+def _model_ready(slug: str) -> bool:
+    if VIDEO_MODELS[slug].get("provider") == "openrouter":
+        return bool(OPENROUTER_API_KEY)
+    return bool(BRATUKHA_API_KEY)
+
+
 @app.get("/api/video/models")
 async def video_models():
-    return {"ok": True, "enabled": bool(BRATUKHA_API_KEY), "aspects": list(VIDEO_ASPECTS), "durations": list(VIDEO_DURATIONS),
-            "models": sorted([dict(id=k, **v, min_price=_min_price(k)) for k, v in VIDEO_MODELS.items()],
-                             key=lambda x: x["min_price"]) if BRATUKHA_API_KEY else []}
+    models = [_public_model(k) for k in VIDEO_MODELS if _model_ready(k)]
+    return {"ok": True, "enabled": bool(models), "aspects": list(VIDEO_ASPECTS), "durations": list(VIDEO_DURATIONS),
+            "models": sorted(models, key=lambda x: x["min_price"])}
 
 
 @app.post("/api/video/start")
@@ -4401,12 +4594,14 @@ async def video_start(request: Request):
         return JSONResponse({"ok": False, "error": "Войдите в аккаунт"}, status_code=401)
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-    if not BRATUKHA_API_KEY:
-        return {"ok": False, "error": "Видео пока не подключено"}
-
     slug = str(data.get("model") or "")
     if slug not in VIDEO_MODELS:
         return {"ok": False, "error": "Неизвестная видеомодель"}
+    if VIDEO_MODELS[slug].get("provider") == "openrouter":
+        if not OPENROUTER_API_KEY:
+            return {"ok": False, "error": "Эти картинки пока не подключены"}
+    elif not BRATUKHA_API_KEY:
+        return {"ok": False, "error": "Видео пока не подключено"}
     prompt = str(data.get("prompt") or "").strip()[:2000]
     aspects = _video_aspects(slug)
     aspect = None if VIDEO_MODELS[slug].get("no_aspect") else (data.get("aspect") if data.get("aspect") in aspects else aspects[0])
@@ -4519,11 +4714,20 @@ from fastapi.responses import StreamingResponse
 FILE_HOSTS = ("bratuha.ru", "selstorage.ru")
 
 
-@app.get("/api/file")
-async def download_file(url: str, name: str = "neyroyaga"):
+def _file_host_ok(url: str) -> bool:
     u = _urlparse(url)
     host = (u.hostname or "").lower()
-    if u.scheme != "https" or not any(host == h or host.endswith("." + h) for h in FILE_HOSTS):
+    if u.scheme != "https" or not host:
+        return False
+    own = (_urlparse(PUBLIC_API).hostname or "").lower()
+    if host == own:
+        return u.path.startswith("/api/media/") or u.path.startswith("/api/orimg/")
+    return any(host == h or host.endswith("." + h) for h in FILE_HOSTS)
+
+
+@app.get("/api/file")
+async def download_file(url: str, name: str = "neyroyaga"):
+    if not _file_host_ok(url):
         return JSONResponse({"ok": False, "error": "Этот файл нельзя скачать"}, status_code=403)
     try:
         r = await asyncio.to_thread(requests.get, url, stream=True, timeout=60)
