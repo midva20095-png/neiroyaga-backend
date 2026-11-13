@@ -35,6 +35,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -88,6 +90,7 @@ class MainActivity : AppCompatActivity() {
         web = findViewById(R.id.web)
         progress = findViewById(R.id.progress)
         offline = findViewById(R.id.offline)
+        keepPageInsideScreen()
         findViewById<View>(R.id.retry).setOnClickListener { reloadHome() }
         findViewById<View>(R.id.browser).setOnClickListener { openInBrowser() }
 
@@ -129,6 +132,7 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             // Метка «wv» и свой суффикс заставляют DDoS-Guard обрывать адрес на Samsung.
             userAgentString = browserUserAgent(userAgentString)
+            loadWithOverviewMode = resources.configuration.smallestScreenWidthDp >= 600
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 safeBrowsingEnabled = false
             }
@@ -196,6 +200,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
         offline.visibility = View.VISIBLE
+    }
+
+    private fun keepPageInsideScreen() {
+        val root = findViewById<View>(R.id.root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun fitSiteMenu(view: WebView) {
+        val js = """
+            (function(){
+              var old=document.getElementById('ny-fit');
+              if(old) old.remove();
+              var s=document.createElement('style');
+              s.id='ny-fit';
+              s.textContent='html,body{overflow-x:hidden!important;max-width:100%!important}#allrecords,.t-records{overflow-x:hidden!important;max-width:100vw!important}.t228,.t228__maincontainer,.t228__leftcontainer,.t228__rightcontainer,.t228__list,.t396__artboard{max-width:100vw!important;box-sizing:border-box!important}';
+              (document.head||document.documentElement).appendChild(s);
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
     }
 
     private fun showMissingWebView() {
@@ -382,6 +412,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             if (!pageFailed) offline.visibility = View.GONE
+            fitSiteMenu(view)
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
