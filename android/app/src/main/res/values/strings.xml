@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">НейроЯга</string>
-    <string name="home_url">https://babayagaland.ru/</string>
-    <string name="offline_title">Сайт не открылся</string>
+    <string name="offline_title">Страница не открылась</string>
     <string name="offline_body">Проверьте интернет и нажмите «Повторить». На Samsung для приложения, установленного вручную, включите сеть: Настройки → Приложения → НейроЯга → Мобильные данные.</string>
     <string name="lookup_title">Адрес сайта не найден</string>
     <string name="lookup_body">Планшет не нашёл babayagaland.ru. Откройте Настройки → Подключения → Другие настройки подключения → Личный DNS и выберите «Автоматически», затем нажмите «Повторить».</string>

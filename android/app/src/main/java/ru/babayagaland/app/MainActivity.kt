@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity() {
             setSupportMultipleWindows(true)
             loadsImagesAutomatically = true
             useWideViewPort = true
-            loadWithOverviewMode = true
+            loadWithOverviewMode = false
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             allowFileAccess = false

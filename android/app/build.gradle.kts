@@ -17,11 +17,36 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ru.babayagaland.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+    }
+
+    flavorDimensions += "kind"
+    productFlavors {
+        create("site") {
+            dimension = "kind"
+            applicationId = "ru.babayagaland.app"
+            versionCode = 3
+            versionName = "1.2.0"
+            resValue("string", "app_name", "НейроЯга")
+            resValue("string", "home_url", "https://babayagaland.ru/")
+        }
+        create("adminbot") {
+            dimension = "kind"
+            applicationId = "ru.babayagaland.adminbot"
+            versionCode = 1
+            versionName = "1.0.0"
+            resValue("string", "app_name", "Админ бота")
+            resValue("string", "home_url", "https://neirozhiga-ai-telegram-bot-production-7ae5.up.railway.app/admin")
+        }
+        create("adminsite") {
+            dimension = "kind"
+            applicationId = "ru.babayagaland.adminsite"
+            versionCode = 1
+            versionName = "1.0.0"
+            resValue("string", "app_name", "Админ сайта")
+            resValue("string", "home_url", "https://neiroyaga-backend-production.up.railway.app/admin")
+        }
     }
 
     signingConfigs {
@@ -53,6 +78,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
         resources {
             excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE", "META-INF/LICENSE.txt", "META-INF/NOTICE", "META-INF/NOTICE.txt")
         }
