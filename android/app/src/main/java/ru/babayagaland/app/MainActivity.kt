@@ -22,6 +22,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -37,6 +38,7 @@ import androidx.core.content.FileProvider
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import java.io.ByteArrayInputStream
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -393,9 +395,29 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun reachableFont(uri: Uri): WebResourceResponse? {
+        val host = uri.host?.lowercase() ?: return null
+        if (host == "fonts.googleapis.com" || host == "fonts.gstatic.com") {
+            return WebResourceResponse("text/css", "utf-8", ByteArrayInputStream(ByteArray(0)))
+        }
+        if (host == "use.typekit.net") {
+            val js = "window.Typekit=window.Typekit||{load:function(){}};"
+            return WebResourceResponse(
+                "application/javascript",
+                "utf-8",
+                ByteArrayInputStream(js.toByteArray(Charsets.UTF_8))
+            )
+        }
+        return null
+    }
+
     private inner class SiteClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             return route(request.url)
+        }
+
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            return reachableFont(request.url)
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
