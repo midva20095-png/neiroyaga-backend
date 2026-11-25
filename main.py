@@ -607,6 +607,7 @@ async def db_startup():
             asyncio.create_task(_tg_poll_loop())
         print("✅ База данных подключена" + (" — пользователи в базе" if DB_MIGRATED else
                                               " — ждёт переноса пользователей из таблицы"))
+        asyncio.create_task(import_sheet_templates_once())
     except Exception as e:
         db_pool = None
         print(f"❌ Не удалось подключиться к базе: {e}. Работаю с Google-таблицей")
@@ -1732,6 +1733,17 @@ def check_admin(request: Request) -> bool:
 
 def _admin_denied():
     return JSONResponse({"ok": False, "error": "Нужно войти в админ-панель"}, status_code=401)
+
+
+@app.get("/privacy")
+async def privacy_page():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "privacy.html")
+    if not os.path.exists(path):
+        return JSONResponse({"ok": False, "error": "privacy.html не найден"}, status_code=404)
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    return Response(content=html, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=3600", "X-Robots-Tag": "index"})
 
 
 @app.get("/admin")
@@ -3488,6 +3500,67 @@ async def load_templates(force: bool = False) -> list:
                 items.append(item)
         _tpl_cache.update(at=time.time(), items=items)
         return items
+
+
+async def import_sheet_templates_once():
+    """Если в базе ещё нет шаблонов, один раз забирает каталог из таблицы и больше её не читает."""
+    if not (TEMPLATES_SCRIPT_URL and TEMPLATES_KEY) or db_pool is None:
+        return
+    try:
+        async with db_pool.acquire() as con:
+            if await con.fetchval("SELECT COUNT(*) FROM site_templates"):
+                return
+
+        def fetch():
+            try:
+                r = requests.post(TEMPLATES_SCRIPT_URL, json={"action": "templates", "key": TEMPLATES_KEY},
+                                  timeout=SCRIPT_TIMEOUT)
+                data = r.json()
+                return data.get("templates") if isinstance(data, dict) and data.get("ok") else None
+            except Exception as e:
+                print(f"Шаблоны из таблицы не прочитались: {e}")
+                return None
+
+        rows = await asyncio.to_thread(fetch)
+        if not rows:
+            return
+        saved = 0
+        async with db_pool.acquire() as con:
+            already = await con.fetchval("SELECT COUNT(*) FROM site_templates")
+            if already:
+                return
+            for i, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    continue
+                tid = str(row.get("id") or "").strip().lower()
+                title = str(row.get("title") or "").strip()
+                prompt = str(row.get("prompt") or "").strip()
+                price = _to_int(row.get("credits"), 0) or _to_int(row.get("price"), 0)
+                if not _TPL_ID.match(tid) or not title or not prompt or price <= 0:
+                    continue
+                kind = str(row.get("type") or "").lower()
+                if "вид" in kind or "video" in kind or "chain" in kind:
+                    continue
+                fields = row.get("fields")
+                fields = json.dumps(fields, ensure_ascii=False) if isinstance(fields, (list, dict)) else str(fields or "")
+                cats = str(row.get("cats") or "")
+                vip = _truthy(row.get("vip")) or any(c.strip().lower() == "vip" for c in cats.replace(";", ",").split(","))
+                active = True if row.get("active") in (None, "") else not _falsy(row.get("active"))
+                if row.get("site") not in (None, "") and _falsy(row.get("site")):
+                    active = False
+                model = str(row.get("model") or "nanobanana").strip().lower() or "nanobanana"
+                await con.execute(
+                    """INSERT INTO site_templates(id, title, descr, image, price, prompt, fields, cats, formats, model, trend, vip, active, runs, sort)
+                       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                       ON CONFLICT (id) DO NOTHING""",
+                    tid, title[:120], str(row.get("desc") or "")[:500], str(row.get("image") or "")[:500],
+                    price, prompt[:20000], fields[:8000], cats[:300], str(row.get("formats") or "")[:120],
+                    model[:40], _truthy(row.get("trend")), vip, active, _to_int(row.get("runs"), 0), i)
+                saved += 1
+        _tpl_cache["at"] = 0.0
+        print(f"Шаблоны перенесены в базу: {saved}")
+    except Exception as e:
+        print(f"Перенос шаблонов не выполнился: {e}")
 
 
 ZODIAC = [((1, 20), "Козерог"), ((2, 19), "Водолей"), ((3, 21), "Рыбы"), ((4, 20), "Овен"), ((5, 21), "Телец"),
