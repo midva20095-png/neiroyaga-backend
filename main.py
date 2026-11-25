@@ -18,6 +18,7 @@ from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
 
+import kie_site
 from site_media import audio_seconds, cover_bytes as _cover_bytes, media_file as _media_file, site_sizes as _site_sizes
 
 load_dotenv()
@@ -2959,7 +2960,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await safe_send(websocket, {
         "type": "text",
         "credits": balance,
-        "text": "🧚‍♀️ Приветствую в НейроЯге! Выбирай модель в меню сверху, задавай вопросы или прикрепляй фото и файлы."
+        "text": "🧚‍♀️ Привет! Внизу четыре кнопки: чат, картинка, видео и музыка. Цена написана на кнопке модели."
     })
 
     try:
@@ -2985,6 +2986,41 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                 file_objs = [file_obj]
 
             prompt = prompt.strip() if isinstance(prompt, str) else str(prompt or '').strip()
+            if model_key in KIE_CHAT_MODELS:
+                if file_parts:
+                    await safe_send(websocket, {"type": "text", "credits": balance,
+                                                "text": "Эта модель отвечает только текстом. Уберите фото и файлы."})
+                    continue
+                if not prompt:
+                    await safe_send(websocket, {"type": "text", "credits": balance, "text": "Напишите вопрос."})
+                    continue
+                if not KIE_API_KEY:
+                    await safe_send(websocket, {"type": "text", "credits": balance,
+                                                "text": "Эта модель пока не подключена. Кредиты не списаны."})
+                    continue
+                spec = KIE_CHAT_MODELS[model_key]
+                required_credits = spec["credits"]
+                credit_result = await check_and_deduct_credits(email, required_credits, spec["name"], "chat")
+                current_balance = credit_result.get("credits", 0)
+                if not credit_result.get("error"):
+                    balance = current_balance
+                if not credit_result.get("success"):
+                    if credit_result.get("error"):
+                        text = "Не удалось связаться с сервером кредитов. Кредиты не списаны, попробуйте ещё раз через минуту."
+                    else:
+                        text = (f"Недостаточно кредитов. Нужно {required_credits}, на балансе {current_balance}.")
+                    await safe_send(websocket, {"type": "text", "credits": balance, "text": text})
+                    continue
+                try:
+                    answer = await asyncio.to_thread(_kie_chat_call, spec, kie_site.compact_prompt(prompt, history_list))
+                    await safe_send(websocket, {"type": "text", "credits": current_balance, "text": answer})
+                except Exception as e:
+                    print(f"Ошибка Kie {model_key}: {e}")
+                    new_balance = await refund_credits(email, required_credits, current_balance, "chat")
+                    balance = new_balance
+                    await safe_send(websocket, {"type": "text", "credits": new_balance,
+                                                "text": f"{str(e)[:160]} Кредиты вернула."})
+                continue
             if model_key not in MODEL_MAPPING:
                 model_key = 'flash'
 
@@ -4064,6 +4100,9 @@ import math as _math
 
 BRATUKHA_API_URL = os.getenv("BRATUKHA_API_URL", "https://bratuha.ru/api/v1").rstrip("/")
 BRATUKHA_API_KEY = (os.getenv("BRATUKHA_API_KEY") or os.getenv("BRATUKHA_TOKEN") or "").strip()
+KIE_API_URL = "https://api.kie.ai"
+KIE_FILE_URL = "https://kieai.redpandaai.co"
+KIE_API_KEY = (os.getenv("KIE_API_KEY") or "").strip()
 
 # Цена в кредитах НейроЯги (1 кр. = 1 ₽) = цена Братухи × 2. per_sec — цена за секунду видео.
 VIDEO_MODELS = {
@@ -4175,6 +4214,78 @@ VIDEO_MODELS = {
     "pruna-ai-p-video-2-pro": {"name": "Pruna P-Video 2 Pro", "desc": "Оживляет фото — прикрепите фото 📎", "credits": 28,
                                "per_sec": True, "photo": "required"},
 }
+# Картинки и дешёвый текст Kie. В меню попадают только если на сервере задан KIE_API_KEY.
+_KIE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"]
+KIE_IMAGE_MODELS = {
+    "kie-flux": {"kind": "image", "provider": "kie", "name": "Flux Klein", "credits": 3,
+                 "desc": "Дешёвая картинка, можно с фото", "photo": None, "aspects": _KIE_ASPECTS,
+                 "qualities": [
+                     {"id": "1K", "name": "1K", "desc": "Самый дешёвый размер", "credits": 3},
+                     {"id": "2K", "name": "2K", "desc": "Чётче", "credits": 4},
+                     {"id": "4K", "name": "4K", "desc": "Крупно", "credits": 10},
+                 ], "quality": "1K",
+                 "kieModel": "flux-3/klein-text-to-image", "kieEdit": "flux-3/klein-edit-image",
+                 "kieImage": "image_urls", "kieAspect": "aspect_ratio", "kieSize": "resolution",
+                 "kieExtra": {"output_format": "jpeg", "num_images": 1, "enhance_prompt": False}},
+    "kie-seedream": {"kind": "image", "provider": "kie", "name": "Seedream Flash", "credits": 5,
+                     "desc": "Дешёвое фото, только 1K, можно с фото", "photo": None, "aspects": _KIE_ASPECTS,
+                     "kieModel": "seedream/5-flash-text-to-image", "kieEdit": "seedream/5-flash-image-to-image",
+                     "kieImage": "image_urls", "kieAspect": "aspect_ratio", "kieSize": "size", "kieSizeValue": "1K",
+                     "kieExtra": {"output_format": "jpeg", "nsfw_checker": False}},
+    "kie-banana-lite": {"kind": "image", "provider": "kie", "name": "Nano Banana Lite", "credits": 6,
+                        "desc": "Дешёвая картинка, можно с фото", "photo": None, "aspects": _KIE_ASPECTS,
+                        "kieModel": "nano-banana-2-lite", "kieEdit": "nano-banana-2-lite",
+                        "kieImage": "image_urls", "kieAspect": "aspect_ratio"},
+    "kie-banana-21": {"kind": "image", "provider": "kie", "name": "Nano Banana 2.1", "credits": 6,
+                      "desc": "Картинка дешевле обычной, можно с фото", "photo": None, "aspects": _KIE_ASPECTS,
+                      "qualities": [
+                          {"id": "1K", "name": "1K", "desc": "Обычный размер", "credits": 6},
+                          {"id": "2K", "name": "2K", "desc": "Крупнее", "credits": 9},
+                          {"id": "4K", "name": "4K", "desc": "Самый крупный", "credits": 14},
+                      ], "quality": "1K",
+                      "kieModel": "nano-banana-2-1", "kieEdit": "nano-banana-2-1",
+                      "kieImage": "image_input", "kieAspect": "aspect_ratio", "kieSize": "resolution",
+                      "kieExtra": {"output_format": "jpg"}},
+    "kie-grok": {"kind": "image", "provider": "kie", "name": "Grok дешевле", "credits": 6,
+                 "desc": "Дешёвая картинка, можно с фото", "photo": None,
+                 "aspects": ["1:1", "16:9", "9:16", "3:2", "2:3"],
+                 "kieModel": "grok-imagine-image-2-0/text-to-image", "kieEdit": "grok-imagine-image-2-0/image-edit",
+                 "kieImage": "image_urls", "kieAspect": "aspect_ratio"},
+    "kie-ideogram": {"kind": "image", "provider": "kie", "name": "Ideogram", "credits": 6,
+                     "desc": "Только текст, быстрый режим", "photo": "forbidden", "aspects": _KIE_ASPECTS,
+                     "kieModel": "ideogram/v3-text-to-image", "kieAspect": "image_size"},
+    "kie-gpt": {"kind": "image", "provider": "kie", "name": "GPT Image дешевле", "credits": 9,
+                "desc": "Текст на картинке дешевле обычного GPT, можно с фото", "photo": None,
+                "aspects": ["1:1", "4:3", "3:4", "3:2", "2:3"],
+                "qualities": [
+                    {"id": "1K", "name": "1K", "desc": "Дешевле", "credits": 9},
+                    {"id": "2K", "name": "2K", "desc": "Средний размер", "credits": 15},
+                    {"id": "4K", "name": "4K", "desc": "Крупно", "credits": 24},
+                ], "quality": "1K",
+                "kieModel": "gpt-image-2-text-to-image", "kieEdit": "gpt-image-2-image-to-image",
+                "kieImage": "input_urls", "kieAspect": "aspect_ratio", "kieSize": "resolution"},
+    "kie-banana-pro": {"kind": "image", "provider": "kie", "name": "Nano Banana Pro дешевле", "credits": 27,
+                       "desc": "Детальная картинка, можно с фото", "photo": None, "aspects": _KIE_ASPECTS,
+                       "qualities": [
+                           {"id": "1K", "name": "1K", "desc": "Обычный размер", "credits": 27},
+                           {"id": "2K", "name": "2K", "desc": "Крупнее", "credits": 36},
+                       ], "quality": "1K",
+                       "kieModel": "nano-banana-pro", "kieEdit": "nano-banana-pro",
+                       "kieImage": "image_input", "kieAspect": "aspect_ratio", "kieSize": "resolution",
+                       "kieExtra": {"output_format": "jpg"}},
+}
+KIE_CHAT_MODELS = {
+    "kie-deepseek": {"kind": "text", "name": "DeepSeek", "credits": 2,
+                     "desc": "Дешёвый короткий ответ. Без фото.",
+                     "kieChat": {"style": "responses", "path": "/openai/v1/responses", "model": "deepseek-v4-1-flash",
+                                 "maxTokens": 800, "maxChars": 3500}},
+    "kie-haiku": {"kind": "text", "name": "Claude Haiku", "credits": 2,
+                  "desc": "Дешёвый короткий ответ. Без фото.",
+                  "kieChat": {"style": "claude", "path": "/claude/v1/messages", "model": "claude-haiku-5-5",
+                              "maxTokens": 700, "maxChars": 3500}},
+}
+VIDEO_MODELS.update(KIE_IMAGE_MODELS)
+_HIDDEN_MODEL_KEYS = {"provider", "kieModel", "kieEdit", "kieImage", "kieAspect", "kieSize", "kieSizeValue", "kieExtra", "kieChat", "maxChars"}
 VIDEO_ASPECTS = ("16:9", "9:16", "1:1")
 VIDEO_DURATIONS = (5, 10)
 VIDEO_TIMEOUT_SEC = 15 * 60
@@ -4470,8 +4581,126 @@ async def _bh_wait_all(op_id: str, timeout: int, every: int) -> list:
     raise RuntimeError("слишком долгое ожидание")
 
 
+def _kie_headers():
+    return {"Authorization": f"Bearer {KIE_API_KEY}", "Content-Type": "application/json"}
+
+
+def _kie_upload(blob: bytes, mime: str, index: int) -> str:
+    mime = mime if str(mime).startswith("image/") else "image/jpeg"
+    ext = "png" if "png" in mime else "jpg"
+    response = requests.post(f"{KIE_FILE_URL}/api/file-base64-upload", headers=_kie_headers(), timeout=90, json={
+        "base64Data": f"data:{mime};base64,{base64.b64encode(blob).decode()}",
+        "uploadPath": "images/base64",
+        "fileName": f"photo-{index}-{int(time.time())}.{ext}",
+    })
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    view = kie_site.upload_view(data)
+    if not view["url"]:
+        raise RuntimeError("Фото не загрузилось")
+    return view["url"]
+
+
+def _kie_create(task: dict) -> str:
+    response = requests.post(f"{KIE_API_URL}/api/v1/jobs/createTask", headers=_kie_headers(), timeout=90, json=task)
+    if response.status_code in (401, 403):
+        raise RuntimeError("Эта модель пока не подключена")
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    task_id = (data.get("data") or {}).get("taskId") if isinstance(data, dict) else None
+    if response.status_code >= 400 or not task_id:
+        raise RuntimeError(kie_site.explain_failure(kie_site.error_text(data)) or "Картинка не запустилась")
+    return task_id
+
+
+def _kie_status(task_id: str) -> dict:
+    response = requests.get(f"{KIE_API_URL}/api/v1/jobs/recordInfo", headers=_kie_headers(), timeout=20, params={"taskId": task_id})
+    if response.status_code in (401, 403):
+        raise RuntimeError("Эта модель пока не подключена")
+    try:
+        return kie_site.task_view(response.json())
+    except Exception:
+        return {"state": "", "urls": [], "fail": ""}
+
+
+def _kie_download(url: str):
+    if not kie_site.url_ok(url):
+        raise RuntimeError("Пустая картинка")
+    response = requests.get(url, timeout=120)
+    data = response.content or b""
+    mime = kie_site.image_mime(data)
+    if response.status_code >= 400 or not mime or len(data) > 40 * 1024 * 1024:
+        raise RuntimeError("Картинку не удалось забрать")
+    return data, mime
+
+
+def _kie_chat_call(spec: dict, prompt: str) -> str:
+    built = kie_site.build_chat(spec, prompt)
+    response = requests.post(f"{KIE_API_URL}{built['path']}", headers=_kie_headers(), timeout=90, json=built["body"])
+    if response.status_code == 400 and built.get("retry") and "max_output_tokens" in response.text:
+        response = requests.post(f"{KIE_API_URL}{built['path']}", headers=_kie_headers(), timeout=90, json=built["retry"])
+    if response.status_code in (401, 403):
+        raise RuntimeError("Эта модель пока не подключена")
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    if response.status_code >= 400:
+        raise RuntimeError(kie_site.explain_failure(kie_site.error_text(data)) or "Ответ не получился")
+    text = kie_site.text_from_response((spec.get("kieChat") or {}).get("style"), data)
+    if not text:
+        raise RuntimeError("Пустой ответ")
+    return text
+
+
+async def _kie_poll(task_id: str) -> str:
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        await asyncio.sleep(3)
+        view = await asyncio.to_thread(_kie_status, task_id)
+        if view["state"] == "success" and view["urls"]:
+            return view["urls"][0]
+        if view["state"] == "fail":
+            raise RuntimeError(kie_site.explain_failure(view["fail"]) or "Картинка не получилась")
+    raise RuntimeError("Картинка не успела за три минуты")
+
+
+async def _kie_image_job(job: dict):
+    spec = VIDEO_MODELS[job["model"]]
+    packed = job.get("images") or ([] if not job.get("image") else [(job["image"], job.get("mime"))])
+    urls = []
+    for index, pair in enumerate(packed[:6], 1):
+        urls.append(await asyncio.to_thread(_kie_upload, pair[0], pair[1], index))
+    task = kie_site.build_image_task(spec, job.get("prompt"), job.get("aspect"), job.get("quality"), urls)
+    task_id = await asyncio.to_thread(_kie_create, task)
+    print(f"🖼 {job['model']} для {job['email']}: задача {task_id}")
+    file_url = await _kie_poll(task_id)
+    data, mime = await asyncio.to_thread(_kie_download, file_url)
+    job.update(status="done", url=file_url)
+    remember_work(job["email"], "image", (job.get("prompt") or spec["name"])[:120], spec["name"],
+                  data=data, mime=mime, origin="prompt", prompt=job.get("prompt"), model_key=job["model"])
+    print(f"✅ {job['model']} готово для {job['email']}")
+
+
 async def _video_worker(job_id: str):
     job = _video_jobs[job_id]
+    if VIDEO_MODELS[job["model"]].get("provider") == "kie":
+        try:
+            await _kie_image_job(job)
+        except Exception as e:
+            print(f"❌ {job['model']} для {job['email']} не получилось: {e}")
+            balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0), "image")
+            job.update(status="error", credits=balance,
+                       error=f"Картинка не получилась ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
+        finally:
+            job.pop("image", None)
+            job.pop("images", None)
+            job.pop("audio", None)
+        return
     try:
         packed = job.get("images") or ([] if not job.get("image") else [(job["image"], job.get("mime"))])
         urls = []
@@ -4584,6 +4813,19 @@ async def video_catalog(key: str = ""):
     return data
 
 
+def _public_video_model(slug: str) -> dict:
+    data = {key: value for key, value in VIDEO_MODELS[slug].items() if key not in _HIDDEN_MODEL_KEYS}
+    data["id"] = slug
+    data["min_price"] = _min_price(slug)
+    return data
+
+
+def _public_kie_chat(slug: str) -> dict:
+    spec = KIE_CHAT_MODELS[slug]
+    return {"id": slug, "kind": "text", "name": spec["name"], "desc": spec["desc"],
+            "credits": spec["credits"], "photo": "forbidden", "min_price": spec["credits"]}
+
+
 def _min_price(slug: str) -> int:
     """Минимальная цена одного запуска — для сортировки меню."""
     m = VIDEO_MODELS[slug]
@@ -4599,9 +4841,15 @@ def _min_price(slug: str) -> int:
 
 @app.get("/api/video/models")
 async def video_models():
-    return {"ok": True, "enabled": bool(BRATUKHA_API_KEY), "aspects": list(VIDEO_ASPECTS), "durations": list(VIDEO_DURATIONS),
-            "models": sorted([dict(id=k, **v, min_price=_min_price(k)) for k, v in VIDEO_MODELS.items()],
-                             key=lambda x: x["min_price"]) if BRATUKHA_API_KEY else []}
+    models = []
+    if BRATUKHA_API_KEY:
+        models += [_public_video_model(key) for key, spec in VIDEO_MODELS.items() if spec.get("provider") != "kie"]
+    if KIE_API_KEY:
+        models += [_public_video_model(key) for key, spec in VIDEO_MODELS.items() if spec.get("provider") == "kie"]
+        models += [_public_kie_chat(key) for key in KIE_CHAT_MODELS]
+    models.sort(key=lambda item: item.get("min_price") or item.get("credits") or 0)
+    return {"ok": True, "enabled": bool(models), "kie": bool(KIE_API_KEY),
+            "aspects": list(VIDEO_ASPECTS), "durations": list(VIDEO_DURATIONS), "models": models}
 
 
 @app.post("/api/video/start")
@@ -4615,12 +4863,15 @@ async def video_start(request: Request):
         return JSONResponse({"ok": False, "error": "Войдите в аккаунт"}, status_code=401)
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
-    if not BRATUKHA_API_KEY:
-        return {"ok": False, "error": "Видео пока не подключено"}
 
     slug = str(data.get("model") or "")
     if slug not in VIDEO_MODELS:
-        return {"ok": False, "error": "Неизвестная видеомодель"}
+        return {"ok": False, "error": "Неизвестная модель"}
+    if VIDEO_MODELS[slug].get("provider") == "kie":
+        if not KIE_API_KEY:
+            return {"ok": False, "error": "Эта модель пока не подключена"}
+    elif not BRATUKHA_API_KEY:
+        return {"ok": False, "error": "Видео пока не подключено"}
     prompt = str(data.get("prompt") or "").strip()[:2000]
     aspects = _video_aspects(slug)
     aspect = None if VIDEO_MODELS[slug].get("no_aspect") else (data.get("aspect") if data.get("aspect") in aspects else aspects[0])
@@ -4674,12 +4925,14 @@ async def video_start(request: Request):
         images.append((blob, imime))
     image = images[0][0] if images else None
     mime = images[0][1] if images else None
+    kind = VIDEO_MODELS[slug].get("kind", "video")
     photo_rule = VIDEO_MODELS[slug].get("photo")
     if photo_rule == "required" and not image:
         return {"ok": False, "error": f"Для {VIDEO_MODELS[slug]['name']} нужно прикрепить фото 📎"}
     if photo_rule == "forbidden" and image:
+        if kind == "image":
+            return {"ok": False, "error": f"{VIDEO_MODELS[slug]['name']} рисует только по тексту, без фото"}
         return {"ok": False, "error": f"{VIDEO_MODELS[slug]['name']} делает видео только по описанию, без фото"}
-    kind = VIDEO_MODELS[slug].get("kind", "video")
     if kind == "audio" and len(prompt) < 3:
         return {"ok": False, "error": "Опишите песню или звук: о чём, жанр, настроение"}
     if VIDEO_MODELS[slug].get("no_webp") and image and "webp" in str(mime):
@@ -4778,7 +5031,7 @@ async def download_file(url: str, name: str = "neyroyaga"):
 
 FORUM_CHAT_URL = os.getenv("FORUM_CHAT_URL", "https://babayagaland.ru/aiayaga").strip()
 FORUM_TEMPLATES_URL = os.getenv("FORUM_TEMPLATES_URL", "https://babayagaland.ru/aiayaga?tab=templates").strip()
-FORUM_PAGE = 20
+FORUM_PAGE = 8
 DONATE_MIN = 10
 DONATE_MAX = 5000
 DONATE_DAY_LIMIT = 20
@@ -5190,28 +5443,36 @@ async def _race_sync_boosts(con):
 
 
 @app.get("/api/forum")
-async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
+async def forum_feed(request: Request, before: int = 0, sort: str = "new", offset: int = 0):
     if not db_ready():
         return {"ok": True, "posts": []}
     viewer = norm_email(request.query_params.get("email"))
     if viewer and not is_authorized(viewer, token_from_request(request)):
         viewer = ""
+    try:
+        offset = max(0, min(int(offset or 0), 4000))
+    except (TypeError, ValueError):
+        offset = 0
+    take = FORUM_PAGE + 1
     async with db_pool.acquire() as con:
         if sort == "subs":
             if not viewer:
-                return {"ok": True, "posts": [], "need_login": True}
+                return {"ok": True, "posts": [], "need_login": True, "more": False}
             rows = await con.fetch(
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) "
                 "AND p.author_email IN (SELECT author FROM forum_follows WHERE follower=$1) "
-                "ORDER BY p.id DESC LIMIT 40", viewer)
+                "ORDER BY p.id DESC LIMIT $2 OFFSET $3", viewer, take, offset)
         elif sort == "popular":
             rows = await con.fetch(
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) ORDER BY "
-                "((SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) + COALESCE(p.likes_boost,0)) DESC, p.id DESC LIMIT 40")
+                "((SELECT COUNT(*) FROM forum_likes l WHERE l.post_id = p.id) + COALESCE(p.likes_boost,0)) DESC, p.id DESC LIMIT $1 OFFSET $2",
+                take, offset)
         else:
             rows = await con.fetch(
                 _FORUM_SELECT + " WHERE NOT p.hidden AND NOT COALESCE(u.blocked, FALSE) AND NOT COALESCE(u.feed_pin, FALSE) AND ($1::bigint = 0 OR p.id < $1) ORDER BY p.id DESC LIMIT $2",
-                int(before or 0), FORUM_PAGE)
+                int(before or 0), take)
+        more = len(rows) > FORUM_PAGE
+        rows = rows[:FORUM_PAGE]
         posts = await _forum_cards(con, rows, viewer)
         start, end = _race_bounds()
         await _race_sync_boosts(con)
@@ -5223,7 +5484,7 @@ async def forum_feed(request: Request, before: int = 0, sort: str = "new"):
     medals = {r["nick"]: m for r, m in zip(top, ("🥇", "🥈", "🥉"))}
     for c in posts:
         c["badge"] = medals.get(c["nick"], "")
-    return {"ok": True, "posts": posts}
+    return {"ok": True, "posts": posts, "more": more}
 
 
 @app.get("/api/forum/top")
