@@ -75,6 +75,14 @@ def site_sizes(raw, is_text=False):
     return picked or list(SITE_SIZES)
 
 
+def shown_cover(url: str) -> str:
+    """Старая обложка лежит по тому же адресу. Без метки браузер сутки показывает прежний файл."""
+    text = str(url or "").strip()
+    if "/api/media/templates/" in text and "v=" not in text.split("#", 1)[0]:
+        return text + ("&v=1" if "?" in text else "?v=1")
+    return text
+
+
 def cover_bytes(raw: str, limit: int = 2_500_000):
     """Обложка шаблона: ссылка, пусто или байты картинки.
 

@@ -2,7 +2,7 @@ import unittest
 
 import base64
 
-from site_media import SITE_SIZES, audio_seconds, cover_bytes, media_file, site_sizes
+from site_media import SITE_SIZES, audio_seconds, cover_bytes, media_file, shown_cover, site_sizes
 
 
 def wav(seconds=1, rate=8000):
@@ -44,6 +44,13 @@ class MediaFileTest(unittest.TestCase):
         self.assertEqual(site_sizes("9:16, 1:1"), ["9:16", "1:1"])
         self.assertEqual(site_sizes("что угодно"), list(SITE_SIZES))
         self.assertEqual(site_sizes("", True), [])
+
+    def test_cover_link_changes_after_replace(self):
+        old = "https://neiroyaga-backend-production.up.railway.app/api/media/templates/portret.jpg"
+        self.assertTrue(shown_cover(old).endswith("?v=1"))
+        fresh = old + "?v=171000"
+        self.assertEqual(shown_cover(fresh), fresh)
+        self.assertEqual(shown_cover("https://cdn.example/a.jpg"), "https://cdn.example/a.jpg")
 
     def test_wav_length(self):
         self.assertAlmostEqual(audio_seconds(wav(2, 8000)), 2.0)

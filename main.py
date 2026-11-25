@@ -19,7 +19,7 @@ from google import genai
 from dotenv import load_dotenv
 
 import kie_site
-from site_media import audio_seconds, cover_bytes as _cover_bytes, media_file as _media_file, site_sizes as _site_sizes
+from site_media import audio_seconds, cover_bytes as _cover_bytes, media_file as _media_file, shown_cover as _shown_cover, site_sizes as _site_sizes
 
 load_dotenv()
 
@@ -765,7 +765,13 @@ async def public_media(key: str, name: str = ""):
             except Exception:
                 pass
 
-    headers = {"Cache-Control": "public, max-age=120" if key.startswith("profiles/") else "public, max-age=86400"}
+    if key.startswith("profiles/"):
+        cache = "public, max-age=120"
+    elif key.startswith("templates/"):
+        cache = "public, max-age=300"
+    else:
+        cache = "public, max-age=86400"
+    headers = {"Cache-Control": cache}
     safe = str(name or "").replace('"', "").replace("\n", "")[:80]
     if safe:
         headers["Content-Disposition"] = f'attachment; filename="{safe}"'
@@ -2535,10 +2541,21 @@ async def admin_promo_toggle(request: Request):
 _TPL_ID = _re.compile(r"^[a-z0-9_-]{2,40}$")
 
 
+async def _drop_template_cover(tid: str):
+    if not s3():
+        return
+    try:
+        await asyncio.to_thread(_s3_delete, [f"templates/{tid}.{ext}" for ext in ("jpg", "png", "webp")])
+    except Exception as e:
+        print(f"Старая обложка {tid}: {e}")
+
+
 async def _store_template_cover(tid: str, raw) -> str:
-    """Ссылка остаётся ссылкой. Файл из админки кладётся в хранилище и отдаётся постоянным адресом."""
+    """Ссылка остаётся ссылкой. Новый файл получает новый адрес, чтобы карточка не держала старое фото."""
     url, data, mime = _cover_bytes(raw)
     if data is None:
+        if not url:
+            await _drop_template_cover(tid)
         return url
     if not s3():
         raise ValueError("Хранилище фото не подключено")
@@ -2554,13 +2571,13 @@ async def _store_template_cover(tid: str, raw) -> str:
         await asyncio.to_thread(_s3_delete, others)
     except Exception:
         pass
-    return _s3_url(key)
+    return _s3_url(key) + "?v=" + str(int(time.time()))
 
 
 def _tpl_admin_row(row) -> dict:
     return {
         "id": row["id"], "title": row["title"], "desc": row["descr"] or "",
-        "image": row["image"] or "", "price": int(row["price"]), "prompt": row["prompt"],
+        "image": _shown_cover(row["image"] or ""), "price": int(row["price"]), "prompt": row["prompt"],
         "fields": row["fields"] or "", "cats": row["cats"] or "", "formats": row["formats"] or "",
         "model": row["model"] or "nanobanana", "trend": bool(row["trend"]), "vip": bool(row["vip"]),
         "active": bool(row["active"]), "runs": int(row["runs"] or 0), "sort": int(row["sort"] or 0),
@@ -2599,8 +2616,10 @@ async def admin_template_save(request: Request):
     if price <= 0 or price > 100000:
         return {"ok": False, "error": "Цена — число кредитов больше нуля"}
     model = str(data.get("model") or "nanobanana").strip().lower()
-    if model not in ("text", "текст", "nanobanana", "nanobanana_pro"):
-        model = "nanobanana"
+    if model in ("текст", "текстовая", "txt"):
+        model = "text"
+    if model not in TEMPLATE_MODEL_KEYS:
+        return {"ok": False, "error": "Выберите модель из списка"}
     try:
         sort = max(-100000, min(100000, int(data.get("sort") or 0)))
     except (TypeError, ValueError):
@@ -3415,6 +3434,25 @@ TEMPLATES_KEY = os.getenv("TEMPLATES_KEY", "").strip()
 TEMPLATES_TTL = int(os.getenv("TEMPLATES_CACHE_SEC", "300"))
 TEMPLATE_DEFAULT_MODEL = os.getenv("TEMPLATE_MODEL", "nanobanana")
 MAX_TEMPLATE_PHOTOS = 6
+TEMPLATE_MODELS = (
+    ("nanobanana", "Картинка"),
+    ("nanobanana_pro", "Картинка Pro"),
+    ("text", "Текст"),
+    ("nano-banana", "Nano Banana"),
+    ("gpt-image-2", "GPT Image 2"),
+    ("grok-image", "Grok Image"),
+    ("seedream-4-5", "Seedream 4.5"),
+    ("wan-2-7-image", "Wan 2.7"),
+    ("kie-flux", "Flux Klein"),
+    ("kie-seedream", "Seedream Flash"),
+    ("kie-banana-lite", "Nano Banana Lite"),
+    ("kie-banana-21", "Nano Banana 2.1"),
+    ("kie-grok", "Grok дешевле"),
+    ("kie-ideogram", "Ideogram"),
+    ("kie-gpt", "GPT Image дешевле"),
+    ("kie-banana-pro", "Nano Banana Pro дешевле"),
+)
+TEMPLATE_MODEL_KEYS = {key for key, _name in TEMPLATE_MODELS}
 
 _tpl_cache = {"at": 0.0, "items": []}
 _tpl_lock = asyncio.Lock()
@@ -3519,15 +3557,21 @@ def normalize_template(row: dict):
     if price <= 0:
         return None
     model = str(row.get("model") or "").strip().lower()
-    is_text = model in ("текст", "text", "текстовая", "txt")
-    model_key = "text" if is_text else ("nanobanana_pro" if "pro" in model or "про" in model else (
-        "nanobanana" if model else TEMPLATE_DEFAULT_MODEL))
-    if not is_text and model_key not in IMAGE_MODELS:
-        model_key = "nanobanana"
+    if model in ("текст", "текстовая", "txt"):
+        model = "text"
+    if model in TEMPLATE_MODEL_KEYS:
+        model_key = model
+    elif "pro" in model or "про" in model:
+        model_key = "nanobanana_pro"
+    else:
+        model_key = model or TEMPLATE_DEFAULT_MODEL
+        if model_key not in TEMPLATE_MODEL_KEYS:
+            model_key = "nanobanana"
+    is_text = model_key == "text"
     cats = [c.strip() for c in str(row.get("cats") or "").replace(";", ",").split(",") if c.strip()]
     return {
         "id": tid, "title": title, "desc": str(row.get("desc") or "").strip(),
-        "image": str(row.get("image") or "").strip(), "price": price,
+        "image": _shown_cover(row.get("image") or ""), "price": price,
         "fields": parse_fields(row.get("fields")), "trend": _truthy(row.get("trend")),
         "cats": cats, "runs": _to_int(row.get("runs"), 0),
         "vip": any(c.lower() == "vip" for c in cats) or _truthy(row.get("vip")),
@@ -3740,6 +3784,11 @@ def build_template_prompt(template: dict, answers: dict) -> str:
 ECO_TEMPLATE_PRICE = 10
 
 
+def _banana_again(err) -> bool:
+    text = str(err or "").lower()
+    return "модерац" not in text and "не подходит" not in text
+
+
 async def _eco_template_image(photos, prompt_text: str, aspect):
     """Генерация шаблона через Nano Banana Братухи. Возвращает (base64, mime)."""
     urls = []
@@ -3748,15 +3797,68 @@ async def _eco_template_image(photos, prompt_text: str, aspect):
         if not name:
             raise RuntimeError("Это фото не подходит. Подойдут JPG, PNG или WEBP")
         urls.append(await asyncio.to_thread(_bh_upload, b, ctype, name))
-    inp = {"mode": "normal", "prompt": prompt_text[:20000], "image_size": aspect or "auto"}
-    if urls:
-        inp["image_urls"] = urls
-    op_id = await asyncio.to_thread(_bh_post_operation, "nano-banana", inp)
-    url = await _bh_wait(op_id, 4 * 60, 3)
-    r = await asyncio.to_thread(requests.get, url, timeout=60)
-    if r.status_code != 200 or not r.content:
-        raise RuntimeError(f"не удалось скачать результат: {r.status_code}")
-    return base64.b64encode(r.content).decode(), (r.headers.get("content-type") or "image/jpeg").split(";")[0]
+    last = None
+    for attempt in (1, 2):
+        try:
+            inp = {"mode": "normal", "prompt": prompt_text[:20000], "image_size": aspect or "auto"}
+            if urls:
+                inp["image_urls"] = urls
+            op_id = await asyncio.to_thread(_bh_post_operation, "nano-banana", inp)
+            url = await _bh_wait(op_id, 4 * 60, 3)
+            r = await asyncio.to_thread(requests.get, url, timeout=60)
+            if r.status_code != 200 or not r.content:
+                raise RuntimeError(f"не удалось скачать результат: {r.status_code}")
+            return base64.b64encode(r.content).decode(), (r.headers.get("content-type") or "image/jpeg").split(";")[0]
+        except Exception as e:
+            last = e
+            if attempt == 1 and _banana_again(e):
+                print(f"⚠️ Nano Banana: {e}. Повторяю.")
+                await asyncio.sleep(2)
+                continue
+            raise
+    raise last
+
+
+async def _named_template_image(model_key: str, photos, prompt_text: str, aspect):
+    """Шаблон на модели, выбранной в админке. Возвращает (base64, mime)."""
+    spec = VIDEO_MODELS[model_key]
+    allowed = spec.get("aspects") or []
+    if allowed and aspect not in allowed:
+        aspect = allowed[0]
+    if spec.get("provider") == "kie":
+        urls = []
+        for index, pair in enumerate(photos[:6], 1):
+            urls.append(await asyncio.to_thread(_kie_upload, pair[0], pair[1], index))
+        task = kie_site.build_image_task(spec, prompt_text, aspect, spec.get("quality"), urls)
+        task_id = await asyncio.to_thread(_kie_create, task)
+        file_url = await _kie_poll(task_id)
+        data, mime = await asyncio.to_thread(_kie_download, file_url)
+        return base64.b64encode(data).decode(), mime
+    urls = []
+    for index, pair in enumerate(photos[:6], 1):
+        name, ctype = _media_file(pair[0], pair[1], "image", index)
+        if not name:
+            raise RuntimeError("Это фото не подходит. Подойдут JPG, PNG или WEBP")
+        urls.append(await asyncio.to_thread(_bh_upload, pair[0], ctype, name))
+    quality = spec.get("quality")
+    last = None
+    for attempt in (1, 2):
+        try:
+            op_id = await asyncio.to_thread(_bh_create_image, model_key, prompt_text, urls, aspect, None, quality)
+            url = await _bh_wait(op_id, 5 * 60, 3)
+            response = await asyncio.to_thread(requests.get, url, timeout=60)
+            if response.status_code != 200 or not response.content:
+                raise RuntimeError(f"не удалось скачать результат: {response.status_code}")
+            mime = (response.headers.get("content-type") or "image/jpeg").split(";")[0]
+            return base64.b64encode(response.content).decode(), mime
+        except Exception as e:
+            last = e
+            if attempt == 1 and spec.get("tool") == "nano-banana" and _banana_again(e):
+                print(f"⚠️ Шаблон Nano Banana: {e}. Повторяю.")
+                await asyncio.sleep(2)
+                continue
+            raise
+    raise last
 
 
 @app.get("/api/templates")
@@ -3841,7 +3943,18 @@ async def run_template(request: Request):
         finally:
             _running.discard(email)
 
-    eco = data.get("engine") == "eco" and bool(BRATUKHA_API_KEY)
+    model_key = template["_model"]
+    picture = VIDEO_MODELS.get(model_key) if model_key not in ("nanobanana", "nanobanana_pro", "text") else None
+    if model_key not in ("nanobanana", "nanobanana_pro", "text"):
+        if not picture or picture.get("kind") != "image":
+            return {"ok": False, "error": "Эта модель для шаблона не подключена"}
+        if picture.get("photo") == "forbidden" and photos_raw:
+            return {"ok": False, "error": f"{picture['name']} рисует только по тексту, без фото"}
+        if picture.get("provider") == "kie" and not KIE_API_KEY:
+            return {"ok": False, "error": "Эта модель пока не подключена"}
+        if picture.get("provider") != "kie" and not BRATUKHA_API_KEY:
+            return {"ok": False, "error": "Эта модель пока не подключена"}
+    eco = data.get("engine") == "eco" and model_key in ("nanobanana", "nanobanana_pro") and bool(BRATUKHA_API_KEY)
     photo_parts, photo_bytes = [], []
     for p in photos_raw[:MAX_TEMPLATE_PHOTOS]:
         try:
@@ -3873,10 +3986,14 @@ async def run_template(request: Request):
                 text_output = ""
                 image_data, mime_type = await _eco_template_image(photo_bytes, prompt_text, aspect)
                 print(f"💸 Шаблон {template['id']} в «Экономе» для {email}")
-            else:
+            elif model_key in ("nanobanana", "nanobanana_pro"):
                 contents = [{"role": "user", "parts": photo_parts + [{"text": prompt_text}]}]
-                response = await generate(MODEL_MAPPING[template["_model"]], contents, aspect)
+                response = await generate(MODEL_MAPPING[model_key], contents, aspect)
                 text_output, image_data, mime_type = parse_response(response)
+            else:
+                text_output = ""
+                image_data, mime_type = await _named_template_image(model_key, photo_bytes, prompt_text, aspect)
+                print(f"🖼 Шаблон {template['id']} моделью {model_key} для {email}")
         except Exception as e:
             print(f"Ошибка шаблона {template['id']}: {e}")
             image_data, text_output, mime_type = None, "", "image/jpeg"
@@ -4570,22 +4687,30 @@ async def _bh_wait(op_id: str, timeout: int, every: int) -> str:
 
 async def _bh_wait_all(op_id: str, timeout: int, every: int) -> list:
     deadline = time.time() + timeout
+    last = ""
+    empty_ready = 0
     while time.time() < deadline:
         await asyncio.sleep(every)
         try:
             d = await asyncio.to_thread(_bh_status, op_id)
         except Exception:
             continue
-        st = d.get("status")
-        if st == "completed":
+        st = str(d.get("status") or "").lower()
+        if st and st != last:
+            print(f"Братуха {op_id}: {st}")
+            last = st
+        if st in ("completed", "success", "succeeded", "done"):
             urls = _bh_all_urls(d) or ([_bh_video_url(d)] if _bh_video_url(d) else [])
-            if not urls:
+            if urls:
+                return urls
+            empty_ready += 1
+            if empty_ready >= 4:
                 raise RuntimeError("результат готов, но ссылки на него нет")
-            return urls
-        if st == "failed":
+            continue
+        if st in ("failed", "error", "cancelled", "canceled"):
             err = d.get("error") if isinstance(d.get("error"), dict) else {}
             raise RuntimeError(d.get("error_message") or err.get("message") or "нейросеть не смогла выполнить задачу")
-    raise RuntimeError("слишком долгое ожидание")
+    raise RuntimeError(f"слишком долгое ожидание ({last or 'без статуса'})")
 
 
 def _kie_headers():
@@ -4777,11 +4902,14 @@ async def _video_worker(job_id: str):
         is_image = m.get("kind") == "image"
         cheap = m.get("cheap_first") and job.get("quality") != "low"  # у low цена одинаковая — сразу обычный режим
         modes = (["cheap", "normal"] if cheap else (["normal"] if m.get("cheap_first") else [None])) if is_image else [None]
+        if is_image and m.get("tool") == "nano-banana":
+            modes = list(modes) + ["again"]
         last_err = None
         for mode in modes:
             try:
+                call_mode = None if mode == "again" else mode
                 if is_image:
-                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], urls, job.get("aspect"), mode,
+                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], urls, job.get("aspect"), call_mode,
                                                     job.get("quality"))
                 else:
                     op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], urls, job.get("aspect"), job.get("duration"))
@@ -4797,6 +4925,10 @@ async def _video_worker(job_id: str):
                 last_err = e
                 if mode == "cheap" and "модерац" not in str(e).lower():
                     print(f"⚠️ {job['model']} в дешёвом режиме не вышло ({e}), пробую обычный")
+                    continue
+                if mode is None and _banana_again(e):
+                    print(f"⚠️ {job['model']} для {job['email']}: {e}. Повторяю.")
+                    await asyncio.sleep(2)
                     continue
                 raise
         raise last_err or RuntimeError("не получилось")

@@ -512,6 +512,27 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
     document.querySelectorAll('[data-sz].on').forEach(function (b) { picked.push(b.getAttribute('data-sz')); });
     return picked.length && picked.length < SIZES.length ? picked.join(', ') : '';
   }
+  var TMODELS = [
+    ['Наши', [['nanobanana', 'Картинка'], ['nanobanana_pro', 'Картинка Pro'], ['text', 'Текст']]],
+    ['Братуха', [['nano-banana', 'Nano Banana'], ['gpt-image-2', 'GPT Image 2'], ['grok-image', 'Grok Image'], ['seedream-4-5', 'Seedream 4.5'], ['wan-2-7-image', 'Wan 2.7']]],
+    ['Дешевле', [['kie-flux', 'Flux Klein'], ['kie-seedream', 'Seedream Flash'], ['kie-banana-lite', 'Nano Banana Lite'], ['kie-banana-21', 'Nano Banana 2.1'], ['kie-grok', 'Grok дешевле'], ['kie-ideogram', 'Ideogram'], ['kie-gpt', 'GPT Image дешевле'], ['kie-banana-pro', 'Nano Banana Pro дешевле']]]
+  ];
+  function modelName(id) {
+    var name = id || 'Картинка';
+    TMODELS.forEach(function (g) { g[1].forEach(function (m) { if (m[0] === id) name = m[1]; }); });
+    return name;
+  }
+  function modelSelect(current) {
+    var known = false;
+    var html = TMODELS.map(function (g) {
+      return '<optgroup label="' + esc(g[0]) + '">' + g[1].map(function (m) {
+        if (m[0] === current) known = true;
+        return '<option value="' + esc(m[0]) + '"' + (m[0] === current ? ' selected' : '') + '>' + esc(m[1]) + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+    if (current && !known) html = '<option value="' + esc(current) + '" selected>' + esc(current) + '</option>' + html;
+    return html;
+  }
   function blankTpl() {
     return { id: '', title: '', desc: '', image: '', price: 10, prompt: '', fields: '', cats: '', formats: '', model: 'nanobanana', trend: false, vip: false, active: true, sort: 0, fresh: true };
   }
@@ -549,8 +570,8 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
       '<label style="display:block;margin-top:12px">Поля для ответов человека. Пусто — шаблон без вопросов</label>' +
       '<textarea class="in" id="tfields" rows="4" placeholder="фото | Ваше фото | до 1&#10;текст | имя | Как вас зовут?&#10;выбор | пол | Пол | Мужской; Женский">' + esc(t.fields) + '</textarea>' +
       '<p class="dim">Каждая строка — одно поле: фото, текст, выбор, дата или число.</p>' +
-      '<label>4. Цена и модель</label><div class="row"><input class="in" id="tprice" type="number" placeholder="Цена, кр." value="' + esc(t.price) + '">' +
-      '<select class="in" id="tmodel"><option value="nanobanana"' + (t.model === 'nanobanana' ? ' selected' : '') + '>Картинка</option><option value="nanobanana_pro"' + (t.model === 'nanobanana_pro' ? ' selected' : '') + '>Картинка Pro</option><option value="text"' + (t.model === 'text' || t.model === 'текст' ? ' selected' : '') + '>Текст</option></select></div>' +
+      '<label>4. Цена и модель. Шаблон запускается именно этой моделью</label><div class="row"><input class="in" id="tprice" type="number" placeholder="Цена, кр." value="' + esc(t.price) + '">' +
+      '<select class="in" id="tmodel">' + modelSelect(t.model === 'текст' ? 'text' : (t.model || 'nanobanana')) + '</select></div>' +
       '<label style="display:block;margin-top:12px">Размеры. Ничего не отмечено — на сайте все шесть, человек выбирает сам</label><div class="sizes">' + sizeButtons(t.formats) + '</div>' +
       '<label class="chk" style="margin-top:12px"><input type="checkbox" id="tactive"' + (t.active ? ' checked' : '') + '> На сайте. Снимите галочку, чтобы спрятать карточку</label>' +
       '<details style="margin-top:12px"' + (t.fresh ? '' : ' open') + '><summary style="cursor:pointer;font-weight:700">Дополнительно: описание, темы, порядок</summary>' +
@@ -576,7 +597,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
           (p.vip ? ' <span class="tag vip">VIP</span>' : '') +
           (p.trend ? ' <span class="tag">популярное</span>' : '') + '</div>' +
           '<div><b>' + n(p.price) + ' кр.</b> <span class="dim">· ' + n(p.runs) + ' запусков</span></div>' +
-          '<div class="dim" style="font-size:12px;margin-top:4px">' + esc(sizeLabel(p.formats)) + '</div>' +
+          '<div class="dim" style="font-size:12px;margin-top:4px">' + esc(modelName(p.model)) + ' · ' + esc(sizeLabel(p.formats)) + '</div>' +
           '<div class="dim" style="font-size:12px;margin-top:4px">' + esc(p.id) + '</div>' +
           '<div class="row" style="margin-top:8px"><button class="ghost" data-ed="' + esc(p.id) + '">Править</button>' +
           '<button class="ghost" data-pub="' + esc(p.id) + '">' + (p.active ? 'Скрыть' : 'На сайт') + '</button>' +
