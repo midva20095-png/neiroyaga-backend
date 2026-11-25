@@ -132,10 +132,14 @@ def task_view(data):
             _collect_urls(parsed, urls)
         except Exception:
             pass
+    parts = [str(row.get("failCode") or ""), str(row.get("failMsg") or "")]
+    if isinstance(data, dict):
+        parts.append(str(data.get("msg") or ""))
+    fail = " ".join(part.strip() for part in parts if part and part.strip())
     return {
         "state": row.get("state") or "",
         "urls": urls,
-        "fail": str(row.get("failMsg") or row.get("failCode") or "")[:160],
+        "fail": fail[:300],
     }
 
 
@@ -168,13 +172,30 @@ def error_text(data):
 
 def explain_failure(text):
     raw = str(text or "")
-    if any(word in raw.lower() for word in ("content moderation", "blocked by", "safety", "nsfw")):
+    low = raw.lower()
+    if any(word in low for word in ("content moderation", "blocked by", "safety", "nsfw")):
         return "Запрос не прошёл проверку. Измените описание или фото и попробуйте ещё раз."
-    if "input was rejected" in raw.lower() or "different input" in raw.lower():
+    if "input was rejected" in low or "different input" in low:
         return "Модель не приняла этот запрос. Измените описание и попробуйте ещё раз."
-    if any(word in raw.lower() for word in ("internal error", "try again later", "unavailable", "bad gateway", "timeout")):
+    if any(word in low for word in ("insufficient", "not enough credit", "no credits", "402")):
+        return "Эта модель сейчас недоступна. Попробуйте другую или через минуту."
+    if any(word in low for word in ("invalid", "parameter", "unsupported", "aspect ratio", "resolution")):
+        return "Модель не приняла размер. Выберите другой и попробуйте ещё раз."
+    if any(word in low for word in ("internal error", "try again later", "unavailable", "bad gateway", "timeout", "playground task failed")) or raw.strip() in ("500", "501", "505"):
         return "Модель сейчас не отвечает. Попробуйте через минуту."
     return ""
+
+
+def retryable_failure(text):
+    raw = str(text or "").strip()
+    low = raw.lower()
+    if any(word in low for word in ("content moderation", "blocked by", "safety", "nsfw", "input was rejected", "different input", "insufficient", "not enough credit", "402", "invalid", "parameter", "unsupported", "фото не загрузилось", "не удалось забрать", "пустая картинка", "не подключена", "не запустилась")):
+        return False
+    if not raw or raw in ("500", "501", "505", "без текста от модели"):
+        return True
+    if any(word in low for word in ("internal error", "try again later", "unavailable", "bad gateway", "timeout", "playground task failed")):
+        return True
+    return True
 
 
 def url_ok(value):

@@ -4619,8 +4619,17 @@ def _kie_create(task: dict) -> str:
     except Exception:
         data = {}
     task_id = (data.get("data") or {}).get("taskId") if isinstance(data, dict) else None
-    if response.status_code >= 400 or not task_id:
-        raise RuntimeError(kie_site.explain_failure(kie_site.error_text(data)) or "Картинка не запустилась")
+    try:
+        code = int(data.get("code") or 0) if isinstance(data, dict) else 0
+    except (TypeError, ValueError):
+        code = 0
+    if response.status_code in (401, 403) or code in (401, 403):
+        raise RuntimeError("Эта модель пока не подключена")
+    if response.status_code >= 400 or code not in (0, 200) or not task_id:
+        raw = " ".join(part for part in (str(code or ""), kie_site.error_text(data)) if part and part != "0")
+        err = RuntimeError(kie_site.explain_failure(raw) or "Картинка не запустилась")
+        err.raw = raw or "без текста от модели"
+        raise err
     return task_id
 
 
@@ -4672,11 +4681,16 @@ async def _kie_poll(task_id: str) -> str:
         if view["state"] == "success" and view["urls"]:
             return view["urls"][0]
         if view["state"] == "fail":
-            raise RuntimeError(kie_site.explain_failure(view["fail"]) or "Картинка не получилась")
-    raise RuntimeError("Картинка не успела за три минуты")
+            raw = view["fail"] or "без текста от модели"
+            err = RuntimeError(kie_site.explain_failure(raw) or "Картинка не получилась")
+            err.raw = raw
+            raise err
+    err = RuntimeError("Картинка не успела за три минуты")
+    err.raw = "timeout"
+    raise err
 
 
-async def _kie_image_job(job: dict):
+async def _kie_image_once(job: dict):
     spec = VIDEO_MODELS[job["model"]]
     packed = job.get("images") or ([] if not job.get("image") else [(job["image"], job.get("mime"))])
     urls = []
@@ -4684,7 +4698,7 @@ async def _kie_image_job(job: dict):
         urls.append(await asyncio.to_thread(_kie_upload, pair[0], pair[1], index))
     task = kie_site.build_image_task(spec, job.get("prompt"), job.get("aspect"), job.get("quality"), urls)
     task_id = await asyncio.to_thread(_kie_create, task)
-    print(f"🖼 {job['model']} для {job['email']}: задача {task_id}")
+    print(f"🖼 {job['model']} для {job['email']}: задача {task_id}, {task['model']}, {task['input'].get('aspect_ratio') or task['input'].get('image_size') or '—'}, {task['input'].get('resolution') or '—'}")
     file_url = await _kie_poll(task_id)
     data, mime = await asyncio.to_thread(_kie_download, file_url)
     job.update(status="done", url=file_url)
@@ -4693,16 +4707,32 @@ async def _kie_image_job(job: dict):
     print(f"✅ {job['model']} готово для {job['email']}")
 
 
+async def _kie_image_job(job: dict):
+    for attempt in (1, 2):
+        try:
+            await _kie_image_once(job)
+            return
+        except Exception as e:
+            raw = getattr(e, "raw", "") or str(e)
+            if attempt == 1 and kie_site.retryable_failure(raw):
+                print(f"⚠️ {job['model']} для {job['email']}: {raw}. Повторяю один раз.")
+                await asyncio.sleep(2)
+                continue
+            e.raw = raw
+            raise
+
+
 async def _video_worker(job_id: str):
     job = _video_jobs[job_id]
     if VIDEO_MODELS[job["model"]].get("provider") == "kie":
         try:
             await _kie_image_job(job)
         except Exception as e:
-            print(f"❌ {job['model']} для {job['email']} не получилось: {e}")
+            raw = getattr(e, "raw", "") or str(e)
+            print(f"❌ {job['model']} для {job['email']} не получилось: {raw}")
             balance = await refund_credits(job["email"], job["cost"], job.get("balance", 0), "image")
-            job.update(status="error", credits=balance,
-                       error=f"Картинка не получилась ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
+            told = kie_site.explain_failure(raw) or "Картинка не получилась. Попробуйте ещё раз или выберите другую модель."
+            job.update(status="error", credits=balance, error=f"{told} Кредиты вернула.")
         finally:
             job.pop("image", None)
             job.pop("images", None)
@@ -5001,7 +5031,7 @@ async def video_status(job_id: str, request: Request):
 from urllib.parse import urlparse as _urlparse
 from fastapi.responses import StreamingResponse
 
-FILE_HOSTS = ("bratuha.ru", "selstorage.ru")
+FILE_HOSTS = ("bratuha.ru", "selstorage.ru", "aiquickdraw.com", "kie.ai", "redpandaai.co")
 
 
 @app.get("/api/file")

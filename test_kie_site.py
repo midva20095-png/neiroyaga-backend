@@ -1,6 +1,6 @@
 import unittest
 
-from kie_site import build_chat, build_image_task, compact_prompt, image_mime, task_view, text_from_response, upload_view
+from kie_site import build_chat, build_image_task, compact_prompt, explain_failure, image_mime, retryable_failure, task_view, text_from_response, upload_view
 
 FLUX = {
     "kieModel": "flux-3/klein-text-to-image",
@@ -63,6 +63,15 @@ class KieSiteTests(unittest.TestCase):
         self.assertEqual(text, "готово")
         view = task_view({"data": {"state": "success", "resultJson": '{"resultUrls":["https://cdn.example/out.jpg"]}'}})
         self.assertEqual(view["urls"], ["https://cdn.example/out.jpg"])
+        failed = task_view({"code": 501, "msg": "Playground task failed.", "data": {"state": "fail", "failCode": "500", "failMsg": ""}})
+        self.assertEqual(failed["state"], "fail")
+        self.assertIn("500", failed["fail"])
+        self.assertIn("Playground task failed", failed["fail"])
+        self.assertIn("не отвечает", explain_failure(failed["fail"]))
+        self.assertTrue(retryable_failure(failed["fail"]))
+        self.assertFalse(retryable_failure("The request was blocked by content moderation."))
+        self.assertIn("проверку", explain_failure("The request was blocked by content moderation."))
+        self.assertIn("недоступна", explain_failure("402 insufficient credits"))
         self.assertEqual(upload_view({"code": 200, "data": {"downloadUrl": "https://cdn.example/in.jpg"}})["url"], "https://cdn.example/in.jpg")
         self.assertEqual(upload_view({"code": 500, "data": {"downloadUrl": "https://cdn.example/in.jpg"}})["url"], "")
 
