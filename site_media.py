@@ -60,6 +60,21 @@ def _wav_seconds(data: bytes):
     return data_len / (rate * channels * (bits / 8))
 
 
+SITE_SIZES = ("1:1", "4:5", "3:4", "9:16", "4:3", "16:9")
+
+
+def site_sizes(raw, is_text=False):
+    """Размеры шаблона. Пустое поле — все размеры, как в боте."""
+    if is_text:
+        return []
+    picked = []
+    for bit in str(raw or "").replace(",", ";").split(";"):
+        bit = bit.strip()
+        if bit in SITE_SIZES and bit not in picked:
+            picked.append(bit)
+    return picked or list(SITE_SIZES)
+
+
 def cover_bytes(raw: str, limit: int = 2_500_000):
     """Обложка шаблона: ссылка, пусто или байты картинки.
 

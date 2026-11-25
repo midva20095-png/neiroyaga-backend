@@ -67,6 +67,9 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
 .tbody{padding:10px 12px 12px}
 .tbody b{display:block}
 .chk{display:flex;align-items:center;gap:6px;font-weight:600}
+.sizes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.sizes button{padding:8px 12px;border-radius:12px;border:1px solid var(--ln2);color:var(--mut);font-weight:700}
+.sizes button.on{background:var(--grad);color:#fff;border-color:transparent}
 .login{max-width:400px;margin:12vh auto 0;text-align:center}
 .login p{color:var(--mut)}
 .code{font-size:28px;letter-spacing:.35em;text-align:center}
@@ -95,6 +98,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
     promo: 'Коды на кредиты и бонус к пополнению.'
   };
   var CAT = { chat: '💬 Чат', image: '🎨 Картинки', template: '✨ Шаблоны', video: '🎬 Видео', audio: '🎵 Музыка', storage: '💾 Хранилище', other: '• Прочее' };
+  var SIZES = [['1:1', 'Квадрат'], ['4:5', 'Пост'], ['3:4', 'Портрет'], ['9:16', 'Сторис'], ['4:3', 'Альбом'], ['16:9', 'Широкий']];
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function n(v) { return String(Math.round(v || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
@@ -488,8 +492,28 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
       drawTpls();
     }).catch(function () {});
   }
+  function sizeList(raw) {
+    return String(raw || '').split(/[,;]/).map(function (s) { return s.trim(); }).filter(function (s) {
+      return SIZES.some(function (item) { return item[0] === s; });
+    });
+  }
+  function sizeLabel(raw) {
+    var list = sizeList(raw);
+    return list.length ? list.join(' · ') : 'все размеры';
+  }
+  function sizeButtons(raw) {
+    var chosen = sizeList(raw);
+    return SIZES.map(function (s) {
+      return '<button type="button" class="sz' + (chosen.indexOf(s[0]) >= 0 ? ' on' : '') + '" data-sz="' + s[0] + '">' + s[1] + ' ' + s[0] + '</button>';
+    }).join('');
+  }
+  function chosenSizes() {
+    var picked = [];
+    document.querySelectorAll('[data-sz].on').forEach(function (b) { picked.push(b.getAttribute('data-sz')); });
+    return picked.length && picked.length < SIZES.length ? picked.join(', ') : '';
+  }
   function blankTpl() {
-    return { id: '', title: '', desc: '', image: '', price: 10, prompt: '', fields: '', cats: '', formats: '3:4', model: 'nanobanana', trend: false, vip: false, active: true, sort: 0, fresh: true };
+    return { id: '', title: '', desc: '', image: '', price: 10, prompt: '', fields: '', cats: '', formats: '', model: 'nanobanana', trend: false, vip: false, active: true, sort: 0, fresh: true };
   }
   function tplPayload(p, extra) {
     var body = {
@@ -527,13 +551,13 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
       '<p class="dim">Каждая строка — одно поле: фото, текст, выбор, дата или число.</p>' +
       '<label>4. Цена и модель</label><div class="row"><input class="in" id="tprice" type="number" placeholder="Цена, кр." value="' + esc(t.price) + '">' +
       '<select class="in" id="tmodel"><option value="nanobanana"' + (t.model === 'nanobanana' ? ' selected' : '') + '>Картинка</option><option value="nanobanana_pro"' + (t.model === 'nanobanana_pro' ? ' selected' : '') + '>Картинка Pro</option><option value="text"' + (t.model === 'text' || t.model === 'текст' ? ' selected' : '') + '>Текст</option></select></div>' +
+      '<label style="display:block;margin-top:12px">Размеры. Ничего не отмечено — на сайте все шесть, человек выбирает сам</label><div class="sizes">' + sizeButtons(t.formats) + '</div>' +
       '<label class="chk" style="margin-top:12px"><input type="checkbox" id="tactive"' + (t.active ? ' checked' : '') + '> На сайте. Снимите галочку, чтобы спрятать карточку</label>' +
       '<details style="margin-top:12px"' + (t.fresh ? '' : ' open') + '><summary style="cursor:pointer;font-weight:700">Дополнительно: описание, темы, порядок</summary>' +
       '<input class="in" id="tdesc" style="margin-top:8px" placeholder="Короткое описание под названием" value="' + esc(t.desc) + '">' +
       '<input class="in" id="timg" style="margin-top:8px" placeholder="Ссылка на картинку, если фото не загружаете файлом" value="' + esc(link) + '">' +
       '<input class="in" id="tcats" style="margin-top:8px" placeholder="Темы через запятую: Портрет, Праздник" value="' + esc(catsShown) + '">' +
-      '<div class="row" style="margin-top:8px"><input class="in" id="tfmt" placeholder="Форматы: 1:1, 3:4, 9:16" value="' + esc(t.formats) + '">' +
-      '<input class="in" id="tsort" type="number" placeholder="Порядок. Меньше — выше" value="' + esc(t.sort || 0) + '"></div>' +
+      '<div class="row" style="margin-top:8px"><input class="in" id="tsort" type="number" placeholder="Порядок. Меньше — выше" value="' + esc(t.sort || 0) + '"></div>' +
       '<div class="row" style="margin-top:8px"><label class="chk"><input type="checkbox" id="ttrend"' + (t.trend ? ' checked' : '') + '> В популярном</label>' +
       '<label class="chk"><input type="checkbox" id="tvip"' + (t.vip ? ' checked' : '') + '> Только VIP</label></div></details>' +
       '<div class="row" style="margin-top:12px"><button class="btn" id="tsave">' + (t.fresh ? 'Добавить шаблон' : 'Сохранить') + '</button>' +
@@ -552,6 +576,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
           (p.vip ? ' <span class="tag vip">VIP</span>' : '') +
           (p.trend ? ' <span class="tag">популярное</span>' : '') + '</div>' +
           '<div><b>' + n(p.price) + ' кр.</b> <span class="dim">· ' + n(p.runs) + ' запусков</span></div>' +
+          '<div class="dim" style="font-size:12px;margin-top:4px">' + esc(sizeLabel(p.formats)) + '</div>' +
           '<div class="dim" style="font-size:12px;margin-top:4px">' + esc(p.id) + '</div>' +
           '<div class="row" style="margin-top:8px"><button class="ghost" data-ed="' + esc(p.id) + '">Править</button>' +
           '<button class="ghost" data-pub="' + esc(p.id) + '">' + (p.active ? 'Скрыть' : 'На сайт') + '</button>' +
@@ -568,6 +593,9 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
       if (S.tplForm) S.tplForm.image = '';
       drawTpls();
     };
+    document.querySelectorAll('[data-sz]').forEach(function (b) {
+      b.onclick = function () { b.classList.toggle('on'); };
+    });
     document.querySelectorAll('[data-show]').forEach(function (b) {
       b.onclick = function () { S.tplShow = b.getAttribute('data-show') || 'all'; drawTpls(); };
     });
@@ -579,7 +607,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
         id: document.getElementById('tid').value.trim(), title: document.getElementById('ttitle').value.trim(),
         desc: document.getElementById('tdesc').value.trim(), image: image,
         price: +document.getElementById('tprice').value, model: document.getElementById('tmodel').value,
-        formats: document.getElementById('tfmt').value.trim(), sort: +document.getElementById('tsort').value,
+        formats: chosenSizes(), sort: +document.getElementById('tsort').value,
         cats: document.getElementById('tcats').value.trim(), fields: document.getElementById('tfields').value,
         prompt: document.getElementById('tprompt').value, trend: document.getElementById('ttrend').checked,
         vip: document.getElementById('tvip').checked, active: document.getElementById('tactive').checked

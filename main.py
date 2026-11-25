@@ -18,7 +18,7 @@ from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
 
-from site_media import audio_seconds, cover_bytes as _cover_bytes, media_file as _media_file
+from site_media import audio_seconds, cover_bytes as _cover_bytes, media_file as _media_file, site_sizes as _site_sizes
 
 load_dotenv()
 
@@ -3496,7 +3496,7 @@ def normalize_template(row: dict):
         "cats": cats, "runs": _to_int(row.get("runs"), 0),
         "vip": any(c.lower() == "vip" for c in cats) or _truthy(row.get("vip")),
         "kind": "text" if is_text else "image",
-        "formats": [] if is_text else [a for a in (x.strip() for x in str(row.get("formats") or "").replace(",", ";").split(";")) if a in ASPECTS],
+        "formats": _site_sizes(row.get("formats"), is_text),
         "_prompt": str(row.get("prompt")).strip(), "_model": model_key,
     }
 

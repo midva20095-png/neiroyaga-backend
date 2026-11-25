@@ -2,7 +2,7 @@ import unittest
 
 import base64
 
-from site_media import audio_seconds, cover_bytes, media_file
+from site_media import SITE_SIZES, audio_seconds, cover_bytes, media_file, site_sizes
 
 
 def wav(seconds=1, rate=8000):
@@ -37,6 +37,13 @@ class MediaFileTest(unittest.TestCase):
         self.assertEqual(mime, "image/jpeg")
         with self.assertRaises(ValueError):
             cover_bytes("data:image/jpeg;base64," + base64.b64encode(b"not-a-photo").decode())
+
+    def test_sizes(self):
+        self.assertEqual(site_sizes(""), list(SITE_SIZES))
+        self.assertEqual(site_sizes("3:4"), ["3:4"])
+        self.assertEqual(site_sizes("9:16, 1:1"), ["9:16", "1:1"])
+        self.assertEqual(site_sizes("что угодно"), list(SITE_SIZES))
+        self.assertEqual(site_sizes("", True), [])
 
     def test_wav_length(self):
         self.assertAlmostEqual(audio_seconds(wav(2, 8000)), 2.0)
