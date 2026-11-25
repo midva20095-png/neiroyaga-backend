@@ -1,6 +1,8 @@
 import unittest
 
-from site_media import audio_seconds, media_file
+import base64
+
+from site_media import audio_seconds, cover_bytes, media_file
 
 
 def wav(seconds=1, rate=8000):
@@ -24,6 +26,17 @@ class MediaFileTest(unittest.TestCase):
         self.assertEqual(media_file(b"OggSrest", "", "audio")[0], "voice.ogg")
         self.assertEqual(media_file(b"fLaCrest", "", "audio")[0], "voice.flac")
         self.assertIsNone(media_file(b"\x1aE\xdf\xa3webm", "audio/webm", "audio")[0])
+
+    def test_cover(self):
+        self.assertEqual(cover_bytes(""), ("", None, None))
+        self.assertEqual(cover_bytes("https://cdn.example/a.jpg"), ("https://cdn.example/a.jpg", None, None))
+        raw = base64.b64encode(b"\xff\xd8\xff\x00").decode()
+        url, data, mime = cover_bytes("data:image/jpeg;base64," + raw)
+        self.assertIsNone(url)
+        self.assertEqual(data[:3], b"\xff\xd8\xff")
+        self.assertEqual(mime, "image/jpeg")
+        with self.assertRaises(ValueError):
+            cover_bytes("data:image/jpeg;base64," + base64.b64encode(b"not-a-photo").decode())
 
     def test_wav_length(self):
         self.assertAlmostEqual(audio_seconds(wav(2, 8000)), 2.0)

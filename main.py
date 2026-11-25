@@ -18,7 +18,7 @@ from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
 
-from site_media import audio_seconds, media_file as _media_file
+from site_media import audio_seconds, cover_bytes as _cover_bytes, media_file as _media_file
 
 load_dotenv()
 
@@ -727,7 +727,7 @@ def _s3_put_bytes(data: bytes, key: str, mime: str):
 
 
 PUBLIC_API = os.getenv("PUBLIC_BASE", "https://neiroyaga-backend-production.up.railway.app").rstrip("/")
-MEDIA_OK = ("profiles/", "works/", "stories/", "albums/", "forum/", "chat/")
+MEDIA_OK = ("profiles/", "works/", "stories/", "albums/", "forum/", "chat/", "templates/")
 
 
 def _s3_url(key: str, download_name: str = None, ttl: int = 86400) -> str:
@@ -2534,6 +2534,28 @@ async def admin_promo_toggle(request: Request):
 _TPL_ID = _re.compile(r"^[a-z0-9_-]{2,40}$")
 
 
+async def _store_template_cover(tid: str, raw) -> str:
+    """Ссылка остаётся ссылкой. Файл из админки кладётся в хранилище и отдаётся постоянным адресом."""
+    url, data, mime = _cover_bytes(raw)
+    if data is None:
+        return url
+    if not s3():
+        raise ValueError("Хранилище фото не подключено")
+    ext = {"image/png": "png", "image/webp": "webp"}.get(mime, "jpg")
+    key = f"templates/{tid}.{ext}"
+    try:
+        await asyncio.to_thread(_s3_put_bytes, data, key, mime)
+    except Exception as e:
+        print(f"Обложка шаблона {tid}: {e}")
+        raise ValueError("Фото не сохранилось. Попробуйте ещё раз")
+    others = [f"templates/{tid}.{old}" for old in ("jpg", "png", "webp") if old != ext]
+    try:
+        await asyncio.to_thread(_s3_delete, others)
+    except Exception:
+        pass
+    return _s3_url(key)
+
+
 def _tpl_admin_row(row) -> dict:
     return {
         "id": row["id"], "title": row["title"], "desc": row["descr"] or "",
@@ -2585,6 +2607,10 @@ async def admin_template_save(request: Request):
     cats = [c.strip() for c in str(data.get("cats") or "").replace(";", ",").split(",") if c.strip() and c.strip().lower() != "vip"]
     if data.get("vip"):
         cats.append("VIP")
+    try:
+        image = await _store_template_cover(tid, data.get("image"))
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     async with db_pool.acquire() as con:
         await con.execute(
             """INSERT INTO site_templates(id, title, descr, image, price, prompt, fields, cats, formats, model, trend, vip, active, sort)
@@ -2593,7 +2619,7 @@ async def admin_template_save(request: Request):
                  title=EXCLUDED.title, descr=EXCLUDED.descr, image=EXCLUDED.image, price=EXCLUDED.price,
                  prompt=EXCLUDED.prompt, fields=EXCLUDED.fields, cats=EXCLUDED.cats, formats=EXCLUDED.formats,
                  model=EXCLUDED.model, trend=EXCLUDED.trend, vip=EXCLUDED.vip, active=EXCLUDED.active, sort=EXCLUDED.sort""",
-            tid, title[:120], str(data.get("desc") or "")[:500], str(data.get("image") or "")[:500],
+            tid, title[:120], str(data.get("desc") or "")[:500], image,
             price, prompt[:20000], str(data.get("fields") or "")[:4000], ", ".join(cats)[:300],
             str(data.get("formats") or "")[:120], model, bool(data.get("trend")), bool(data.get("vip")),
             bool(data.get("active", True)), sort)

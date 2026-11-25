@@ -3,6 +3,9 @@
 Расширение в публичной ссылке должно совпадать с байтами файла.
 """
 
+import base64
+import binascii
+
 
 def media_file(data: bytes, mime: str, role: str, index: int = 1):
     """Возвращает (имя, content-type) или (None, None), если формат не подходит."""
@@ -55,6 +58,35 @@ def _wav_seconds(data: bytes):
     if not rate or not data_len or not channels or not bits:
         return None
     return data_len / (rate * channels * (bits / 8))
+
+
+def cover_bytes(raw: str, limit: int = 2_500_000):
+    """Обложка шаблона: ссылка, пусто или байты картинки.
+
+    Возвращает (url, None, None), ('', None, None) или (None, bytes, mime).
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return "", None, None
+    if text.startswith("https://") or text.startswith("http://"):
+        if len(text) > 500:
+            raise ValueError("Ссылка на картинку слишком длинная")
+        return text, None, None
+    payload = text
+    if text.startswith("data:"):
+        head, _, payload = text.partition(",")
+        if not payload or "base64" not in head.lower():
+            raise ValueError("Фото не прочиталось")
+    try:
+        data = base64.b64decode(payload, validate=False)
+    except (binascii.Error, ValueError):
+        raise ValueError("Фото не прочиталось")
+    if not data or len(data) > limit:
+        raise ValueError("Фото больше 2 МБ. Выберите другое")
+    _name, mime = media_file(data, "", "image", 1)
+    if not mime:
+        raise ValueError("Нужна картинка jpg, png или webp")
+    return None, data, mime
 
 
 def audio_seconds(data: bytes):
