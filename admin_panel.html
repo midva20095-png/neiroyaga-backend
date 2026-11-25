@@ -123,7 +123,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   /* ---------- каркас ---------- */
   function main() {
     app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1><button class="ghost" id="logout">Выйти</button></div>' +
-      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="forum">📣 Форум</button><button data-t="hall">💬 Чат</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
+      '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="tpl">✨ Шаблоны</button><button data-t="forum">📣 Форум</button><button data-t="hall">💬 Чат</button><button data-t="promo">🎟 Промокоды</button></div><div id="view"></div>';
     document.getElementById('logout').onclick = function () { sessionStorage.removeItem('ny_admin'); T = ''; login(); };
     app.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-t'); S.user = null; show(); }; });
     show();
@@ -131,7 +131,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   function show() {
     app.querySelectorAll('[data-t]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-t') === S.tab); });
     if (S.user) return userView(S.user);
-    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else if (S.tab === 'forum') forum(); else if (S.tab === 'hall') hall(); else users();
+    if (S.tab === 'sum') summary(); else if (S.tab === 'promo') promos(); else if (S.tab === 'forum') forum(); else if (S.tab === 'hall') hall(); else if (S.tab === 'tpl') siteTemplates(); else users();
   }
   function view(h) { document.getElementById('view').innerHTML = h; }
 
@@ -431,6 +431,82 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
         });
       };
     }).catch(function () {});
+  }
+
+  /* ---------- шаблоны сайта ---------- */
+  function siteTemplates() {
+    view('<p class="dim">Загружаю…</p>');
+    api('/api/admin/templates').then(function (r) {
+      if (!r.ok) { view('<p>' + esc(r.error || 'Не удалось загрузить') + '</p>'); return; }
+      S.rows = r.templates || [];
+      if (!S.tplForm) S.tplForm = blankTpl();
+      drawTpls();
+    }).catch(function () {});
+  }
+  function blankTpl() {
+    return { id: '', title: '', desc: '', image: '', price: 10, prompt: '', fields: '', cats: '', formats: '3:4', model: 'nanobanana', trend: false, vip: false, active: true, sort: 0, fresh: true };
+  }
+  function drawTpls() {
+    var t = S.tplForm || blankTpl();
+    var catsShown = String(t.cats || '').split(',').map(function (c) { return c.trim(); }).filter(function (c) { return c && c.toLowerCase() !== 'vip'; }).join(', ');
+    var h = '<div class="card"><h3>' + (t.fresh ? '➕ Новый шаблон' : '✏️ ' + esc(t.id)) + '</h3>' +
+      '<p class="dim" style="margin-top:0">Промпт видите только вы. Клиенту показываются название, цена и поля. Поле — отдельная строка, как раньше в таблице:<br>фото | Ваше фото | до 1<br>текст | имя | Как вас зовут?<br>выбор | пол | Пол | Мужской; Женский</p>' +
+      '<div class="row"><input class="in" id="tid" placeholder="Код латиницей, например portret" value="' + esc(t.id) + '"' + (t.fresh ? '' : ' readonly') + '>' +
+      '<input class="in" id="ttitle" placeholder="Название" value="' + esc(t.title) + '"></div>' +
+      '<div class="row" style="margin-top:8px"><input class="in" id="tdesc" placeholder="Короткое описание" value="' + esc(t.desc) + '">' +
+      '<input class="in" id="timg" placeholder="Ссылка на обложку" value="' + esc(t.image) + '"></div>' +
+      '<div class="row" style="margin-top:8px"><input class="in" id="tprice" type="number" placeholder="Цена, кр." value="' + esc(t.price) + '">' +
+      '<select class="in" id="tmodel"><option value="nanobanana"' + (t.model === 'nanobanana' ? ' selected' : '') + '>Картинка</option><option value="nanobanana_pro"' + (t.model === 'nanobanana_pro' ? ' selected' : '') + '>Картинка Pro</option><option value="text"' + (t.model === 'text' || t.model === 'текст' ? ' selected' : '') + '>Текст</option></select>' +
+      '<input class="in" id="tfmt" placeholder="Форматы: 1:1, 3:4, 9:16" value="' + esc(t.formats) + '">' +
+      '<input class="in" id="tsort" type="number" placeholder="Порядок" value="' + esc(t.sort || 0) + '"></div>' +
+      '<input class="in" id="tcats" style="margin-top:8px" placeholder="Темы через запятую: Портрет, Праздник" value="' + esc(catsShown) + '">' +
+      '<textarea class="in" id="tfields" rows="4" style="margin-top:8px" placeholder="Поля, по одному в строке">' + esc(t.fields) + '</textarea>' +
+      '<textarea class="in" id="tprompt" rows="6" style="margin-top:8px" placeholder="Промпт. Подстановки: {имя}">' + esc(t.prompt) + '</textarea>' +
+      '<div class="row" style="margin-top:8px"><label><input type="checkbox" id="ttrend"' + (t.trend ? ' checked' : '') + '> В популярном</label>' +
+      '<label><input type="checkbox" id="tvip"' + (t.vip ? ' checked' : '') + '> VIP</label>' +
+      '<label><input type="checkbox" id="tactive"' + (t.active ? ' checked' : '') + '> Показывать на сайте</label>' +
+      '<button class="btn" id="tsave">Сохранить</button><button class="ghost" id="tnew">Новый</button></div></div>';
+    h += '<div class="card tbl"><h3>Шаблоны сайта</h3><table><tr><th>Код</th><th>Название</th><th>Цена</th><th>Запусков</th><th></th><th></th></tr>' +
+      (S.rows.map(function (p) {
+        return '<tr><td>' + esc(p.id) + (p.active ? '' : ' <span class="tag">скрыт</span>') + (p.vip ? ' <span class="tag vip">VIP</span>' : '') + '</td><td>' + esc(p.title) + '</td><td>' + n(p.price) + '</td><td>' + n(p.runs) + '</td>' +
+          '<td><button class="ghost" data-ed="' + esc(p.id) + '">Править</button></td><td><button class="ghost danger" data-del="' + esc(p.id) + '">Удалить</button></td></tr>';
+      }).join('') || '<tr><td colspan="6" class="dim">Шаблонов пока нет. Добавьте первый формой выше.</td></tr>') + '</table></div>';
+    view(h);
+    document.getElementById('tnew').onclick = function () { S.tplForm = blankTpl(); drawTpls(); };
+    document.getElementById('tsave').onclick = function () {
+      var body = {
+        id: document.getElementById('tid').value.trim(), title: document.getElementById('ttitle').value.trim(),
+        desc: document.getElementById('tdesc').value.trim(), image: document.getElementById('timg').value.trim(),
+        price: +document.getElementById('tprice').value, model: document.getElementById('tmodel').value,
+        formats: document.getElementById('tfmt').value.trim(), sort: +document.getElementById('tsort').value,
+        cats: document.getElementById('tcats').value.trim(), fields: document.getElementById('tfields').value,
+        prompt: document.getElementById('tprompt').value, trend: document.getElementById('ttrend').checked,
+        vip: document.getElementById('tvip').checked, active: document.getElementById('tactive').checked
+      };
+      api('/api/admin/templates', body).then(function (x) {
+        toast(x.ok ? 'Шаблон сохранён' : (x.error || 'Не получилось'));
+        if (x.ok) { S.tplForm = blankTpl(); siteTemplates(); }
+      });
+    };
+    document.querySelectorAll('[data-ed]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute('data-ed');
+        S.tplForm = Object.assign({ fresh: false }, S.rows.filter(function (p) { return p.id === id; })[0] || blankTpl());
+        S.tplForm.fresh = false;
+        drawTpls();
+        window.scrollTo(0, 0);
+      };
+    });
+    document.querySelectorAll('[data-del]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute('data-del');
+        if (!confirm('Удалить шаблон ' + id + '?')) return;
+        api('/api/admin/templates/delete', { id: id }).then(function (x) {
+          toast(x.ok ? 'Удалён' : (x.error || 'Не получилось'));
+          if (x.ok) { if (S.tplForm && S.tplForm.id === id) S.tplForm = blankTpl(); siteTemplates(); }
+        });
+      };
+    });
   }
 
   if (T) main(); else login();
