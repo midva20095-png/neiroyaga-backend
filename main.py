@@ -18,6 +18,8 @@ from requests.auth import HTTPBasicAuth
 from google import genai
 from dotenv import load_dotenv
 
+from site_media import audio_seconds, media_file as _media_file
+
 load_dotenv()
 
 # ==================== Настройки ====================
@@ -521,6 +523,24 @@ CREATE TABLE IF NOT EXISTS hall_seen (
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_templates (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    descr TEXT NOT NULL DEFAULT '',
+    image TEXT NOT NULL DEFAULT '',
+    price INT NOT NULL,
+    prompt TEXT NOT NULL,
+    fields TEXT NOT NULL DEFAULT '',
+    cats TEXT NOT NULL DEFAULT '',
+    formats TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT 'nanobanana',
+    trend BOOLEAN NOT NULL DEFAULT FALSE,
+    vip BOOLEAN NOT NULL DEFAULT FALSE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    runs INT NOT NULL DEFAULT 0,
+    sort INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 
@@ -2485,6 +2505,90 @@ async def admin_promo_toggle(request: Request):
     return {"ok": True, "active": active}
 
 
+_TPL_ID = _re.compile(r"^[a-z0-9_-]{2,40}$")
+
+
+def _tpl_admin_row(row) -> dict:
+    return {
+        "id": row["id"], "title": row["title"], "desc": row["descr"] or "",
+        "image": row["image"] or "", "price": int(row["price"]), "prompt": row["prompt"],
+        "fields": row["fields"] or "", "cats": row["cats"] or "", "formats": row["formats"] or "",
+        "model": row["model"] or "nanobanana", "trend": bool(row["trend"]), "vip": bool(row["vip"]),
+        "active": bool(row["active"]), "runs": int(row["runs"] or 0), "sort": int(row["sort"] or 0),
+    }
+
+
+@app.get("/api/admin/templates")
+async def admin_templates(request: Request):
+    if not check_admin(request):
+        return _admin_denied()
+    if not db_ready():
+        return {"ok": False, "error": "База данных не подключена"}
+    async with db_pool.acquire() as con:
+        rows = await con.fetch("SELECT * FROM site_templates ORDER BY sort, title")
+    return {"ok": True, "templates": [_tpl_admin_row(r) for r in rows]}
+
+
+@app.post("/api/admin/templates")
+async def admin_template_save(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    if not db_ready():
+        return {"ok": False, "error": "База данных не подключена"}
+    tid = str(data.get("id") or "").strip().lower()
+    if not _TPL_ID.match(tid):
+        return {"ok": False, "error": "Код: 2–40 знаков, латиница, цифры, дефис и _"}
+    title = str(data.get("title") or "").strip()
+    prompt = str(data.get("prompt") or "").strip()
+    if not title or not prompt:
+        return {"ok": False, "error": "Нужны название и промпт"}
+    try:
+        price = int(data.get("price") or 0)
+    except (TypeError, ValueError):
+        price = 0
+    if price <= 0 or price > 100000:
+        return {"ok": False, "error": "Цена — число кредитов больше нуля"}
+    model = str(data.get("model") or "nanobanana").strip().lower()
+    if model not in ("text", "текст", "nanobanana", "nanobanana_pro"):
+        model = "nanobanana"
+    try:
+        sort = max(-100000, min(100000, int(data.get("sort") or 0)))
+    except (TypeError, ValueError):
+        sort = 0
+    cats = [c.strip() for c in str(data.get("cats") or "").replace(";", ",").split(",") if c.strip() and c.strip().lower() != "vip"]
+    if data.get("vip"):
+        cats.append("VIP")
+    async with db_pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO site_templates(id, title, descr, image, price, prompt, fields, cats, formats, model, trend, vip, active, sort)
+               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+               ON CONFLICT (id) DO UPDATE SET
+                 title=EXCLUDED.title, descr=EXCLUDED.descr, image=EXCLUDED.image, price=EXCLUDED.price,
+                 prompt=EXCLUDED.prompt, fields=EXCLUDED.fields, cats=EXCLUDED.cats, formats=EXCLUDED.formats,
+                 model=EXCLUDED.model, trend=EXCLUDED.trend, vip=EXCLUDED.vip, active=EXCLUDED.active, sort=EXCLUDED.sort""",
+            tid, title[:120], str(data.get("desc") or "")[:500], str(data.get("image") or "")[:500],
+            price, prompt[:20000], str(data.get("fields") or "")[:4000], ", ".join(cats)[:300],
+            str(data.get("formats") or "")[:120], model, bool(data.get("trend")), bool(data.get("vip")),
+            bool(data.get("active", True)), sort)
+    _tpl_cache["at"] = 0.0
+    return {"ok": True, "id": tid}
+
+
+@app.post("/api/admin/templates/delete")
+async def admin_template_delete(request: Request):
+    data = await _admin_body(request)
+    if data is None:
+        return _admin_denied()
+    if not db_ready():
+        return {"ok": False, "error": "База данных не подключена"}
+    tid = str((data or {}).get("id") or "").strip().lower()
+    async with db_pool.acquire() as con:
+        await con.execute("DELETE FROM site_templates WHERE id=$1", tid)
+    _tpl_cache["at"] = 0.0
+    return {"ok": True}
+
+
 @app.post("/api/admin/import-users")
 async def import_users(request: Request):
     """Разовый перенос пользователей из Google-таблицы. Вызывается скриптом таблицы с секретным ключом."""
@@ -2811,6 +2915,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             raw_message = await websocket.receive_text()
 
             prompt, model_key, file_obj, history_list, biz_tool_id, aspect = raw_message, 'flash', None, [], None, None
+            file_objs = []
             try:
                 data = json.loads(raw_message)
                 if isinstance(data, dict):
@@ -2820,24 +2925,32 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
                     history_list = data.get('history', [])
                     biz_tool_id = data.get('biz_tool_id')
                     aspect = clean_aspect(data.get('aspect'))
+                    raw_files = data.get('files') if isinstance(data.get('files'), list) else []
+                    file_objs = [f for f in raw_files if isinstance(f, dict) and f.get('data')][:6]
             except json.JSONDecodeError:
                 pass
+            if not file_objs and isinstance(file_obj, dict) and file_obj.get('data'):
+                file_objs = [file_obj]
 
             prompt = prompt.strip() if isinstance(prompt, str) else str(prompt or '').strip()
             if model_key not in MODEL_MAPPING:
                 model_key = 'flash'
 
-            # Файл разбираем ДО списания, чтобы не брать кредиты за битый файл
-            file_part = None
-            if isinstance(file_obj, dict) and file_obj.get('data'):
+            # Файлы разбираем ДО списания, чтобы не брать кредиты за битый файл
+            file_parts = []
+            bad_file = None
+            for fo in file_objs:
                 try:
-                    file_bytes, mime = decode_file(file_obj)
-                    file_part = {"inline_data": {"mime_type": mime, "data": file_bytes}}
+                    file_bytes, mime = decode_file(fo)
+                    file_parts.append({"inline_data": {"mime_type": mime, "data": file_bytes}})
                 except ValueError as e:
-                    await safe_send(websocket, {"type": "text", "credits": balance, "text": f"📎 {e}"})
-                    continue
+                    bad_file = str(e)
+                    break
+            if bad_file:
+                await safe_send(websocket, {"type": "text", "credits": balance, "text": f"📎 {bad_file}"})
+                continue
 
-            if not prompt and not file_part:
+            if not prompt and not file_parts:
                 await safe_send(websocket, {"type": "text", "credits": balance,
                                             "text": "✍️ Напиши вопрос или прикрепи файл."})
                 continue
@@ -2876,8 +2989,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
             try:
                 contents = build_history(history_list)
                 current_parts = []
-                if file_part:
-                    current_parts.append(file_part)
+                current_parts.extend(file_parts)
                 is_image = model_key in IMAGE_MODELS
                 use_aspect = aspect if is_image else None
                 current_parts.append({"text": with_aspect_hint(prompt or "Что изображено на этом файле?", use_aspect)})
@@ -3206,9 +3318,9 @@ async def yookassa_webhook(request: Request):
 
 
 
-# ==================== Шаблоны из Google-таблицы ====================
-# Отдельный Apps Script (apps_script_templates.gs) читает лист с шаблонами.
+# ==================== Шаблоны (таблица site_templates, правка в админке) ====================
 # Браузер видит только публичные поля, промпт остаётся на сервере.
+# TEMPLATES_SCRIPT_URL больше не читает каталог: он остался для писем и старого переноса чатов.
 
 TEMPLATES_SCRIPT_URL = os.getenv("TEMPLATES_SCRIPT_URL", "").strip()
 TEMPLATES_KEY = os.getenv("TEMPLATES_KEY", "").strip()
@@ -3337,12 +3449,17 @@ def normalize_template(row: dict):
     }
 
 
-def _count_hit(tid: str):
+async def _count_hit(tid: str):
+    if not db_ready():
+        return
     try:
-        requests.post(TEMPLATES_SCRIPT_URL, json={"action": "hit", "key": TEMPLATES_KEY, "id": tid},
-                      timeout=SCRIPT_TIMEOUT)
-    except Exception:
-        pass
+        async with db_pool.acquire() as con:
+            await con.execute("UPDATE site_templates SET runs = runs + 1 WHERE id=$1", tid)
+        for item in _tpl_cache["items"]:
+            if item["id"] == tid:
+                item["runs"] = int(item.get("runs") or 0) + 1
+    except Exception as e:
+        print(f"Счётчик шаблона {tid}: {e}")
 
 
 def public_template(t: dict) -> dict:
@@ -3350,26 +3467,25 @@ def public_template(t: dict) -> dict:
 
 
 async def load_templates(force: bool = False) -> list:
-    if not TEMPLATES_SCRIPT_URL:
-        return []
     async with _tpl_lock:
         if not force and _tpl_cache["items"] and time.time() - _tpl_cache["at"] < TEMPLATES_TTL:
             return _tpl_cache["items"]
-
-        def fetch():
-            try:
-                r = requests.post(TEMPLATES_SCRIPT_URL, json={"action": "templates", "key": TEMPLATES_KEY},
-                                  timeout=SCRIPT_TIMEOUT)
-                data = r.json()
-                return data if isinstance(data, dict) and data.get("ok") else None
-            except Exception as e:
-                print(f"❌ Не удалось загрузить шаблоны: {e}")
-                return None
-
-        data = await asyncio.to_thread(fetch)
-        if data is None:
-            return _tpl_cache["items"]  # отдаём старый кэш, если таблица недоступна
-        items = [t for t in (normalize_template(r) for r in data.get("templates", []) if isinstance(r, dict)) if t]
+        if not db_ready():
+            return _tpl_cache["items"]
+        async with db_pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT id, title, descr, image, price, prompt, fields, cats, formats, model, trend, vip, runs "
+                "FROM site_templates WHERE active ORDER BY sort, title")
+        items = []
+        for row in rows:
+            item = normalize_template({
+                "id": row["id"], "title": row["title"], "desc": row["descr"], "image": row["image"],
+                "price": row["price"], "prompt": row["prompt"], "fields": row["fields"],
+                "cats": row["cats"], "formats": row["formats"], "model": row["model"],
+                "trend": row["trend"], "vip": row["vip"], "runs": row["runs"], "active": True, "site": True,
+            })
+            if item:
+                items.append(item)
         _tpl_cache.update(at=time.time(), items=items)
         return items
 
@@ -3478,9 +3594,11 @@ ECO_TEMPLATE_PRICE = 10
 async def _eco_template_image(photos, prompt_text: str, aspect):
     """Генерация шаблона через Nano Banana Братухи. Возвращает (base64, mime)."""
     urls = []
-    for i, (b, mime) in enumerate(photos[:10]):
-        ext = "png" if "png" in str(mime) else "webp" if "webp" in str(mime) else "jpg"
-        urls.append(await asyncio.to_thread(_bh_upload, b, mime, f"photo_{i + 1}.{ext}"))
+    for i, (b, mime) in enumerate(photos[:10], 1):
+        name, ctype = _media_file(b, mime, "image", i)
+        if not name:
+            raise RuntimeError("Это фото не подходит. Подойдут JPG, PNG или WEBP")
+        urls.append(await asyncio.to_thread(_bh_upload, b, ctype, name))
     inp = {"mode": "normal", "prompt": prompt_text[:20000], "image_size": aspect or "auto"}
     if urls:
         inp["image_urls"] = urls
@@ -3494,11 +3612,9 @@ async def _eco_template_image(photos, prompt_text: str, aspect):
 
 @app.get("/api/templates")
 async def get_templates():
-    if not TEMPLATES_SCRIPT_URL:
-        return {"ok": False, "error": "Шаблоны ещё не подключены", "templates": []}
+    if not db_ready():
+        return {"ok": False, "error": "Шаблоны временно недоступны", "templates": []}
     items = await load_templates()
-    if not items:
-        return {"ok": False, "error": "Не удалось загрузить шаблоны, попробуйте позже", "templates": []}
     return {"ok": True, "templates": [public_template(t) for t in items],
             "eco": {"on": bool(BRATUKHA_API_KEY), "price": ECO_TEMPLATE_PRICE, "name": "Nano Banana"}}
 
@@ -3571,8 +3687,7 @@ async def run_template(request: Request):
             if len(text_out) < 40:
                 balance = await refund_credits(email, price, balance, "template")
                 return {"ok": False, "credits": balance, "error": "Текст не получился. Кредиты вернула, попробуйте ещё раз"}
-            if TEMPLATES_SCRIPT_URL:
-                asyncio.create_task(asyncio.to_thread(_count_hit, template["id"]))
+            asyncio.create_task(_count_hit(template["id"]))
             return {"ok": True, "credits": balance, "kind": "text", "text": text_out}
         finally:
             _running.discard(email)
@@ -3628,8 +3743,7 @@ async def run_template(request: Request):
                           origin="template", template_id=str(template["id"]))
         except Exception:
             pass
-        if TEMPLATES_SCRIPT_URL:  # счётчик популярности, не ждём ответа
-            asyncio.create_task(asyncio.to_thread(_count_hit, template["id"]))
+        asyncio.create_task(_count_hit(template["id"]))
         return {"ok": True, "credits": balance, "image": image_data, "mimeType": mime_type, "text": text_output}
     finally:
         _running.discard(email)
@@ -3971,23 +4085,6 @@ def _bh_upload(data: bytes, mime: str, filename: str = "input_1.jpg") -> str:
     return url
 
 
-AUDIO_EXT = {"audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/m4a": "m4a",
-             "audio/aac": "aac", "audio/x-aac": "aac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav",
-             "audio/flac": "flac", "audio/x-flac": "flac", "audio/ogg": "ogg", "audio/opus": "opus"}
-
-
-def audio_seconds(data: bytes):
-    """Длительность записи в секундах (по самому файлу, а не по словам браузера)."""
-    try:
-        import io
-        import mutagen
-        f = mutagen.File(io.BytesIO(data))
-        return float(f.info.length) if f and f.info and f.info.length else None
-    except Exception as e:
-        print(f"Не удалось прочитать аудио: {e}")
-        return None
-
-
 VIDEO_ORIENT = {"16:9": "Horizontal 16:9 framing.", "9:16": "Vertical 9:16 framing.", "1:1": "Square 1:1 framing."}
 
 
@@ -4029,6 +4126,9 @@ def _video_prompt(prompt: str, has_image: bool, aspect: str) -> str:
 
 
 def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, quality: str):
+    images = image_url if isinstance(image_url, list) else ([image_url] if image_url else [])
+    images = [u for u in images if isinstance(u, str) and u][:6]
+    image_url = images[0] if images else None
     m = VIDEO_MODELS[slug]
     text = (prompt or "").strip().rstrip(".") + "."
     quoted = [q.strip() for q in VIDEO_QUOTES.findall(prompt or "") if q.strip()]
@@ -4036,8 +4136,9 @@ def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, 
         text += " Текст на изображении — дословно, без ошибок: " + "; ".join(f"«{q}»" for q in quoted[:3]) + "."
     elif not VIDEO_TEXT_WORDS.search(prompt or ""):
         text += " Без лишних надписей и водяных знаков."
-    if image_url:
-        text = "Используй приложенное изображение: " + text + " Сохрани лица и узнаваемые детали с исходного фото."
+    if images:
+        lead = "Используй все приложенные изображения: " if len(images) > 1 else "Используй приложенное изображение: "
+        text = lead + text + " Сохрани лица и узнаваемые детали с исходного фото."
     tool = m.get("tool", slug)
     if tool == "nano-banana":
         inp = {"mode": quality or "normal", "prompt": text[:20000], "image_size": aspect or "auto"}
@@ -4045,8 +4146,8 @@ def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, 
         inp = {"prompt": text[:3000], "size": aspect or "auto", "resolution": quality or "2K", "n": 1}
     elif tool == "wan-2-7-image":
         inp = {"prompt": text[:5000], "tier": quality or "standard", "aspect_ratio": aspect or "auto"}
-        if image_url:
-            inp["input_urls"] = [image_url]
+        if images:
+            inp["input_urls"] = images
             image_url = None
     elif tool == "grok-image":
         inp = {"prompt": text[:5000]}
@@ -4056,7 +4157,7 @@ def _bh_create_image(slug: str, prompt: str, image_url, aspect: str, mode: str, 
         inp = {"prompt": text[:20000], "quality": quality or m.get("quality", "medium"), "size": aspect or "auto",
                "resolution": m["resolution"], "mode": mode}
     if image_url:
-        inp["image_urls"] = [image_url]
+        inp["image_urls"] = images
     return _bh_post_operation(tool, inp)
 
 
@@ -4077,6 +4178,9 @@ def _bh_create_music(prompt: str, kind: str):
 
 
 def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
+    images = image_url if isinstance(image_url, list) else ([image_url] if image_url else [])
+    images = [u for u in images if isinstance(u, str) and u][:6]
+    image_url = images[0] if images else None
     full = _video_prompt(prompt, bool(image_url), aspect)
     m = VIDEO_MODELS[slug]
     tool = m.get("tool", slug)
@@ -4096,7 +4200,7 @@ def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
                "size": "adaptive" if image_url else asp, "resolution": m["resolution"], "duration": int(duration or 4),
                "generate_audio": True, "watermark": False, "draft_mode": "off", "output_format": "mp4"}
         if image_url:
-            inp["image_urls"] = [image_url]
+            inp["image_urls"] = images
         return _bh_post_operation(tool, inp)
     if tool == "kling-2-1":
         km = m["kmodel"]
@@ -4119,7 +4223,7 @@ def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
         inp = {"generation_type": "video", "prompt": full[:4000], "duration": str(duration or 4),
                "aspect_ratio": asp if asp in ("16:9", "9:16") else "16:9", "resolution": "1080p"}
         if image_url:
-            inp["image_urls"] = [image_url]
+            inp["image_urls"] = images
         return _bh_post_operation(tool, inp)
     if tool == "pika":
         inp = {"pika_generation_type": "image_to_video" if image_url else "text_to_video", "prompt": full[:4000],
@@ -4133,7 +4237,7 @@ def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
         inp = {"model": "grok-imagine/image-to-video" if image_url else "grok-imagine/text-to-video",
                "prompt": full[:5000], "duration": int(duration or 6), "resolution": m.get("resolution", "480p")}
         if image_url:
-            inp["image_urls"] = [image_url]
+            inp["image_urls"] = images
         else:
             inp["aspect_ratio"] = aspect or "16:9"
         return _bh_post_operation("grok-video", inp)
@@ -4151,7 +4255,7 @@ def _bh_create(slug: str, prompt: str, image_url, aspect: str, duration):
     if duration:
         inp.update(duration=duration, seconds=duration)
     if image_url:
-        inp.update(image=image_url, image_url=image_url, images=[image_url], file_url=image_url, files=[image_url])
+        inp.update(image=image_url, image_url=image_url, images=images, file_url=image_url, files=images)
     return _bh_post_operation(slug, inp)
 
 
@@ -4256,10 +4360,14 @@ async def _bh_wait_all(op_id: str, timeout: int, every: int) -> list:
 async def _video_worker(job_id: str):
     job = _video_jobs[job_id]
     try:
-        image_url = None
-        if job.get("image"):
-            ext = "png" if "png" in str(job.get("mime")) else "webp" if "webp" in str(job.get("mime")) else "jpg"
-            image_url = await asyncio.to_thread(_bh_upload, job["image"], job.get("mime"), f"input_1.{ext}")
+        packed = job.get("images") or ([] if not job.get("image") else [(job["image"], job.get("mime"))])
+        urls = []
+        for i, pair in enumerate(packed[:6], 1):
+            blob, imime = pair
+            name, ctype = _media_file(blob, imime, "image", i)
+            if not name:
+                raise RuntimeError("Это фото не подходит. Подойдут JPG, PNG или WEBP")
+            urls.append(await asyncio.to_thread(_bh_upload, blob, ctype, name))
         m = VIDEO_MODELS[job["model"]]
         if m.get("kind") == "audio":
             op_id = await asyncio.to_thread(_bh_create_music, job["prompt"], job.get("quality") or "song")
@@ -4273,9 +4381,12 @@ async def _video_worker(job_id: str):
             print(f"✅ suno готово для {job['email']}")
             return
         if m.get("audio"):
-            ext = AUDIO_EXT.get(job.get("audio_mime"), "mp3")
-            audio_url = await asyncio.to_thread(_bh_upload, job["audio"], job.get("audio_mime"), f"voice.{ext}")
-            op_id = await asyncio.to_thread(_bh_create_avatar, image_url, audio_url, job.get("prompt"), job.get("quality"))
+            aname, actype = _media_file(job["audio"], job.get("audio_mime"), "audio")
+            if not aname or not urls:
+                raise RuntimeError("Нужны фото человека и запись голоса в mp3, m4a, wav, ogg или flac")
+            audio_url = await asyncio.to_thread(_bh_upload, job["audio"], actype, aname)
+            resolution = "720p" if str(job.get("quality") or "").lower() == "720p" else "480p"
+            op_id = await asyncio.to_thread(_bh_create_avatar, urls[0], audio_url, job.get("prompt"), resolution)
             print(f"🎙 {job['model']} ({job.get('quality')}, {job.get('duration')} сек) для {job['email']}: операция {op_id}")
             url = await _bh_wait(op_id, 25 * 60, 10)
             _bh_err_state["streak"] = 0
@@ -4291,10 +4402,10 @@ async def _video_worker(job_id: str):
         for mode in modes:
             try:
                 if is_image:
-                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], image_url, job.get("aspect"), mode,
+                    op_id = await asyncio.to_thread(_bh_create_image, job["model"], job["prompt"], urls, job.get("aspect"), mode,
                                                     job.get("quality"))
                 else:
-                    op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], image_url, job.get("aspect"), job.get("duration"))
+                    op_id = await asyncio.to_thread(_bh_create, job["model"], job["prompt"], urls, job.get("aspect"), job.get("duration"))
                 print(f"🎬 {job['model']}{' (' + mode + ')' if mode else ''} для {job['email']}: операция {op_id}")
                 url = await _bh_wait(op_id, 5 * 60 if is_image else VIDEO_TIMEOUT_SEC, 3 if is_image else 5)
                 _bh_err_state["streak"] = 0
@@ -4320,6 +4431,7 @@ async def _video_worker(job_id: str):
                    error=f"{what} не получилось ({str(e)[:160]}). Кредиты вернула, попробуйте изменить описание.")
     finally:
         job.pop("image", None)
+        job.pop("images", None)
         job.pop("audio", None)
 
 
@@ -4408,13 +4520,13 @@ async def video_start(request: Request):
             audio, audio_mime = decode_file({"data": data.get("audio")})
         except ValueError as e:
             return {"ok": False, "error": str(e)}
-        if audio_mime not in AUDIO_EXT:
-            return {"ok": False, "error": "Этот формат записи не подходит. Подойдут mp3, m4a, wav, aac, ogg, opus, flac"}
+        if not _media_file(audio, audio_mime, "audio")[0]:
+            return {"ok": False, "error": "Этот формат записи не подходит. Нажмите «Записать» или прикрепите mp3, m4a, wav, ogg, flac"}
         if len(audio) > 10 * 1024 * 1024:
             return {"ok": False, "error": "Запись больше 10 МБ"}
         secs = audio_seconds(audio)
         if not secs:
-            return {"ok": False, "error": "Не получилось прочитать запись. Попробуйте mp3 или m4a"}
+            return {"ok": False, "error": "Не получилось прочитать запись. Нажмите «Записать» или прикрепите mp3, m4a, wav"}
         limit = VIDEO_MODELS[slug].get("max_audio_sec", 60)
         if secs > limit:
             return {"ok": False, "error": f"Запись длиннее {limit} секунд. Обрежьте её"}
@@ -4428,16 +4540,27 @@ async def video_start(request: Request):
         if duration not in durs:
             duration = durs[0]
 
-    image, mime = None, None
-    if data.get("image"):
+    raw_images = data.get("images") if isinstance(data.get("images"), list) else []
+    if not raw_images and data.get("image"):
+        raw_images = [data.get("image")]
+    images = []
+    for item in raw_images[:6]:
+        payload = item if isinstance(item, str) else ((item or {}).get("data") if isinstance(item, dict) else None)
+        if not payload:
+            continue
         try:
-            image, mime = decode_file({"data": data.get("image")})
+            blob, imime = decode_file({"data": payload})
         except ValueError as e:
             return {"ok": False, "error": str(e)}
-        if not str(mime).startswith("image/"):
-            return {"ok": False, "error": "Для видео можно прикрепить только фото"}
-        if len(image) > 10 * 1024 * 1024:
+        if not str(imime).startswith("image/"):
+            return {"ok": False, "error": "Можно прикрепить только фото"}
+        if len(blob) > 10 * 1024 * 1024:
             return {"ok": False, "error": "Фото больше 10 МБ"}
+        if not _media_file(blob, imime, "image", len(images) + 1)[0]:
+            return {"ok": False, "error": "Это фото не подходит. Подойдут JPG, PNG или WEBP"}
+        images.append((blob, imime))
+    image = images[0][0] if images else None
+    mime = images[0][1] if images else None
     photo_rule = VIDEO_MODELS[slug].get("photo")
     if photo_rule == "required" and not image:
         return {"ok": False, "error": f"Для {VIDEO_MODELS[slug]['name']} нужно прикрепить фото 📎"}
@@ -4476,7 +4599,7 @@ async def video_start(request: Request):
 
     job_id = uuid.uuid4().hex
     _video_jobs[job_id] = {"email": email, "model": slug, "prompt": prompt, "aspect": aspect, "duration": duration,
-                           "image": image, "mime": mime, "audio": audio, "audio_mime": audio_mime, "cost": cost, "quality": quality, "balance": credit.get("credits", 0),
+                           "image": image, "mime": mime, "images": images, "audio": audio, "audio_mime": audio_mime, "cost": cost, "quality": quality, "balance": credit.get("credits", 0),
                            "status": "running", "created": now}
     asyncio.create_task(_video_worker(job_id))
     return {"ok": True, "job_id": job_id, "credits": credit.get("credits", 0), "cost": cost, "seconds": duration}
