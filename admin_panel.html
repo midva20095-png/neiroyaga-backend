@@ -19,6 +19,7 @@ a{color:var(--cy)}
 .btn{padding:11px 18px;border-radius:12px;background:var(--grad);color:#fff;font-weight:700}
 .btn:disabled{opacity:.5}
 .ghost{padding:9px 14px;border-radius:12px;border:1px solid var(--ln2);font-weight:600}
+a.ghost{display:inline-block;text-decoration:none;color:var(--tx);margin:0 6px 8px 0}
 .ghost:hover{border-color:var(--pu)}
 .danger{border-color:rgba(255,80,120,.6);color:#ff9fb8}
 .in{width:100%;padding:11px 13px;border-radius:12px;border:1px solid var(--ln2);background:var(--p1);outline:none}
@@ -86,7 +87,13 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
 <script>
 (function () {
   'use strict';
+  var BOT_ADMIN = 'https://neirozhiga-ai-telegram-bot-production-7ae5.up.railway.app/admin';
+  var COURSE_ADMIN = 'https://vkdonutassistantbot-production.up.railway.app/admin';
   var app = document.getElementById('app');
+  function botDoors() {
+    return '<a class="ghost" href="' + BOT_ADMIN + '" target="_blank" rel="noopener">Бот: Telegram и ВК</a>' +
+      '<a class="ghost" href="' + COURSE_ADMIN + '" target="_blank" rel="noopener">Второй бот</a>';
+  }
   var T = sessionStorage.getItem('ny_admin') || '';
   var S = { tab: 'sum', q: '', user: null, tplShow: 'all', tplPhoto: '', tplPhotoTouched: false };
   var HINT = {
@@ -117,7 +124,9 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
   /* ---------- вход ---------- */
   function login(msg) {
     app.innerHTML = '<div class="login card"><h2 style="margin:0 0 8px">🔐 Админ-панель <span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent">НейроЯги</span></h2>' +
-      '<p>Код для входа придёт в Telegram от бота поддержки.</p>' +
+      '<p>Это панель сайта: клиенты, шаблоны и лента. Боты открываются отдельно.</p>' +
+      botDoors() +
+      '<p style="margin-top:14px">Код для входа придёт в Telegram от бота поддержки.</p>' +
       '<button class="btn" id="getcode" style="width:100%">Получить код в Telegram</button>' +
       '<div id="codebox" style="display:none;margin-top:14px"><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">' +
       '<button class="btn" id="enter" style="width:100%;margin-top:10px">Войти</button></div>' +
@@ -146,7 +155,7 @@ tr.click:hover td{background:rgba(157,77,255,.08)}
 
   /* ---------- каркас ---------- */
   function main() {
-    app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1><button class="ghost" id="logout">Выйти</button></div>' +
+    app.innerHTML = '<div class="top"><h1>🛠 Админ-панель <i>НейроЯги</i></h1>' + botDoors() + '<button class="ghost" id="logout">Выйти</button></div>' +
       '<div class="tabs"><button data-t="sum">📊 Сводка</button><button data-t="users">👥 Клиенты</button><button data-t="tpl">✨ Шаблоны</button><button data-t="forum">📰 Лента</button><button data-t="hall">💬 Чат</button><button data-t="promo">🎟 Промокоды</button></div><p class="dim hint" id="hint"></p><div id="view"></div>';
     document.getElementById('logout').onclick = function () { sessionStorage.removeItem('ny_admin'); T = ''; login(); };
     app.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-t'); S.user = null; show(); }; });
