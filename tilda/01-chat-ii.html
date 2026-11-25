@@ -1351,7 +1351,7 @@ html.nya-lock .t-records,html.nya-lock .t-rec,html.nya-lock .t1370,html.nya-lock
   }
   function stopWaiting() { S.waiting = false; clearTimeout(S.waitT); think(false); updSend(); }
 
-  var GREET = /Приветствую в НейроЯге/;
+  var GREET = /Приветствую|четыре кнопки|Цена написана на кнопке модели/;
   function splitSaved(text) {
     var mark = '\n\n[[nya-model]]\n';
     var i = String(text || '').indexOf(mark);
@@ -1471,7 +1471,7 @@ html.nya-lock .t-records,html.nya-lock .t-rec,html.nya-lock .t1370,html.nya-lock
       if (d.auth === false) { logout(true); return; }
       var txt = d.text || '';
       if (d.type === 'text' && /создается|создаётся/.test(txt)) { think(true, 'Рисую картинку…'); return; }
-      if (!S.waiting && d.type === 'text' && /Приветствую/.test(txt)) return;
+      if (!S.waiting && d.type === 'text' && GREET.test(txt)) return;
       var target = S.pendingChat;
       stopWaiting();
       var img = d.type === 'image' && d.data ? 'data:' + (d.mimeType || 'image/png') + ';base64,' + d.data : null;

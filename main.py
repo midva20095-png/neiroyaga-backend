@@ -2960,7 +2960,7 @@ async def websocket_endpoint(websocket: WebSocket, client_email: str):
     await safe_send(websocket, {
         "type": "text",
         "credits": balance,
-        "text": "🧚‍♀️ Привет! Внизу четыре кнопки: чат, картинка, видео и музыка. Цена написана на кнопке модели."
+        "text": "🧚‍♀️ Приветствую в НейроЯге!"
     })
 
     try:
@@ -4011,6 +4011,11 @@ async def chats_list(email: str, request: Request):
     return {"ok": True, "chats": chats[:200]}
 
 
+def connect_note(text: str) -> bool:
+    t = str(text or "")
+    return ("Приветствую в НейроЯге" in t) or ("четыре кнопки" in t) or ("Цена написана на кнопке модели" in t)
+
+
 @app.get("/api/chats/{email}/{chat_id}")
 async def chat_get(email: str, chat_id: str, request: Request):
     email = norm_email(email)
@@ -4023,11 +4028,11 @@ async def chat_get(email: str, chat_id: str, request: Request):
             rows = await con.fetch("SELECT role, text FROM chat_msgs WHERE email=$1 AND chat_id=$2 ORDER BY created_at, id", email, chat_id)
             done = await con.fetchval("SELECT done FROM chat_import WHERE email=$1", email)
         if rows or done or not TEMPLATES_SCRIPT_URL:
-            return {"ok": True, "messages": [{"role": r["role"], "text": r["text"]} for r in rows]}
+            return {"ok": True, "messages": [{"role": r["role"], "text": r["text"]} for r in rows if not connect_note(r["text"])]}
     d = await tscript({"action": "chat_get", "email": email, "chat_id": chat_id})
     if not d or not d.get("ok"):
         return {"ok": False, "error": "Не удалось открыть чат"}
-    return {"ok": True, "messages": d.get("messages", [])}
+    return {"ok": True, "messages": [m for m in d.get("messages", []) if not connect_note((m or {}).get("text"))]}
 
 
 @app.post("/api/chats/message")
@@ -4043,6 +4048,8 @@ async def chat_message(request: Request):
     title = str(data.get("title") or "").strip()[:80]
     if not email or not CHAT_ID_RE.match(chat_id) or not text:
         return {"ok": False, "error": "Неверные параметры"}
+    if connect_note(text):
+        return {"ok": True}
     if not is_authorized(email, token_from_request(request, data)):
         return JSONResponse({"ok": False, "error": "Нужно войти заново"}, status_code=401)
     if db_ready():
