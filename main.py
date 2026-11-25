@@ -1746,6 +1746,20 @@ async def privacy_page():
                     headers={"Cache-Control": "public, max-age=3600", "X-Robots-Tag": "index"})
 
 
+@app.get("/chat")
+async def site_chat_page():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tilda", "01-chat-ii.html")
+    if not os.path.exists(path):
+        return JSONResponse({"ok": False, "error": "Чат не найден"}, status_code=404)
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    page = ("<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>НейроЯга</title></head>"
+            "<body style=\"margin:0\">" + html + "</body></html>")
+    return Response(content=page, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "no-store"})
+
+
 @app.get("/admin")
 async def admin_page():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_panel.html")
